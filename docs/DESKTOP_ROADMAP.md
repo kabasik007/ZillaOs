@@ -50,6 +50,7 @@ The current framebuffer prototype is a **UI spike**; it is not proof that the pr
 | **D0.6: PS/2 mouse preview** | source committed; integration unverified | QEMU AUX mouse, pointer, Dock clicks, title-bar dragging, RGB32 cursor, optional keyboard-only fallback |
 | **D0.5: Window manager state** | source committed; integration unverified | Three independent demo windows, focus, z-order, minimize/maximize, keyboard movement and resizing; screenshot regression |
 | **D0-Q: Emulator validation** | next blocking step | Rust compilation PASS; QEMU/OVMF `demo` shows desktop; input switches window; screenshot + serial logs archived |
+| **D1a: Buffered software graphics** | source committed; integration unverified | 4 MB RGB32 offscreen scene (≤1280×800), cursor-only damage restoration, PPM screenshot-diff regression |
 | **D1: Graphics primitives** | after D0-Q | stable pixel and font layers, verified bounds/clipping, dirty-rect redraw, console and scalable text |
 | **D2: Input** | after CPU/IRQ foundation | reliable keyboard event queue, scancode translation, mouse/pointer, PS/2 and virtio-input with bounds tests |
 | **D3: Windowing MVP** | after D1/D2 | multiple windows, z-order, focus, drag, minimize, resize, keyboard shortcuts, double buffering |
@@ -83,6 +84,8 @@ This intentionally **does not** support pointer input or typing terminal command
 - [ ] No physical disks, external networks or host volumes exposed to VM.
 
 - [ ] QEMU PS/2 mouse initializes, moves cursor, reports left press/release; Dock clicks and title dragging verified in actual guest.
+
+- [ ] Buffered framebuffer logs `ZILLAOS_GRAPHICS_BUFFERED_READY`; cursor-only motion logs `ZILLAOS_GRAPHICS_CURSOR_DAMAGE_OK` and changes only local PPM pixels.
 
 **Do not close D0-Q based on GitHub commits or synthetic screenshots.**
 
@@ -151,3 +154,6 @@ is intended only for a disposable QEMU virtual machine, not native PCs.
 
 
 D0.6 reference: [Mouse bootstrap and known limits](MOUSE.md).
+
+
+D1a graphics contract: [GRAPHICS.md](GRAPHICS.md).
