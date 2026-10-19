@@ -17,6 +17,7 @@ OVMF_PAIRS = [
     ("/usr/share/edk2/ovmf/OVMF_CODE.fd", "/usr/share/edk2/ovmf/OVMF_VARS.fd"),
 ]
 SUCCESS_MARKER = "ZILLAOS_BOOT_OK"
+MEMORY_MARKER = "ZILLAOS_MEMORY_READY"
 FAILURE_MARKERS = ("ZILLAOS_PANIC", "ZILLAOS_BOOT_FAIL")
 EXPECTED_EXIT = 33  # QEMU debug-exit: (0x10 << 1) | 1.
 
@@ -26,6 +27,7 @@ def boot_passed(exit_code: int, output: str) -> bool:
     return (
         exit_code == EXPECTED_EXIT
         and SUCCESS_MARKER in output
+        and MEMORY_MARKER in output
         and not any(marker in output for marker in FAILURE_MARKERS)
     )
 
