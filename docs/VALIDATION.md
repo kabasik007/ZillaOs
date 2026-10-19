@@ -1,6 +1,6 @@
 # ZillaOS — threat model, tests, and delivery gates
 
-**State:** test plan only; no PASS status asserted for runtime behavior.
+**State:** test plan plus initial M1 implementation; no PASS status asserted for runtime behavior. Code files were re-fetched from GitHub, but Rust compilation, serial boot and QEMU smoke checks have not run.
 
 ## 1. Assets and trusted boundaries
 
@@ -68,7 +68,7 @@ Observations: <facts, logs, reproducer>
 - [x] Boot-chain model and trust assumptions written.
 - [x] Kernel/user boundary and capability IPC proposal written.
 - [x] Milestone gates defined.
-- [ ] Kernel source exists.
+- [x] Kernel source exists (M1 bootstrap only; not yet compiled).
 - [ ] Clean reproducible build executed.
 - [ ] QEMU boot observed.
 - [ ] Process crash contained.
