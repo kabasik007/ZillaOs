@@ -40,6 +40,7 @@ procedure and must not be mistaken for a passing test report.
    cd ZillaOs
    python3 scripts/doctor.py
    bash scripts/build.sh test
+   cargo test --lib --target x86_64-unknown-linux-gnu --offline
    python3 -m unittest discover -s tests -v
    python3 scripts/smoke_test.py --timeout 90
    bash scripts/build.sh demo
@@ -53,7 +54,7 @@ procedure and must not be mistaken for a passing test report.
    ```
 
    Expected after validated Limine boot: ZillaOS splash on framebuffer and
-   `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY` in Ubuntu terminal.
+   `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY` in Ubuntu terminal.
    Stop with Ctrl+C or by closing the QEMU window.
    **Demo mode intentionally does not exit automatically.** It is only a
    proof-of-boot screen, not a desktop or login system.
