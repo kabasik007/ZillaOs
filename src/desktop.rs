@@ -1,6 +1,7 @@
 //! Zilla Desktop event state and small translated PS/2 keyboard decoder.
 //! Real processes and IPC-backed application surfaces are a later milestone.
 
+use crate::mouse::MousePacket;
 use crate::window_manager::{Move, WindowManager};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,8 +79,25 @@ impl Layout {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Pointer {
+    pub x: usize,
+    pub y: usize,
+    pub visible: bool,
+    pub left: bool,
+    dragging: Option<App>,
+}
+
+impl Pointer {
+    pub const fn dragging(&self) -> Option<App> {
+        self.dragging
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Desktop {
     pub windows: WindowManager,
+    pub pointer: Pointer,
+    layout: Layout,
     pub launcher: bool,
     pub dark: bool,
     pub changes: u32,
@@ -100,6 +118,14 @@ impl Desktop {
     pub fn with_layout(layout: Layout) -> Self {
         Self {
             windows: WindowManager::new(layout),
+            pointer: Pointer {
+                x: layout.width / 2,
+                y: layout.height / 2,
+                visible: false,
+                left: false,
+                dragging: None,
+            },
+            layout,
             launcher: false,
             dark: true,
             changes: 0,
@@ -108,6 +134,111 @@ impl Desktop {
 
     pub const fn active(&self) -> Option<App> {
         self.windows.focused()
+    }
+
+    pub fn enable_pointer(&mut self) {
+        if !self.pointer.visible {
+            self.pointer.visible = true;
+            self.changes = self.changes.wrapping_add(1);
+        }
+    }
+
+    /// Map the same Dock icon layout used by the immediate renderer.
+    pub fn dock_app_at(layout: Layout, x: usize, y: usize) -> Option<App> {
+        let width = layout.width.min(500).saturating_sub(22);
+        let dock_x = layout.width.saturating_sub(width) / 2;
+        let dock_y = layout.height.saturating_sub(layout.dock_height + 10);
+        let icon = layout.dock_height.saturating_sub(18).min(46);
+        let spacing = icon + 14;
+        let base = dock_x + width.saturating_sub(3 * spacing) / 2 + 7;
+        if y < dock_y + 8 || y >= dock_y + 8 + icon {
+            return None;
+        }
+        for (i, app) in [App::Files, App::Terminal, App::Settings]
+            .iter()
+            .enumerate()
+        {
+            let start = base + i * spacing;
+            if x >= start && x < start + icon {
+                return Some(*app);
+            }
+        }
+        None
+    }
+
+    fn launcher_app_at(&self, x: usize, y: usize) -> Option<App> {
+        let width = self.layout.width.saturating_sub(40).min(410);
+        let start_x = self.layout.width.saturating_sub(width) / 2;
+        let start_y = self.layout.top_bar + 16;
+        if x < start_x || x >= start_x + width || y < start_y {
+            return None;
+        }
+        match y - start_y {
+            50..=77 => Some(App::Files),
+            78..=101 => Some(App::Terminal),
+            102..=131 => Some(App::Settings),
+            _ => None,
+        }
+    }
+
+    /// Handle one decoded packet. The Y-axis is already screen-oriented.
+    /// The pointer and all window coordinates stay inside the GUI viewport.
+    pub fn handle_mouse(&mut self, packet: MousePacket) -> bool {
+        if !self.pointer.visible {
+            return false;
+        }
+        let before = (self.windows, self.pointer, self.launcher);
+        self.pointer.x = self.pointer.x
+            .saturating_add_signed(packet.dx as isize)
+            .min(self.layout.width.saturating_sub(1));
+        self.pointer.y = self.pointer.y
+            .saturating_add_signed(packet.dy as isize)
+            .min(self.layout.height.saturating_sub(1));
+
+        if packet.left && !self.pointer.left {
+            let x = self.pointer.x;
+            let y = self.pointer.y;
+            if self.launcher {
+                if let Some(app) = self.launcher_app_at(x, y) {
+                    self.windows.open(app);
+                }
+                self.launcher = false;
+            } else if let Some(app) = Self::dock_app_at(self.layout, x, y) {
+                self.windows.open(app);
+            } else if y < self.layout.top_bar && x < 46 {
+                self.launcher = true;
+            } else if let Some((app, title)) = self.windows.activate_at(x, y) {
+                let rect = self.windows.rect(app);
+                // The three QEMU demo traffic lights behave as close /
+                // minimize / maximize. No callbacks or untrusted app code.
+                if title && y >= rect.y + 13 && y < rect.y + 24 {
+                    let action = (0..3).find(|i| {
+                        let left = rect.x + 14 + i * 19;
+                        x >= left && x < left + 11
+                    });
+                    match action {
+                        Some(0) => self.windows.close_focused(),
+                        Some(1) => self.windows.minimize_focused(),
+                        Some(2) => self.windows.toggle_maximize(),
+                        _ => self.pointer.dragging = Some(app),
+                    }
+                } else if title {
+                    self.pointer.dragging = Some(app);
+                }
+            }
+        } else if packet.left && self.pointer.left {
+            if let Some(app) = self.pointer.dragging {
+                self.windows.drag_window(app, packet.dx, packet.dy);
+            }
+        } else if !packet.left {
+            self.pointer.dragging = None;
+        }
+        self.pointer.left = packet.left;
+        let changed = before != (self.windows, self.pointer, self.launcher);
+        if changed {
+            self.changes = self.changes.wrapping_add(1);
+        }
+        changed
     }
 
     /// Return true only when a state transition changes the visible desktop.
@@ -309,6 +440,72 @@ mod tests {
         assert!(state.handle(Key::Maximize));
         assert_eq!(state.windows.window(App::Files).mode, WindowMode::Maximized);
         assert!(!state.handle(Key::Move(Move::Right)));
+    }
+
+    fn test_packet(dx: i16, dy: i16, left: bool) -> MousePacket {
+        MousePacket { dx, dy, left, right: false, middle: false }
+    }
+
+    #[test]
+    fn pointer_is_clamped_to_desktop_bounds() {
+        let mut state = Desktop::new();
+        state.enable_pointer();
+        for _ in 0..20 {
+            state.handle_mouse(test_packet(255, 255, false));
+        }
+        assert_eq!((state.pointer.x, state.pointer.y), (1023, 767));
+        for _ in 0..20 {
+            state.handle_mouse(test_packet(-255, -255, false));
+        }
+        assert_eq!((state.pointer.x, state.pointer.y), (0, 0));
+    }
+
+    #[test]
+    fn clicking_dock_opens_second_window() {
+        let mut state = Desktop::new();
+        state.enable_pointer();
+        let layout = Layout::for_size(1024, 768).unwrap();
+        let dock_icon_y = layout.height - layout.dock_height - 2;
+        let dock_icon_x = (0..1024)
+            .find(|x| Desktop::dock_app_at(layout, *x, dock_icon_y)
+                == Some(App::Terminal)).unwrap();
+        state.pointer.x = dock_icon_x;
+        state.pointer.y = dock_icon_y;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(state.active(), Some(App::Terminal));
+        assert_eq!(state.windows.visible_count(), 2);
+        state.handle_mouse(test_packet(0, 0, false));
+    }
+
+    #[test]
+    fn title_drag_moves_window_and_close_button_hides_it() {
+        let mut state = Desktop::new();
+        state.enable_pointer();
+        let rect = state.windows.rect(App::Files);
+        state.pointer.x = rect.x + 110;
+        state.pointer.y = rect.y + 18;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(state.pointer.dragging(), Some(App::Files));
+        assert!(state.handle_mouse(test_packet(15, 10, true)));
+        assert!(state.windows.rect(App::Files).x >= rect.x + 15);
+        state.handle_mouse(test_packet(0, 0, false));
+        let moved = state.windows.rect(App::Files);
+        state.pointer.x = moved.x + 17;
+        state.pointer.y = moved.y + 16;
+        state.handle_mouse(test_packet(0, 0, true));
+        assert_eq!(state.active(), None);
+    }
+
+    #[test]
+    fn launcher_mouse_selection_activates_settings() {
+        let mut state = Desktop::new();
+        state.enable_pointer();
+        state.handle(Key::Launcher);
+        state.pointer.x = 400;
+        state.pointer.y = 42 + 16 + 110;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(state.active(), Some(App::Settings));
+        assert!(!state.launcher);
     }
 
     #[test]
