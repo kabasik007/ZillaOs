@@ -1,9 +1,10 @@
 #![no_std]
 #![no_main]
 
-// ZillaOS milestone M1: boot protocol validation, serial diagnostics,
-// deterministic success/failure exit for QEMU. Not yet a memory manager or OS.
+// M1: independent Rust kernel booting through Limine.
+// QEMU test mode exits automatically; VM demo mode draws a splash and halts.
 
+mod framebuffer;
 mod limine;
 mod serial;
 
@@ -18,7 +19,26 @@ pub extern "C" fn _start() -> ! {
         Ok(count) => {
             serial::write("ZILLAOS_MEMMAP_REGIONS=");
             serial::write_hex(count);
-            serial::write("\nZILLAOS_BOOT_OK\n");
+            serial::write("\n");
+            if framebuffer::render() {
+                serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
+            } else {
+                serial::write("ZILLAOS_FRAMEBUFFER_UNAVAILABLE\n");
+            }
+            serial::write("ZILLAOS_BOOT_OK\n");
+
+            #[cfg(feature = "vm-demo")]
+            {
+                serial::write("ZILLAOS_DEMO_READY\n");
+                loop {
+                    // SAFETY: no interrupts have been enabled at this early stage.
+                    // Remain in QEMU so that the graphical splash stays visible.
+                    unsafe {
+                        core::arch::asm!("cli; hlt", options(nomem, nostack));
+                    }
+                }
+            }
+            #[cfg(not(feature = "vm-demo"))]
             serial::debug_exit(0x10);
         }
         Err(error) => {
