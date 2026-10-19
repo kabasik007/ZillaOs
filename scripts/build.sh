@@ -1,8 +1,18 @@
 #!/usr/bin/env bash
-# Create a UEFI-only bootable ZillaOS ISO using a pinned Limine release.
+# Produce a pinned Limine UEFI ISO for automated test or interactive VM demo.
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT="$PWD"
+
+MODE="${1:-test}"
+case "$MODE" in
+    test|demo) ;;
+    *) echo "Usage: bash scripts/build.sh [test|demo]" >&2; exit 2 ;;
+esac
+if (( $# > 1 )); then
+    echo "Usage: bash scripts/build.sh [test|demo]" >&2
+    exit 2
+fi
 
 LIMINE_VERSION="12.9.3"
 LIMINE_SHA256="e02a473c6dc6df25159697f94930272397f21fd86e5d4eeee61bba72c95ec8d2"
@@ -10,7 +20,7 @@ LIMINE_URL="https://github.com/limine-bootloader/limine/releases/download/v${LIM
 DOWNLOAD_DIR="$ROOT/build/downloads"
 UNPACK_DIR="$ROOT/build/limine-${LIMINE_VERSION}"
 STAGING="$ROOT/build/iso-root"
-ISO="$ROOT/dist/zillaos-0.0.1-uefi.iso"
+ISO="$ROOT/dist/zillaos-0.0.1-${MODE}-uefi.iso"
 ARCHIVE="$DOWNLOAD_DIR/limine-binary-${LIMINE_VERSION}.tar.xz"
 
 for command in cargo curl sha256sum tar find xorriso; do
@@ -49,8 +59,12 @@ find_limine_file() {
     printf '%s' "$located"
 }
 
-echo "Building ZillaOS kernel"
-cargo build --release --target x86_64-unknown-none --offline
+echo "Building ZillaOS kernel (mode: $MODE)"
+if [[ "$MODE" == "demo" ]]; then
+    cargo build --release --target x86_64-unknown-none --offline --features vm-demo
+else
+    cargo build --release --target x86_64-unknown-none --offline --no-default-features
+fi
 
 KERNEL="$ROOT/target/x86_64-unknown-none/release/zillaos-kernel"
 test -s "$KERNEL" || { echo "Missing kernel ELF" >&2; exit 5; }
@@ -68,6 +82,6 @@ xorriso -as mkisofs -R -r -J \
     -o "$ISO" "$STAGING"
 
 test -s "$ISO"
-printf 'ZillaOS ISO: %s\n' "$ISO"
+printf 'ZillaOS %s ISO: %s\n' "$MODE" "$ISO"
 printf 'SHA256: '
 sha256sum "$ISO"
