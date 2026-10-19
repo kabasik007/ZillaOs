@@ -47,6 +47,7 @@ The current framebuffer prototype is a **UI spike**; it is not proof that the pr
 | Stage | Target | Demonstration / gate |
 | --- | --- | --- |
 | **D0: Desktop preview** | committed source | Native RGB32 desktop, responsive layout, topbar, Dock, mock Files/Terminal/Settings, launcher; F1–F5, Tab, Esc; Rust state tests |
+| **D0.6: PS/2 mouse preview** | source committed; integration unverified | QEMU AUX mouse, pointer, Dock clicks, title-bar dragging, RGB32 cursor, optional keyboard-only fallback |
 | **D0.5: Window manager state** | source committed; integration unverified | Three independent demo windows, focus, z-order, minimize/maximize, keyboard movement and resizing; screenshot regression |
 | **D0-Q: Emulator validation** | next blocking step | Rust compilation PASS; QEMU/OVMF `demo` shows desktop; input switches window; screenshot + serial logs archived |
 | **D1: Graphics primitives** | after D0-Q | stable pixel and font layers, verified bounds/clipping, dirty-rect redraw, console and scalable text |
@@ -80,6 +81,8 @@ This intentionally **does not** support pointer input or typing terminal command
 - [ ] No memory access outside Limine-validated RGB32 surface (tested/instrumented).
 - [ ] Screenshot and serial transcript are saved from a **real** QEMU boot.
 - [ ] No physical disks, external networks or host volumes exposed to VM.
+
+- [ ] QEMU PS/2 mouse initializes, moves cursor, reports left press/release; Dock clicks and title dragging verified in actual guest.
 
 **Do not close D0-Q based on GitHub commits or synthetic screenshots.**
 
@@ -145,3 +148,6 @@ F2  -> 3 visible, focus FILES
 process. There is no mouse dragging, clipboard, real filesystem, terminal
 execution, user-mode service or GPU acceleration. The bitmap desktop
 is intended only for a disposable QEMU virtual machine, not native PCs.
+
+
+D0.6 reference: [Mouse bootstrap and known limits](MOUSE.md).
