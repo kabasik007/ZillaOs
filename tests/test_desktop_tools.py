@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.desktop_smoke import has_line, has_window_state, screenshot_dimensions
+from scripts.desktop_smoke import has_line, has_window_state, screenshot_dimensions, changed_rgb_bytes
 
 
 class DesktopSmokeTests(unittest.TestCase):
@@ -42,6 +42,28 @@ class DesktopSmokeTests(unittest.TestCase):
             pixels = bytes([20, 120, 180]) * (320 * 100) + bytes([255, 150, 80]) * (320 * 100)
             p.write_bytes(b"P6\n320 200\n255\n" + pixels)
             self.assertEqual(screenshot_dimensions(p), (320, 200))
+
+    def test_compare_screenshots_detects_only_changed_rgb_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before = Path(tmp) / "before.ppm"
+            after = Path(tmp) / "after.ppm"
+            header = b"P6\n320 200\n255\n"
+            base = bytes([20, 120, 180]) * (320 * 100) + bytes([255, 150, 80]) * (320 * 100)
+            modified = bytearray(base)
+            modified[0:3] = b"\x01\x02\x03"
+            before.write_bytes(header + base)
+            after.write_bytes(header + modified)
+            self.assertEqual(changed_rgb_bytes(before, after), 3)
+            self.assertEqual(changed_rgb_bytes(before, before), 0)
+
+    def test_screenshot_difference_rejects_bad_capture(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            before = Path(tmp) / "screen.ppm"
+            missing = Path(tmp) / "empty.ppm"
+            colors = bytes([10, 20, 30]) * (320 * 100) + bytes([80, 90, 100]) * (320 * 100)
+            before.write_bytes(b"P6\n320 200\n255\n" + colors)
+            missing.write_bytes(b"not a screenshot")
+            self.assertIsNone(changed_rgb_bytes(before, missing))
 
     def test_blank_ppm_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
