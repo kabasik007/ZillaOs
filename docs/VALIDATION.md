@@ -68,7 +68,9 @@ Observations: <facts, logs, reproducer>
 - [x] Boot-chain model and trust assumptions written.
 - [x] Kernel/user boundary and capability IPC proposal written.
 - [x] Milestone gates defined.
-- [x] Kernel source exists (M1 bootstrap only; not yet compiled).
+- [x] Kernel source exists (M1 bootstrap + early M2 frame planner; not yet compiled).
+- [x] Host Rust memory unit tests written (not yet run).
+- [ ] Rust host memory unit tests executed.
 - [ ] Clean reproducible build executed.
 - [ ] QEMU boot observed.
 - [ ] Process crash contained.
