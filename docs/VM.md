@@ -56,7 +56,7 @@ procedure and must not be mistaken for a passing test report.
    ```
 
    Expected after validated Limine boot: an experimental Zilla Desktop with top panel, dock and sample Files window, plus
-   `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY`, `ZILLAOS_DESKTOP_READY` in Ubuntu terminal. Keyboard: F1 Launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, Tab switch, Esc hide.
+   `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY`, `ZILLAOS_DESKTOP_READY` in Ubuntu terminal. Keyboard: F1 Launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, F6 minimize, F7 maximize, Tab focus, arrows move, Shift+arrows resize, Esc hide.
    **Caution:** These are expected markers, not yet observed in a verified QEMU run.
    Stop with Ctrl+C or by closing the QEMU window.
    **Demo mode intentionally does not exit automatically.** It is only a
@@ -85,7 +85,8 @@ python3 scripts/run_vm.py --display gtk
 ```
 
 In the QEMU window, use **F1** Launcher, **F2** Files, **F3** Terminal,
-**F4** Settings, **F5** dark/light theme, **Tab** to cycle, **Esc** to
+**F4** Settings, **F5** dark/light theme, **F6** minimize, **F7** maximize,
+**Tab** focus, **arrows** to move, **Shift + arrows** to resize, **Esc** to
 close an overlay/window. These views are examples only: Files does not
 access the disk and Terminal does not execute shell commands yet.
 The current input implementation polls translated PS/2 set-1 scancodes
