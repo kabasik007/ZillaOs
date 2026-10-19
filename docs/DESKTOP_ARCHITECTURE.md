@@ -24,8 +24,14 @@ events to the model. None of these demo windows represents a real process.
 `src/graphics.rs` is an experimental **software-backed immediate-mode** renderer. It
 checks Limine RGB32 framebuffer metadata and writes bounded 32-bit pixels,
 rendering a background, menu bar, app window, dock, launcher and fonts.
-The renderer draws a software pointer last; direct framebuffer redraws happen on mouse and keyboard state changes. It has no persistent global
-framebuffer pointer. It does not allocate a heap.
+For framebuffer sizes up to 1280×800, the renderer composes the scene into
+a fixed 4 MB .bss offscreen buffer and commits the screen pixels afterward.
+Pointer-only motion restores clipped old/new cursor regions from that cached
+scene and draws the software cursor last. Other layout/window changes repaint
+the whole scene. At larger resolutions, rendering falls back to direct RGB32
+framebuffer writes. This is not a hardware swapchain or tear-free compositor.
+No framebuffer pointer is retained globally; no heap is allocated.
+See [GRAPHICS.md](GRAPHICS.md) for the single-CPU safety assumptions and tests.
 
 `src/framebuffer.rs` remains the old minimal splash for the `test` and
 `fault` images. `vm-demo` mode chooses the desktop renderer, keeping
@@ -44,7 +50,8 @@ automated tests deterministic and preserving old boot checks.
 | 320×200 minimum | compact layout with fallback if too small |
 
 Visual structure: 42px top strip on typical displays; centered dock;
-single centered program window; modal launcher; keyboard help along lower
+up to three cascading demo windows with focus/z-order; modal launcher;
+keyboard help along lower
 edge when space is sufficient. The prototype includes a tiny built-in
 5×7 ASCII uppercase bitmap font, avoiding external font loading.
 
