@@ -43,6 +43,8 @@ procedure and must not be mistaken for a passing test report.
    cargo test --lib --target x86_64-unknown-linux-gnu --offline
    python3 -m unittest discover -s tests -v
    python3 scripts/smoke_test.py --timeout 90
+   bash scripts/build.sh fault
+   python3 scripts/smoke_test.py --expect-fault --timeout 90
    bash scripts/build.sh demo
    ```
 
@@ -77,6 +79,7 @@ emulation (`accel=tcg`), so no KVM or nested virtualization is required.
 | --- | --- | --- |
 | `test` | `dist/zillaos-0.0.2-dev-test-uefi.iso` | Print serial marker and exit QEMU with expected status 33 |
 | `demo` | `dist/zillaos-0.0.2-dev-demo-uefi.iso` | Draw framebuffer logo, print serial marker, stay running |
+| `fault` | `dist/zillaos-0.0.2-dev-fault-uefi.iso` | Execute UD2, report vector 6 and intentionally exit QEMU 35 |
 
 For both modes, Limine 12.9.3 is downloaded on first use and SHA-256
 verified against the value supplied in GitHub's official release page.
