@@ -2,7 +2,7 @@
 
 **ZillaOS** is an experimental, independent operating system project: a Rust-first, capability-oriented microkernel with isolated user-space services. This is a learning and engineering project. The **first kernel bootstrap source is committed**, but a successful boot has not yet been independently verified.
 
-> Status: architecture baseline v0.1 + M1 source bootstrap (2026-10-19). **Build/QEMU smoke test: NOT RUN** in the current environment.
+> Status (2026-10-19): M1 boot implementation plus early M2 physical frame planner committed to **main**. **Rust compilation, host tests and QEMU boot: NOT RUN** in this environment.
 
 ## Mission / Мета
 
@@ -56,6 +56,7 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 - [Build and QEMU smoke test](docs/BUILD.md) — first kernel source, pinned Limine archive and reproducible test commands.
 - [Run in VM on Windows and Linux](docs/VM.md) — WSL2 setup, graphical demo, host dependency checks.
 - [Architecture](docs/ARCHITECTURE.md) — security boundaries, kernel components, memory model, IPC and interface contracts.
+- [Early physical memory manager](docs/MEMORY.md) — bounded Limine map copy, usable frame reservations, constraints and tests.
 - [Roadmap and acceptance criteria](docs/ROADMAP.md).
 - [Architecture decisions](docs/DECISIONS.md).
 - [Threat model and testing](docs/VALIDATION.md).
@@ -89,10 +90,11 @@ Methodology: [Be Ambitious Pro](https://app.notion.com/p/3fb91a1af397814782cac43
 ```bash
 python3 scripts/doctor.py
 python3 -m unittest discover -s tests -v
+cargo test --lib --target x86_64-unknown-linux-gnu --offline
 bash scripts/build.sh test
 python3 scripts/smoke_test.py --timeout 90
 bash scripts/build.sh demo
 python3 scripts/run_vm.py --display gtk
 ```
 
-This creates distinct test and graphical-demo UEFI images, and verifies test-mode boot in QEMU/OVMF when prerequisites are present. Demo mode draws a framebuffer splash and remains running. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test.
+This creates distinct test and graphical-demo UEFI images, and verifies test-mode boot in QEMU/OVMF when prerequisites are present. Demo mode draws a framebuffer splash and remains running. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test. The early M2 kernel also expects a `ZILLAOS_MEMORY_READY` serial marker, but this has not yet been observed in an emulator.
