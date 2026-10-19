@@ -5,6 +5,7 @@
 use core::ptr;
 use crate::limine::{self, Framebuffer};
 use zillaos_kernel::desktop::{App, Desktop, Layout};
+use zillaos_kernel::window_manager::{Rect, WindowMode};
 
 struct Screen {
     fb: Framebuffer,
@@ -142,23 +143,35 @@ impl Screen {
             };
             self.round_rect(px, y + 8, icon, icon, 11, color);
             self.text(letter, px + (icon.saturating_sub(10)) / 2, y + 17, 2, 0xffffff);
-            if state.active == Some(app) {
+            if state.active() == Some(app) {
                 self.rectangle(px + 8, y + h - 5, icon.saturating_sub(16), 3, 0x1cd9bd);
+            } else if state.windows.window(app).mode == WindowMode::Minimized {
+                self.rectangle(px + icon / 2, y + h - 5, 4, 3, 0xffc35a);
+            } else if state.windows.window(app).visible() {
+                self.rectangle(px + icon / 2, y + h - 5, 4, 3, 0x7d9cb7);
             }
         }
     }
 
-    fn window(&self, state: &Desktop, layout: &Layout) {
-        let Some(app) = state.active else { return };
-        let x = layout.window_x;
-        let y = layout.window_y;
-        let w = layout.window_width;
-        let h = layout.window_height;
+    fn window(&self, state: &Desktop, app: App, rect: Rect, focused: bool) {
+        let x = rect.x;
+        let y = rect.y;
+        let w = rect.width;
+        let h = rect.height;
         let bg = if state.dark { 0x17253a } else { 0xf5faff };
-        let title_bar = if state.dark { 0x253b54 } else { 0xdce9f2 };
+        let title_bar = match (state.dark, focused) {
+            (true, true) => 0x2f5270,
+            (true, false) => 0x253b54,
+            (false, true) => 0xd0e7f2,
+            (false, false) => 0xdce9f2,
+        };
         let fg = if state.dark { 0xedf5fc } else { 0x20394e };
         let secondary = if state.dark { 0x9eb5cc } else { 0x587084 };
         self.round_rect(x + 8, y + 11, w, h, 13, 0x0b192b);
+        if focused {
+            self.round_rect(x.saturating_sub(2), y.saturating_sub(2),
+                            w.saturating_add(4), h.saturating_add(4), 13, 0x18788d);
+        }
         self.round_rect(x, y, w, h, 13, bg);
         let bar_h = if h < 170 { 30 } else { 45 };
         self.round_rect(x, y, w, bar_h, 13, title_bar);
@@ -167,6 +180,9 @@ impl Screen {
             self.round_rect(x + 14 + i * 19, y + 13, 11, 11, 5, *dot);
         }
         self.text(app.label(), x + 87, y + 14, 2, fg);
+        if focused && w >= 310 {
+            self.text("ACTIVE", x + w.saturating_sub(70), y + 18, 1, 0x1bd5ba);
+        }
 
         let body = y + bar_h + 8;
         let content_h = h.saturating_sub(bar_h + 16);
@@ -254,8 +270,12 @@ impl Screen {
     fn key_legend(&self, state: &Desktop, layout: &Layout) {
         if layout.width < 730 || layout.height < 460 { return; }
         let fg = if state.dark { 0xa5c7d8 } else { 0x244d64 };
-        self.text("F1 MENU   F2 FILES   F3 TERMINAL   F4 SETTINGS   F5 THEME   TAB SWITCH   ESC CLOSE",
+        self.text("F1 MENU F2 FILES F3 TERM F4 SETTINGS F5 THEME F6 MIN F7 MAX TAB FOCUS ESC CLOSE",
                   22, layout.height.saturating_sub(12), 1, fg);
+        if layout.height >= 600 && layout.width >= 820 {
+            self.text("ARROWS MOVE  SHIFT ARROWS RESIZE",
+                      22, layout.height.saturating_sub(layout.dock_height + 25), 1, fg);
+        }
     }
 }
 
@@ -268,7 +288,11 @@ pub fn render(state: &Desktop) -> bool {
     screen.background(state.dark);
     screen.wallpaper_label(state, &layout);
     screen.top_panel(state, &layout);
-    screen.window(state, &layout);
+    for app in state.windows.back_to_front() {
+        if state.windows.window(app).visible() {
+            screen.window(state, app, state.windows.rect(app), state.active() == Some(app));
+        }
+    }
     screen.dock(state, &layout);
     screen.launcher(state, &layout);
     screen.key_legend(state, &layout);
