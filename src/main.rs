@@ -150,6 +150,7 @@ pub extern "C" fn _start() -> ! {
         }
         serial::write("ZILLAOS_DESKTOP_INPUT_POLL\n");
         serial::write("ZILLAOS_WINDOW_MANAGER_READY\n");
+        let mut first_mouse_motion_logged = false;
 
         // Poll both keyboard and mouse data from a SINGLE i8042 reader.
         // No interrupts, threads or real process messages exist yet.
@@ -157,13 +158,29 @@ pub extern "C" fn _start() -> ! {
             let previous_windows = desktop.windows;
             let previous_launcher = desktop.launcher;
             let previous_theme = desktop.dark;
+            let previous_pointer = desktop.pointer;
             let event = input.poll();
+            let mouse_event = matches!(&event, Some(input::InputEvent::Mouse(_)));
             let changed = match event {
                 Some(input::InputEvent::Key(key)) => desktop.handle(key),
                 Some(input::InputEvent::Mouse(packet)) => desktop.handle_mouse(packet),
                 None => false,
             };
             if changed {
+                if mouse_event {
+                    if !first_mouse_motion_logged
+                        && (previous_pointer.x != desktop.pointer.x
+                            || previous_pointer.y != desktop.pointer.y)
+                    {
+                        first_mouse_motion_logged = true;
+                        serial::write("ZILLAOS_MOUSE_MOTION_DETECTED\n");
+                    }
+                    if !previous_pointer.left && desktop.pointer.left {
+                        serial::write("ZILLAOS_MOUSE_LEFT_DOWN\n");
+                    } else if previous_pointer.left && !desktop.pointer.left {
+                        serial::write("ZILLAOS_MOUSE_LEFT_UP\n");
+                    }
+                }
                 // Pointer-only motion must not flood the serial log.
                 if previous_windows != desktop.windows
                     || previous_launcher != desktop.launcher
