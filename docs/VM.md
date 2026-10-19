@@ -1,6 +1,6 @@
 # ZillaOS — local VM quickstart (Windows + Ubuntu/WSL2)
 
-ZillaOS v0.0.1 is a **bare-metal Rust kernel**, not a Linux application.
+ZillaOS v0.0.2-dev is a **bare-metal Rust kernel**, not a Linux application.
 Use **QEMU with OVMF firmware** as a disposable x86-64 virtual machine. The
 bootable ISO stays in `dist/` and is attached as read-only CD media;
 the script never maps the host disk into the guest.
@@ -54,7 +54,7 @@ procedure and must not be mistaken for a passing test report.
    ```
 
    Expected after validated Limine boot: ZillaOS splash on framebuffer and
-   `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY` in Ubuntu terminal.
+   `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY` in Ubuntu terminal.
    Stop with Ctrl+C or by closing the QEMU window.
    **Demo mode intentionally does not exit automatically.** It is only a
    proof-of-boot screen, not a desktop or login system.
@@ -100,7 +100,7 @@ Rust has no crates.io dependencies at M1.
 Only disposable VM firmware variables are writable. QEMU attaches the ISO
 as CD-ROM; no `/dev/sd*`, raw host disk, bridged network, SSH key, or
 personal file share is added to the guest. Running untested kernels on
-physical hardware is **not** part of milestone M1.
+physical hardware is **not** part of the pre-release M1/M2 development phase.
 
 See also: [Build](BUILD.md), [Architecture](ARCHITECTURE.md),
 [Validation](VALIDATION.md).
