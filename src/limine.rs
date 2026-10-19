@@ -3,6 +3,7 @@
 //! No allocator is available yet. We only read the memory-map count.
 
 use core::ptr;
+use zillaos_kernel::memory::{MemoryRegion, MAX_MEMORY_REGIONS};
 use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 
 #[repr(C)]
@@ -124,10 +125,14 @@ pub enum BootError {
     InvalidMemoryMap,
 }
 
-/// The bootloader owns request responses. These pointers must never be
-/// interpreted as coming from arbitrary user memory. They are only available
-/// during boot, and must be copied before reclaiming bootloader memory.
-pub fn memory_region_count() -> Result<u64, BootError> {
+pub struct BootMemoryMap {
+    pub regions: [MemoryRegion; MAX_MEMORY_REGIONS],
+    pub count: usize,
+}
+
+/// Copy the bootloader memory map while the Limine boot-memory region is alive.
+/// Later stages must not retain pointers into Limine's reclaimable structures.
+pub fn memory_map() -> Result<BootMemoryMap, BootError> {
     if BASE_REVISION.revision.load(Ordering::Relaxed) != 0 {
         return Err(BootError::UnsupportedRevision);
     }
@@ -135,17 +140,31 @@ pub fn memory_region_count() -> Result<u64, BootError> {
     if response.is_null() {
         return Err(BootError::MissingMemoryMap);
     }
-    // SAFETY: after successful Limine handoff, the response pointer references
-    // a bootloader-owned mapped MemoryMapResponse. We read only fixed-size
-    // fields here, and perform no dereference of individual memory entries.
+    // SAFETY: trusted bootloader response is valid during initial handoff;
+    // no reclamation, remapping, or concurrency is possible at this point.
     let response = unsafe { &*response };
-    if response.entry_count == 0
-        || response.entry_count > 4096
-        || response.entries.is_null()
-    {
+    let count = usize::try_from(response.entry_count).map_err(|_| BootError::InvalidMemoryMap)?;
+    if count == 0 || count > MAX_MEMORY_REGIONS || response.entries.is_null() {
         return Err(BootError::InvalidMemoryMap);
     }
-    Ok(response.entry_count)
+    let mut regions = [MemoryRegion::EMPTY; MAX_MEMORY_REGIONS];
+    for (index, slot) in regions.iter_mut().take(count).enumerate() {
+        // SAFETY: Limine guarantees the pointer array has entry_count entries;
+        // count was bounded above and NULL elements are separately rejected.
+        let entry = unsafe { *response.entries.add(index) };
+        if entry.is_null() {
+            return Err(BootError::InvalidMemoryMap);
+        }
+        // SAFETY: this entry is bootloader-owned and valid until reclamation.
+        // Copy scalar fields immediately; do not expose a bootloader pointer.
+        let entry = unsafe { &*entry };
+        *slot = MemoryRegion {
+            base: entry.base,
+            length: entry.length,
+            kind: entry.kind,
+        };
+    }
+    Ok(BootMemoryMap { regions, count })
 }
 
 /** A strictly bounded 32-bit RGB framebuffer for the QEMU boot splash.
