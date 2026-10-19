@@ -1,0 +1,57 @@
+name: ZillaOS M1 boot smoke
+
+# Manual only: avoid consuming GitHub Actions minutes without approval.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qemu-uefi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install emulator and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt --component clippy --target x86_64-unknown-none
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
+          qemu-system-x86_64 --version
+          xorriso -version | head -n 2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Build UEFI ISO
+        run: bash scripts/build.sh
+
+      - name: Negative smoke (missing image must fail)
+        run: |
+          if python3 scripts/smoke_test.py --iso dist/nonexistent.iso; then
+            echo "ERROR: missing image incorrectly passed"
+            exit 1
+          fi
+
+      - name: Boot in QEMU + OVMF
+        run: python3 scripts/smoke_test.py --timeout 90
+
+      - name: Save image and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-m1-uefi-image
+          path: |
+            dist/*.iso
+            target/x86_64-unknown-none/release/zillaos-kernel
+          if-no-files-found: warn
+          retention-days: 7
