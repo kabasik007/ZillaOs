@@ -234,6 +234,39 @@ impl WindowManager {
         self.windows[i].rect = Self::clamp_rect(rect, self.viewport);
     }
 
+    /// Click hit-test in front-to-back order, update focus and return
+    /// whether the point belongs to the draggable title bar.
+    pub fn activate_at(&mut self, x: usize, y: usize) -> Option<(App, bool)> {
+        let target = self.order.iter().rev().copied().find(|app| {
+            let window = self.window(*app);
+            window.visible() && Self::contains(self.rect(*app), x, y)
+        })?;
+        let rect = self.rect(target);
+        let title_height = if rect.height < 170 { 30 } else { 45 };
+        let on_title = y < rect.y.saturating_add(title_height);
+        self.bring_to_front(target);
+        Some((target, on_title))
+    }
+
+    pub fn contains(rect: Rect, x: usize, y: usize) -> bool {
+        x >= rect.x
+            && y >= rect.y
+            && x < rect.x.saturating_add(rect.width)
+            && y < rect.y.saturating_add(rect.height)
+    }
+
+    /// Move an explicitly focused normal window by relative pointer delta.
+    pub fn drag_window(&mut self, app: App, dx: i16, dy: i16) {
+        let index = Self::index(app);
+        if self.focus != Some(app) || self.windows[index].mode != WindowMode::Normal {
+            return;
+        }
+        let mut rect = self.windows[index].rect;
+        rect.x = rect.x.saturating_add_signed(dx as isize);
+        rect.y = rect.y.saturating_add_signed(dy as isize);
+        self.windows[index].rect = Self::clamp_rect(rect, self.viewport);
+    }
+
     pub fn visible_count(&self) -> usize {
         self.windows.iter().filter(|win| win.visible()).count()
     }
@@ -321,6 +354,31 @@ mod tests {
         assert_eq!(wm.focused(), Some(App::Files));
         wm.cycle();
         assert_eq!(wm.focused(), Some(App::Terminal));
+    }
+
+    #[test]
+    fn mouse_selects_topmost_visible_window_and_drags_it() {
+        let mut wm = manager();
+        wm.open(App::Terminal);
+        wm.open(App::Settings);
+        let top = wm.rect(App::Settings);
+        assert_eq!(wm.activate_at(top.x + 60, top.y + 15), Some((App::Settings, true)));
+        let previous = wm.rect(App::Settings);
+        wm.drag_window(App::Settings, -18, 24);
+        let now = wm.rect(App::Settings);
+        assert!(now.x <= previous.x);
+        assert!(now.y >= previous.y);
+    }
+
+    #[test]
+    fn pointer_does_not_select_hidden_or_outside_windows() {
+        let mut wm = manager();
+        assert_eq!(wm.activate_at(1, 1), None);
+        let initial = wm.rect(App::Files);
+        assert_eq!(wm.activate_at(initial.x + 25, initial.y + 25),
+                   Some((App::Files, true)));
+        wm.minimize_focused();
+        assert_eq!(wm.activate_at(initial.x + 25, initial.y + 25), None);
     }
 
     #[test]
