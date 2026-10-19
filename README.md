@@ -51,6 +51,12 @@ We are intentionally **not** targeting Win32/.exe compatibility, Linux ABI, Stea
 
 Each milestone has explicit **PASS / FAIL** acceptance tests, not just screenshots. Details: [ROADMAP](docs/ROADMAP.md).
 
+## Zilla Desktop — graphical desktop preview
+
+ZillaOS now contains a **source-level experimental desktop shell** for the QEMU `demo` image. It combines a macOS-inspired menu bar and dock, Windows-style sample Files/Terminal/Settings windows, and a configurable dark/light theme. The GUI renders directly to the Limine RGB32 framebuffer and accepts QEMU PS/2 keyboard input (F1 launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, Tab switch, Esc close). These are demonstration views **without** a real filesystem, terminal process or compositor. **Rust build, QEMU boot and interactive keyboard behavior remain NOT VERIFIED.**
+
+[Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) · [Desktop roadmap](docs/DESKTOP_ROADMAP.md)
+
 ## Documentation
 
 - [Build and QEMU smoke test](docs/BUILD.md) — first kernel source, pinned Limine archive and reproducible test commands.
@@ -59,7 +65,9 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 - [Early physical memory manager](docs/MEMORY.md) — bounded Limine map copy, CPU physical limits, frame-readback experiments.
 - [Paging design](docs/PAGING.md) — canonical addresses and typed page-table metadata.
 - [CPU exception handlers](docs/EXCEPTIONS.md) — early IDT, diagnostic #UD/#GP/#PF, and UD2 negative QEMU test.
-- [Changelog](docs/CHANGELOG.md) — v0.0.2-dev details and release blockers.
+- [Changelog](docs/CHANGELOG.md)
+- [Zilla Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) — immediate framebuffer renderer, input, state, limitations.
+- [Zilla Desktop roadmap](docs/DESKTOP_ROADMAP.md) — from QEMU prototype to user-mode compositor and apps. — v0.0.2-dev details and release blockers.
 - [Roadmap and acceptance criteria](docs/ROADMAP.md).
 - [Architecture decisions](docs/DECISIONS.md).
 - [Threat model and testing](docs/VALIDATION.md).
