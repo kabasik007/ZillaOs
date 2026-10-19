@@ -34,6 +34,19 @@ struct HhdmResponse {
 }
 
 #[repr(C)]
+struct StackSizeResponse {
+    revision: u64,
+}
+
+#[repr(C)]
+struct StackSizeRequest {
+    id: [u64; 4],
+    revision: u64,
+    response: AtomicPtr<StackSizeResponse>,
+    stack_size: u64,
+}
+
+#[repr(C)]
 struct FramebufferResponse {
     revision: u64,
     framebuffer_count: u64,
@@ -116,6 +129,20 @@ static HHDM: Request<HhdmResponse> = Request {
     ],
     revision: 0,
     response: AtomicPtr::new(ptr::null_mut()),
+};
+
+#[used]
+#[unsafe(link_section = ".limine_requests")]
+static STACK_SIZE: StackSizeRequest = StackSizeRequest {
+    id: [
+        0xc7b1dd30df4c8b88,
+        0x0a82e883a194f07b,
+        0x224ef0460a8e8926,
+        0xe1cb0fc25f46ea3d,
+    ],
+    revision: 0,
+    response: AtomicPtr::new(ptr::null_mut()),
+    stack_size: 256 * 1024,
 };
 
 #[used]
