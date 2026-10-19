@@ -42,7 +42,7 @@ impl Canvas {
         };
         for (row, bits) in glyph.iter().enumerate() {
             for col in 0..5 {
-                if bits & (1_u8 << (4 - col)) != 0 {
+                if (*bits & (1_u8 << (4 - col))) != 0 {
                     self.rect(x + col * scale, y + row * scale, scale, scale, color);
                 }
             }
