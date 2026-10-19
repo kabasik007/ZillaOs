@@ -11,7 +11,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.1-test-uefi.iso"
+DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.2-dev-test-uefi.iso"
 OVMF_PAIRS = [
     ("/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
     ("/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"),
