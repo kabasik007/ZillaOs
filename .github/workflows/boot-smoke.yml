@@ -1,4 +1,4 @@
-name: ZillaOS x86-64 boot and CPU fault tests
+name: ZillaOS boot, CPU faults and desktop GUI
 
 # Manual only: avoid consuming GitHub Actions minutes without approval.
 on:
@@ -63,16 +63,23 @@ jobs:
           bash scripts/build.sh fault
           python3 scripts/smoke_test.py --expect-fault --timeout 90 2>&1 | tee build/logs/qemu-fault.log
 
+      - name: Build and smoke-test graphical Zilla Desktop
+        run: |
+          bash scripts/build.sh demo
+          python3 scripts/desktop_smoke.py --timeout 90
+
       - name: Save image and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zillaos-x86-64-boot-and-fault-evidence
+          name: zillaos-x86-64-kernel-desktop-evidence
           path: |
             dist/*.iso
             dist/*.elf
             target/x86_64-unknown-none/release/zillaos-kernel
             build/logs/qemu-smoke.log
             build/logs/qemu-fault.log
+            build/logs/desktop-qemu.log
+            build/logs/desktop-qemu.ppm
           if-no-files-found: warn
           retention-days: 7
