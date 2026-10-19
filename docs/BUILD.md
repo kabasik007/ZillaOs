@@ -24,8 +24,7 @@ bash scripts/build.sh demo
 python3 scripts/run_vm.py --display gtk
 ```
 
-The demo displays an early graphical splash (not a desktop) and stays
-running until the VM is stopped. The test build is created with
+The demo now contains source for an experimental directly rendered Zilla Desktop: top panel, Dock, sample app window and keyboard actions (F1/F2/F3/F4/F5/Tab/Esc). It stays running until the VM is stopped. It is **not** a real user-space compositor or functional file manager; appearance and input await QEMU verification. The test build is created with
 `bash scripts/build.sh test` and generates
 `dist/zillaos-0.0.2-dev-test-uefi.iso`; the demo image is
 `dist/zillaos-0.0.2-dev-demo-uefi.iso`.
