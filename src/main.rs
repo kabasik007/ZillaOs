@@ -114,9 +114,14 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "vm-demo")]
     {
-        use zillaos_kernel::desktop::Desktop;
+        use zillaos_kernel::desktop::{Desktop, Layout};
 
-        let mut desktop = Desktop::new();
+        let mut desktop = match limine::framebuffer()
+            .and_then(|fb| Layout::for_size(fb.width, fb.height))
+        {
+            Some(layout) => Desktop::with_layout(layout),
+            None => Desktop::new(),
+        };
         let desktop_available = graphics::render(&desktop);
         if desktop_available {
             serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
@@ -135,6 +140,7 @@ pub extern "C" fn _start() -> ! {
         // i8042 controller by polling, and only redraws on state changes.
         let mut keyboard = input::Keyboard::new();
         serial::write("ZILLAOS_DESKTOP_INPUT_POLL\n");
+        serial::write("ZILLAOS_WINDOW_MANAGER_READY\n");
         loop {
             if let Some(key) = keyboard.poll() {
                 if desktop.handle(key) {
