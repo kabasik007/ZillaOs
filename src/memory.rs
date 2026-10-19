@@ -5,7 +5,8 @@
 
 pub const PAGE_SIZE: u64 = 4096;
 pub const MAX_MEMORY_REGIONS: usize = 128;
-const PHYSICAL_LIMIT: u64 = 1u64 << 52;
+const MAX_PHYSICAL_ADDRESS_BITS: u8 = 52;
+const MIN_PHYSICAL_ADDRESS_BITS: u8 = 32;
 const USABLE_KIND: u64 = 0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -30,6 +31,7 @@ pub enum MemoryError {
     EmptyRegion,
     AddressOverflow,
     PhysicalAddressOutOfRange,
+    InvalidPhysicalAddressWidth,
     OverlappingRegions,
     NoUsableFrames,
 }
@@ -66,6 +68,19 @@ impl FrameAllocator {
     ///
     /// Overlap checks are O(n²), bounded by MAX_MEMORY_REGIONS.
     pub fn from_regions(regions: &[MemoryRegion]) -> Result<Self, MemoryError> {
+        Self::from_regions_with_physical_bits(regions, MAX_PHYSICAL_ADDRESS_BITS)
+    }
+
+    /// Bound allocation to the usable physical-address width reported by CPUID.
+    /// Reserve all non-USABLE regions, including firmware, DMA and framebuffer.
+    pub fn from_regions_with_physical_bits(
+        regions: &[MemoryRegion],
+        physical_bits: u8,
+    ) -> Result<Self, MemoryError> {
+        if !(MIN_PHYSICAL_ADDRESS_BITS..=MAX_PHYSICAL_ADDRESS_BITS).contains(&physical_bits) {
+            return Err(MemoryError::InvalidPhysicalAddressWidth);
+        }
+        let physical_limit = 1u64 << physical_bits;
         if regions.is_empty() {
             return Err(MemoryError::EmptyMap);
         }
@@ -85,18 +100,21 @@ impl FrameAllocator {
                 .base
                 .checked_add(region.length)
                 .ok_or(MemoryError::AddressOverflow)?;
-            if end > PHYSICAL_LIMIT {
+            if region.kind == USABLE_KIND && end > physical_limit {
                 return Err(MemoryError::PhysicalAddressOutOfRange);
             }
 
-            // Check all region types, not just usable ranges: a usable region
-            // must never silently overlap reserved/MMIO/firmware memory.
+            // Limine permits non-USABLE regions to overlap each other.
+            // Only USABLE overlaps would risk allocating reserved physical RAM.
             for prior in &regions[..index] {
                 let prior_end = prior
                     .base
                     .checked_add(prior.length)
                     .ok_or(MemoryError::AddressOverflow)?;
-                if region.base < prior_end && prior.base < end {
+                if (region.kind == USABLE_KIND || prior.kind == USABLE_KIND)
+                    && region.base < prior_end
+                    && prior.base < end
+                {
                     return Err(MemoryError::OverlappingRegions);
                 }
             }
@@ -268,8 +286,49 @@ mod tests {
     #[test]
     fn valid_but_unmapped_high_physical_addresses_are_rejected() {
         assert!(matches!(
-            FrameAllocator::from_regions(&[region(PHYSICAL_LIMIT - PAGE_SIZE, PAGE_SIZE * 2, 0)]),
+            FrameAllocator::from_regions(&[region((1u64 << 52) - PAGE_SIZE, PAGE_SIZE * 2, 0)]),
             Err(MemoryError::PhysicalAddressOutOfRange)
+        ));
+    }
+
+    #[test]
+    fn overlapping_firmware_and_reserved_regions_are_allowed() {
+        let mut allocator = FrameAllocator::from_regions(&[
+            region(0x1000, 0x2000, 2),
+            region(0x2000, 0x2000, 1),
+            region(0x10000, 0x4000, 0),
+        ]).unwrap();
+        assert_eq!(allocator.remaining_frames(), 4);
+        assert_eq!(allocator.reserve_frame().unwrap().address, 0x10000);
+    }
+
+    #[test]
+    fn usable_overlap_with_reserved_region_is_rejected() {
+        assert!(matches!(
+            FrameAllocator::from_regions(&[
+                region(0x2000, 0x4000, 1),
+                region(0x4000, 0x4000, 0),
+            ]),
+            Err(MemoryError::OverlappingRegions)
+        ));
+    }
+
+    #[test]
+    fn physical_address_width_is_enforced_for_usable_frames() {
+        let region_at_4gb = region(1u64 << 32, PAGE_SIZE, 0);
+        assert!(matches!(
+            FrameAllocator::from_regions_with_physical_bits(&[region_at_4gb], 32),
+            Err(MemoryError::PhysicalAddressOutOfRange)
+        ));
+        let mut alloc = FrameAllocator::from_regions_with_physical_bits(
+            &[region_at_4gb], 36
+        ).unwrap();
+        assert_eq!(alloc.reserve_frame().unwrap().address, 1u64 << 32);
+        assert!(matches!(
+            FrameAllocator::from_regions_with_physical_bits(
+                &[region(0x1000, PAGE_SIZE, 0)], 0
+            ),
+            Err(MemoryError::InvalidPhysicalAddressWidth)
         ));
     }
 
