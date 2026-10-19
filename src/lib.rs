@@ -5,3 +5,5 @@
 pub mod memory;
 
 pub mod paging;
+
+pub mod exceptions;
