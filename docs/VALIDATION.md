@@ -1,6 +1,6 @@
 # ZillaOS — threat model, tests, and delivery gates
 
-**State:** test plan plus initial M1 implementation; no PASS status asserted for runtime behavior. Code files were re-fetched from GitHub, but Rust compilation, serial boot and QEMU smoke checks have not run.
+**State:** M1 plus v0.0.2-dev M2 CPU/physical/HHDM integration source committed in main; **Rust compile, host tests and QEMU smoke checks have NOT RUN** in this environment. Do not mark these gates PASS without actual recorded evidence.
 
 ## 1. Assets and trusted boundaries
 
@@ -68,8 +68,10 @@ Observations: <facts, logs, reproducer>
 - [x] Boot-chain model and trust assumptions written.
 - [x] Kernel/user boundary and capability IPC proposal written.
 - [x] Milestone gates defined.
-- [x] Kernel source exists (M1 bootstrap + early M2 frame planner; not yet compiled).
-- [x] Host Rust memory unit tests written (not yet run).
+- [x] Kernel source exists (M1 bootstrap + early M2 CPUID, HHDM readback and paging metadata; not yet compiled).
+- [x] Host Rust memory/paging unit tests written (not yet run).
+- [x] QEMU serial smoke test checks CPU/HHDM/frame integrity and guards against forged success markers.
+- [ ] Bounded two-frame HHDM write/read/zero integration probe actually observed in QEMU.
 - [ ] Rust host memory unit tests executed.
 - [ ] Clean reproducible build executed.
 - [ ] QEMU boot observed.
