@@ -4,7 +4,7 @@
 //! support exists; never use it to free pages or reassign DMA memory.
 
 pub const PAGE_SIZE: u64 = 4096;
-pub const MAX_MEMORY_REGIONS: usize = 128;
+pub const MAX_MEMORY_REGIONS: usize = 256;
 const MAX_PHYSICAL_ADDRESS_BITS: u8 = 52;
 const MIN_PHYSICAL_ADDRESS_BITS: u8 = 32;
 const USABLE_KIND: u64 = 0;
