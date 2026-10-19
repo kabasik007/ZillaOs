@@ -79,7 +79,7 @@
 
 ## Experimental GUI spike — Zilla Desktop (parallel to M1/M2 integration)
 
-**State:** source for a directly rendered framebuffer desktop, keyboard state, sample windows, dock, launcher and themes has been committed directly to `main`; this does **not** complete M1/M2/M7. Compile and QEMU/UI interaction evidence remain **NOT VERIFIED**. The experimental D0.5 update adds a pure floating-window manager with three demo windows, focus, z-order, minimization, maximization and keyboard geometry; actual execution still awaits QEMU. See [Desktop Roadmap](DESKTOP_ROADMAP.md) and [Desktop Architecture](DESKTOP_ARCHITECTURE.md). Real apps, secure compositing and user-space isolation remain dependent on M3–M6.
+**State:** source for a directly rendered framebuffer desktop, keyboard state, sample windows, dock, launcher and themes has been committed directly to `main`; this does **not** complete M1/M2/M7. Compile and QEMU/UI interaction evidence remain **NOT VERIFIED**. The experimental D0.6 update adds a QEMU PS/2 mouse driver, bounded mouse decoder, software cursor and pointer hit tests — see [MOUSE.md](MOUSE.md). The D0.5 update adds a pure floating-window manager with three demo windows, focus, z-order, minimization, maximization and keyboard geometry; actual execution still awaits QEMU. See [Desktop Roadmap](DESKTOP_ROADMAP.md) and [Desktop Architecture](DESKTOP_ARCHITECTURE.md). Real apps, secure compositing and user-space isolation remain dependent on M3–M6.
 
 ## M7 — v0.2.0 Usable developer prototype (future)
 
