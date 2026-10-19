@@ -10,6 +10,9 @@
 - Implemented a dark/light framebuffer desktop preview: top menu bar, centered Dock, wallpaper, a sample Files/Terminal/Settings window, and an F1 launcher.
 - Added polling QEMU PS/2 translated-set-1 keyboard adapter for F1–F5, Tab and Escape.
 - `vm-demo` now enters an event loop and redraws on recognized state changes instead of halting at the boot splash.
+- Added a three-window no_std floating window manager with independent visibility, z-order, focus, minimize, maximize, and screen-bounded keyboard geometry. Dock now indicates active/visible/minimized states.
+- Added F6/F7 and arrow/Shift+arrow input handling and extended QEMU GUI smoke to assert focus, visible counts, minimize/restore and screenshot.
+- **Important:** multiple *demo* windows do not imply separate processes or working file/terminal applications. Runtime tests remain NOT VERIFIED.
 - GUI serial markers: `ZILLAOS_DESKTOP_READY`, `ZILLAOS_DESKTOP_INPUT_POLL`, `ZILLAOS_DESKTOP_STATE_CHANGED`.
 - **NOT VERIFIED:** Rust compile, framebuffer appearance, QEMU keyboard support. No real file operations, shell execution, mouse, or separate UI process.
 - See [DESKTOP_ROADMAP.md](DESKTOP_ROADMAP.md) and [DESKTOP_ARCHITECTURE.md](DESKTOP_ARCHITECTURE.md).
