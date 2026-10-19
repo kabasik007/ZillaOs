@@ -6,6 +6,10 @@
 
 mod cpu;
 mod framebuffer;
+#[cfg(feature = "vm-demo")]
+mod graphics;
+#[cfg(feature = "vm-demo")]
+mod input;
 mod interrupts;
 mod limine;
 mod memtest;
@@ -108,25 +112,52 @@ pub extern "C" fn _start() -> ! {
     serial::write("ZILLAOS_FRAME_PROBE_OK\n");
     serial::write("ZILLAOS_MEMORY_READY\n");
 
-    if framebuffer::render() {
-        serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
-    } else {
-        serial::write("ZILLAOS_FRAMEBUFFER_UNAVAILABLE\n");
-    }
-
-    serial::write("ZILLAOS_BOOT_OK\n");
     #[cfg(feature = "vm-demo")]
     {
+        use zillaos_kernel::desktop::Desktop;
+
+        let mut desktop = Desktop::new();
+        let desktop_available = graphics::render(&desktop);
+        if desktop_available {
+            serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
+        } else {
+            serial::write("ZILLAOS_FRAMEBUFFER_UNAVAILABLE\n");
+        }
+        serial::write("ZILLAOS_BOOT_OK\n");
         serial::write("ZILLAOS_DEMO_READY\n");
+        if desktop_available {
+            serial::write("ZILLAOS_DESKTOP_READY\n");
+        } else {
+            serial::write("ZILLAOS_DESKTOP_NO_FRAMEBUFFER\n");
+        }
+
+        // No IRQs yet: the demo reads scan-set-1 bytes from the QEMU
+        // i8042 controller by polling, and only redraws on state changes.
+        let mut keyboard = input::Keyboard::new();
+        serial::write("ZILLAOS_DESKTOP_INPUT_POLL\n");
         loop {
-            // SAFETY: interrupts have not been enabled in this bootstrap.
-            unsafe {
-                core::arch::asm!("cli; hlt", options(nomem, nostack));
+            if let Some(key) = keyboard.poll() {
+                if desktop.handle(key) {
+                    serial::write("ZILLAOS_DESKTOP_STATE_CHANGED\n");
+                    if desktop_available {
+                        graphics::render(&desktop);
+                    }
+                }
             }
+            core::hint::spin_loop();
         }
     }
+
     #[cfg(not(feature = "vm-demo"))]
-    serial::debug_exit(0x10);
+    {
+        if framebuffer::render() {
+            serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
+        } else {
+            serial::write("ZILLAOS_FRAMEBUFFER_UNAVAILABLE\n");
+        }
+        serial::write("ZILLAOS_BOOT_OK\n");
+        serial::debug_exit(0x10);
+    }
 }
 
 #[cold]
