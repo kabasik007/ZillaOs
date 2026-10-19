@@ -47,6 +47,7 @@ The current framebuffer prototype is a **UI spike**; it is not proof that the pr
 | Stage | Target | Demonstration / gate |
 | --- | --- | --- |
 | **D0: Desktop preview** | committed source | Native RGB32 desktop, responsive layout, topbar, Dock, mock Files/Terminal/Settings, launcher; F1–F5, Tab, Esc; Rust state tests |
+| **D0.5: Window manager state** | source committed; integration unverified | Three independent demo windows, focus, z-order, minimize/maximize, keyboard movement and resizing; screenshot regression |
 | **D0-Q: Emulator validation** | next blocking step | Rust compilation PASS; QEMU/OVMF `demo` shows desktop; input switches window; screenshot + serial logs archived |
 | **D1: Graphics primitives** | after D0-Q | stable pixel and font layers, verified bounds/clipping, dirty-rect redraw, console and scalable text |
 | **D2: Input** | after CPU/IRQ foundation | reliable keyboard event queue, scancode translation, mouse/pointer, PS/2 and virtio-input with bounds tests |
@@ -98,3 +99,49 @@ multi-monitor, mouse movement, secure driver isolation.
 
 Other plans: [Kernel roadmap](ROADMAP.md), [Architecture](ARCHITECTURE.md),
 [Build & VM quickstart](VM.md).
+
+## D0.5 — Multiple floating windows (source implemented, runtime NOT VERIFIED)
+
+A new testable `src/window_manager.rs` now owns three independent demo window
+records, visible/hidden/minimized/maximized states, active focus, z-order and
+screen-bounded geometry. This is an **intermediate milestone before D3**,
+not a user-space compositor and not real application processes.
+
+**New controls:**
+
+| Key | Action |
+| --- | --- |
+| F1 | Launcher |
+| F2 / F3 / F4 | open or restore Files / Terminal / Settings |
+| F5 | switch dark/light |
+| F6 | minimize focused window |
+| F7 | maximize or restore focused window |
+| Tab | cycle focus among *visible* windows |
+| Arrow keys | move focused normal window by 24 pixels |
+| Shift + arrows | resize normal window by 24 pixels |
+| Esc | close launcher or hide focused demo window |
+
+Direct framebuffer rendering now draws each visible window in explicit
+back-to-front order, including a distinct title treatment for focus.
+Dock indicators distinguish active/visible/minimized windows. Hidden
+or minimized demo windows retain their rect and can reopen through F2–F4.
+
+**Automated D0.5 regression checks (written but not executed in QEMU):**
+`cargo test --lib` tests window focus, ordering, geometry, maximize,
+minimize and scancode modifiers. `scripts/desktop_smoke.py` now sends
+F3, F4, Tab, F6, F2 to QEMU and checks the resulting serial snapshots
+before saving a framebuffer screenshot.
+
+Exact expected snapshots:
+```text
+F3  -> 2 visible, focus TERMINAL
+F4  -> 3 visible, focus SETTINGS
+Tab -> 3 visible, focus FILES
+F6  -> 2 visible, focus SETTINGS
+F2  -> 3 visible, focus FILES
+```
+
+**Limitations:** these are mock app windows within one privileged kernel
+process. There is no mouse dragging, clipboard, real filesystem, terminal
+execution, user-mode service or GPU acceleration. The bitmap desktop
+is intended only for a disposable QEMU virtual machine, not native PCs.
