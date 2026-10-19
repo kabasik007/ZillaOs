@@ -38,6 +38,9 @@ jobs:
           python3 -m unittest discover -s tests -v
           bash -n scripts/build.sh
 
+      - name: Test pure Rust memory algorithms on host
+        run: cargo test --lib --target x86_64-unknown-linux-gnu --offline
+
       - name: Build UEFI ISO
         run: bash scripts/build.sh test
 
