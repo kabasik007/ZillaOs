@@ -10,7 +10,12 @@ unsafe fn outb(port: u16, value: u8) {
     // SAFETY: privileged x86-64 port I/O; only used for the known QEMU
     // serial and debug-exit ports during the single-core bootstrap phase.
     unsafe {
-        asm!(\n            "out dx, al",\n            in("dx") port,\n            in("al") value,\n            options(nomem, nostack, preserves_flags)\n        );
+        asm!(
+            "out dx, al",
+            in("dx") port,
+            in("al") value,
+            options(nomem, nostack, preserves_flags)
+        );
     }
 }
 
@@ -19,7 +24,12 @@ unsafe fn inb(port: u16) -> u8 {
     let result: u8;
     // SAFETY: reading the QEMU 16550 line status register.
     unsafe {
-        asm!(\n            "in al, dx",\n            in("dx") port,\n            out("al") result,\n            options(nomem, nostack, preserves_flags)\n        );
+        asm!(
+            "in al, dx",
+            in("dx") port,
+            out("al") result,
+            options(nomem, nostack, preserves_flags)
+        );
     }
     result
 }
@@ -66,7 +76,11 @@ pub fn write_hex(value: u64) {
     write("0x");
     for shift in (0..16).rev() {
         let digit = ((value >> (shift * 4)) & 0x0f) as u8;
-        let ascii = if digit < 10 {\n            b'0' + digit\n        } else {\n            b'a' + digit - 10\n        };
+        let ascii = if digit < 10 {
+            b'0' + digit
+        } else {
+            b'a' + digit - 10
+        };
         write_byte(ascii);
     }
 }
@@ -76,7 +90,12 @@ pub fn write_hex(value: u64) {
 pub fn debug_exit(value: u32) -> ! {
     // SAFETY: QEMU-only debug exit test device, never a host disk or MMIO.
     unsafe {
-        asm!(\n            "out dx, eax",\n            in("dx") 0xf4_u16,\n            in("eax") value,\n            options(nomem, nostack, preserves_flags)\n        );
+        asm!(
+            "out dx, eax",
+            in("dx") 0xf4_u16,
+            in("eax") value,
+            options(nomem, nostack, preserves_flags)
+        );
     }
     loop {
         // SAFETY: halt idle CPU if debug-exit device is not present.
