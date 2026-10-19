@@ -29,9 +29,6 @@ jobs:
           qemu-system-x86_64 --version
           xorriso -version | head -n 2
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
       - name: Validate VM helper syntax and host-side tests
         run: |
           python3 -m compileall -q scripts tests
@@ -67,6 +64,11 @@ jobs:
         run: |
           bash scripts/build.sh demo
           python3 scripts/desktop_smoke.py --timeout 90
+
+      # Formatting is a strict final gate, but must not prevent collection
+      # of useful compiler, QEMU boot and GUI diagnostics beforehand.
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
       - name: Save image and logs
         if: always()
