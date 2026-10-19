@@ -87,7 +87,7 @@ pub extern "C" fn _start() -> ! {
 
     // SAFETY: allocator returns distinct, exclusively owned USABLE physical
     // pages, and Limine base revision 6 maps USABLE pages via the HHDM.
-    if unsafe { memtest::two_frame_probe(first, second, offset) }.is_err() {
+    if unsafe { memtest::two_frame_probe(first, second, offset, cpu.virtual_address_bits) }.is_err() {
         serial::write("ERR: physical frame HHDM readback mismatch\n");
         return_boot_failure();
     }
