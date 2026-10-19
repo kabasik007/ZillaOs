@@ -145,6 +145,15 @@ pub extern "C" fn _start() -> ! {
             if let Some(key) = keyboard.poll() {
                 if desktop.handle(key) {
                     serial::write("ZILLAOS_DESKTOP_STATE_CHANGED\n");
+                    serial::write("ZILLAOS_DESKTOP_VISIBLE=");
+                    serial::write_hex(desktop.windows.visible_count() as u64);
+                    serial::write("\nZILLAOS_DESKTOP_FOCUS=");
+                    match desktop.active() {
+                        Some(zillaos_kernel::desktop::App::Files) => serial::write("FILES\n"),
+                        Some(zillaos_kernel::desktop::App::Terminal) => serial::write("TERMINAL\n"),
+                        Some(zillaos_kernel::desktop::App::Settings) => serial::write("SETTINGS\n"),
+                        None => serial::write("NONE\n"),
+                    }
                     if desktop_available {
                         graphics::render(&desktop);
                     }
