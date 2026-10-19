@@ -53,8 +53,72 @@ pub fn backing_index(row: usize, col: usize) -> Option<usize> {
     row.checked_mul(BACKBUFFER_WIDTH)?.checked_add(col)
 }
 
+/// Fill a clipped rectangle inside a packed RGB32 array with an explicit
+/// row stride. Returns the exact number of pixels touched, or zero when
+/// metadata would address outside the provided backing slice.
+pub fn fill_rect(
+    pixels: &mut [u32],
+    stride: usize,
+    canvas_width: usize,
+    canvas_height: usize,
+    requested: Region,
+    color: u32,
+) -> usize {
+    if stride == 0 || canvas_width > stride {
+        return 0;
+    }
+    let Some(required) = stride.checked_mul(canvas_height) else { return 0 };
+    if required > pixels.len() {
+        return 0;
+    }
+    let Some(clip) = requested.clipped(canvas_width, canvas_height) else { return 0 };
+    for row in clip.y..clip.y + clip.height {
+        let start = row * stride + clip.x;
+        pixels[start..start + clip.width].fill(color);
+    }
+    clip.width * clip.height
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn rectangle_fill_preserves_padding_and_outside_pixels() {
+        // Physical backing has stride 6, but visible canvas is 4x3.
+        let mut pixels = [0x55u32; 18];
+        assert_eq!(fill_rect(
+            &mut pixels, 6, 4, 3, Region::new(2, 1, 8, 8), 0xaa
+        ), 4);
+        for row in 0..3 {
+            for col in 0..6 {
+                let expected = if row >= 1 && col >= 2 && col < 4 {
+                    0xaa
+                } else {
+                    0x55
+                };
+                assert_eq!(pixels[row * 6 + col], expected);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_dangerous_stride_height_and_allocation_mismatch() {
+        let mut pixels = [0u32; 12];
+        assert_eq!(fill_rect(&mut pixels, 2, 4, 3, Region::new(0, 0, 2, 2), 1), 0);
+        assert_eq!(fill_rect(&mut pixels, 5, 4, 3, Region::new(0, 0, 2, 2), 1), 0);
+        assert_eq!(fill_rect(&mut pixels, usize::MAX, 3, 4,
+                             Region::new(0, 0, 2, 2), 1), 0);
+        assert!(pixels.iter().all(|px| *px == 0));
+    }
+
+    #[test]
+    fn full_surface_fill_counts_correct_pixels() {
+        let mut pixels = [0; 320];
+        assert_eq!(fill_rect(&mut pixels, 32, 32, 10,
+                             Region::new(0, 0, 32, 10), 0x112233), 320);
+        assert!(pixels.iter().all(|px| *px == 0x112233));
+    }
+
+
     use super::*;
 
     #[test]
