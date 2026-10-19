@@ -67,6 +67,26 @@ def screenshot_dimensions(path: Path) -> tuple[int, int] | None:
         return None
 
 
+def changed_rgb_bytes(before: Path, after: Path) -> int | None:
+    """Return changed RGB data byte count between complete same-size QEMU PPMs.
+
+    Header bytes must match; this deliberately refuses false evidence when
+    screenshots have different modes, dimensions or malformed P6 payloads.
+    """
+    if screenshot_dimensions(before) is None:
+        return None
+    if screenshot_dimensions(before) != screenshot_dimensions(after):
+        return None
+    left = before.read_bytes()
+    right = after.read_bytes()
+    if len(left) != len(right):
+        return None
+    # Firmware display size and P6 metadata are stable between captures.
+    if left[:32] != right[:32]:
+        return None
+    return sum(a != b for a, b in zip(left, right))
+
+
 def read_log(path: Path) -> str:
     try:
         return path.read_text(errors="replace")
@@ -223,6 +243,28 @@ def main() -> int:
                 ):
                     print("FAIL: no PS/2 mouse movement reached desktop", file=sys.stderr)
                     return 1
+                if has_line(read_log(log), "ZILLAOS_GRAPHICS_BUFFERED_READY"):
+                    if not wait_until(
+                        lambda: has_line(read_log(log), "ZILLAOS_GRAPHICS_CURSOR_DAMAGE_OK"),
+                        guest, deadline,
+                    ):
+                        print("FAIL: mouse motion did not use buffered cursor damage path",
+                              file=sys.stderr)
+                        return 1
+
+                moved_screen = workdir / "frame-cursor.ppm"
+                monitor_command(monitor, f"screendump {moved_screen}")
+                if not wait_until(moved_screen.exists, guest, deadline):
+                    print("FAIL: no pointer screenshot", file=sys.stderr)
+                    return 1
+                changes = changed_rgb_bytes(screenshot_path, moved_screen)
+                if changes is None or not (1 <= changes <= 4000):
+                    print(f"FAIL: mouse cursor redraw not isolated (changed RGB bytes={changes})",
+                          file=sys.stderr)
+                    return 1
+                cursor_output = args.output.with_name(args.output.stem + "-cursor.ppm")
+                shutil.copyfile(moved_screen, cursor_output)
+
                 monitor_command(monitor, "mouse_button 1")
                 if not wait_until(
                     lambda: has_line(read_log(log), "ZILLAOS_MOUSE_LEFT_DOWN"),
@@ -239,7 +281,7 @@ def main() -> int:
                     return 1
 
                 print(f"PASS: ZillaOS GUI 3 windows, focus, minimize/restore, PS/2 mouse motion+click; screenshot {dimensions[0]}x{dimensions[1]}")
-                print(f"Screen: {args.output}; serial: {log}")
+                print(f"Screens: {args.output} and {cursor_output}; serial: {log}")
                 return 0
             finally:
                 if guest.poll() is None:
