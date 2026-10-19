@@ -267,6 +267,21 @@ impl Screen {
         }
     }
 
+    /// A small software cursor. Always rendered LAST so no window or
+    /// launcher can cover it. Rectangle clipping keeps every pixel safe.
+    fn cursor(&self, state: &Desktop) {
+        if !state.pointer.visible { return; }
+        let x = state.pointer.x;
+        let y = state.pointer.y;
+        for row in 0..17usize {
+            let width = if row < 12 { 2 + row / 2 } else { 3 };
+            self.rectangle(x, y.saturating_add(row), width + 2, 1, 0x092134);
+            self.rectangle(x.saturating_add(1), y.saturating_add(row),
+                           width, 1, 0xf4fbff);
+        }
+        self.rectangle(x.saturating_add(2), y.saturating_add(13), 3, 5, 0x1dd9b4);
+    }
+
     fn key_legend(&self, state: &Desktop, layout: &Layout) {
         if layout.width < 730 || layout.height < 460 { return; }
         let fg = if state.dark { 0xa5c7d8 } else { 0x244d64 };
@@ -296,6 +311,7 @@ pub fn render(state: &Desktop) -> bool {
     screen.dock(state, &layout);
     screen.launcher(state, &layout);
     screen.key_legend(state, &layout);
+    screen.cursor(state);
     true
 }
 
