@@ -53,12 +53,12 @@ pub struct WindowManager {
 
 impl WindowManager {
     pub fn new(viewport: Layout) -> Self {
-        let base = Rect {
+        let base = Self::clamp_rect(Rect {
             x: viewport.window_x,
             y: viewport.window_y,
             width: viewport.window_width,
             height: viewport.window_height,
-        };
+        }, viewport);
         let offset = (viewport.width / 20).clamp(12, 40);
         let shifted = Self::clamp_rect(
             Rect {
