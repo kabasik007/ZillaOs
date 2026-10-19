@@ -53,11 +53,15 @@ pub struct WindowManager {
 
 impl WindowManager {
     pub fn new(viewport: Layout) -> Self {
+        // Keep room for a visible cascade even at 800x600; the original
+        // layout window occupies almost the entire screen.
+        let width = viewport.window_width.min((viewport.width * 78 / 100).max(240));
+        let height = viewport.window_height.min((viewport.height * 64 / 100).max(100));
         let base = Self::clamp_rect(Rect {
-            x: viewport.window_x,
-            y: viewport.window_y,
-            width: viewport.window_width,
-            height: viewport.window_height,
+            x: viewport.width.saturating_sub(width) / 2,
+            y: viewport.top_bar.saturating_add(25),
+            width,
+            height,
         }, viewport);
         let offset = (viewport.width / 20).clamp(12, 40);
         let shifted = Self::clamp_rect(
