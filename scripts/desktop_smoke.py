@@ -67,22 +67,34 @@ def screenshot_dimensions(path: Path) -> tuple[int, int] | None:
         return None
 
 
-def changed_rgb_bytes(before: Path, after: Path) -> int | None:
-    """Return changed RGB data byte count between complete same-size QEMU PPMs.
+def ppm_payload(path: Path) -> bytes | None:
+    """Return P6 RGB data; header is allowed to vary in textual spacing."""
+    try:
+        with path.open("rb") as f:
+            if f.readline().strip() != b"P6":
+                return None
+            dimensions = f.readline().strip()
+            while dimensions.startswith(b"#"):
+                dimensions = f.readline().strip()
+            width, height = (int(v) for v in dimensions.split())
+            if int(f.readline().strip()) != 255:
+                return None
+            if width <= 0 or height <= 0 or width > 8192 or height > 8192:
+                return None
+            data = f.read()
+            return data if len(data) == width * height * 3 else None
+    except (OSError, ValueError):
+        return None
 
-    Header bytes must match; this deliberately refuses false evidence when
-    screenshots have different modes, dimensions or malformed P6 payloads.
-    """
-    if screenshot_dimensions(before) is None:
+
+def changed_rgb_bytes(before: Path, after: Path) -> int | None:
+    """Compare screenshot *pixels* after validating PPM dimensions."""
+    dimensions = screenshot_dimensions(before)
+    if dimensions is None or dimensions != screenshot_dimensions(after):
         return None
-    if screenshot_dimensions(before) != screenshot_dimensions(after):
-        return None
-    left = before.read_bytes()
-    right = after.read_bytes()
-    if len(left) != len(right):
-        return None
-    # Firmware display size and P6 metadata are stable between captures.
-    if left[:32] != right[:32]:
+    left = ppm_payload(before)
+    right = ppm_payload(after)
+    if left is None or right is None or len(left) != len(right):
         return None
     return sum(a != b for a, b in zip(left, right))
 
