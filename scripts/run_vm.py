@@ -9,7 +9,10 @@ import subprocess
 import sys
 import tempfile
 
-from smoke_test import OVMF_PAIRS, ROOT
+if __package__:
+    from .smoke_test import OVMF_PAIRS, ROOT
+else:
+    from smoke_test import OVMF_PAIRS, ROOT
 
 DEMO_ISO = ROOT / "dist" / "zillaos-0.0.1-demo-uefi.iso"
 
