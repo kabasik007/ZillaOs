@@ -77,6 +77,10 @@
 
 **FAIL:** raw host disks used in CI; file reads occur through privileged shortcuts without documented rationale.
 
+## Experimental GUI spike — Zilla Desktop (parallel to M1/M2 integration)
+
+**State:** source for a directly rendered framebuffer desktop, keyboard state, sample windows, dock, launcher and themes has been committed directly to `main`; this does **not** complete M1/M2/M7. Compile and QEMU/UI interaction evidence remain **NOT VERIFIED**. See [Desktop Roadmap](DESKTOP_ROADMAP.md) and [Desktop Architecture](DESKTOP_ARCHITECTURE.md). Real apps, secure compositing and user-space isolation remain dependent on M3–M6.
+
 ## M7 — v0.2.0 Usable developer prototype (future)
 
 **Scope candidates:** compositor/framebuffer rendering, input events, a text terminal, network service and expanded driver isolation.
