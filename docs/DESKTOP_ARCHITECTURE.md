@@ -21,7 +21,7 @@ floating workspace. It tracks focus, z-order, geometry and minimize/maximize
 state without hardware access. `src/desktop.rs` sends translated keyboard
 events to the model. None of these demo windows represents a real process.
 
-`src/graphics.rs` is an experimental **immediate-mode** renderer. It
+`src/graphics.rs` is an experimental **software-backed immediate-mode** renderer. It
 checks Limine RGB32 framebuffer metadata and writes bounded 32-bit pixels,
 rendering a background, menu bar, app window, dock, launcher and fonts.
 The renderer draws a software pointer last; direct framebuffer redraws happen on mouse and keyboard state changes. It has no persistent global
@@ -52,7 +52,8 @@ edge when space is sufficient. The prototype includes a tiny built-in
 
 - `limine::framebuffer()` checks pointer, RGB mask size, pitch,
   4-byte alignment, maximum dimensions and 64MiB maximum total surface.
-- All drawing rectangles clamp to framebuffer bounds.
+- All drawing rectangles clamp to framebuffer bounds; raster geometry and
+  checked RGB32 filling are independently host-testable (see `src/raster.rs`).
 - No heap, hardware acceleration, dynamic OS resources, filesystem access,
   privilege transitions or unbounded GPU commands are issued by UI code.
 - The framebuffer mapping is provided by Limine; when ZillaOS owns page
