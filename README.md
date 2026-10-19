@@ -8,7 +8,7 @@
 
 Build a small, comprehensible, testable OS from scratch. A crash in an unprivileged service should not crash the kernel; each component should have only the resources and privileges it needs.
 
-**First engineering milestone:** Boot in QEMU/OVMF; start a Rust kernel, initialize memory/interrupts; create two isolated user processes, exchange a message through a capability-guarded IPC endpoint, and safely recover from the termination of a user-space service.
+**First engineering milestone (M1):** Boot a Rust kernel in QEMU/OVMF, sanity-check Limine memory-map metadata, emit a serial success marker and pass an automated exit-status smoke test. The isolated process, IPC and restart goals are separate later milestones (M3–M5).
 
 ## Architecture at a glance
 
@@ -54,6 +54,7 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 ## Documentation
 
 - [Build and QEMU smoke test](docs/BUILD.md) — first kernel source, pinned Limine archive and reproducible test commands.
+- [Run in VM on Windows and Linux](docs/VM.md) — WSL2 setup, graphical demo, host dependency checks.
 - [Architecture](docs/ARCHITECTURE.md) — security boundaries, kernel components, memory model, IPC and interface contracts.
 - [Roadmap and acceptance criteria](docs/ROADMAP.md).
 - [Architecture decisions](docs/DECISIONS.md).
@@ -86,8 +87,12 @@ Methodology: [Be Ambitious Pro](https://app.notion.com/p/3fb91a1af397814782cac43
 ## M1 development commands
 
 ```bash
-bash scripts/build.sh
+python3 scripts/doctor.py
+python3 -m unittest discover -s tests -v
+bash scripts/build.sh test
 python3 scripts/smoke_test.py --timeout 90
+bash scripts/build.sh demo
+python3 scripts/run_vm.py --display gtk
 ```
 
-This creates a UEFI ISO and verifies boot in QEMU/OVMF when prerequisites are present. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test.
+This creates distinct test and graphical-demo UEFI images, and verifies test-mode boot in QEMU/OVMF when prerequisites are present. Demo mode draws a framebuffer splash and remains running. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test.
