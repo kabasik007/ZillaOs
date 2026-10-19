@@ -75,8 +75,8 @@ emulation (`accel=tcg`), so no KVM or nested virtualization is required.
 
 | Mode | ISO | Guest behavior |
 | --- | --- | --- |
-| `test` | `dist/zillaos-0.0.1-test-uefi.iso` | Print serial marker and exit QEMU with expected status 33 |
-| `demo` | `dist/zillaos-0.0.1-demo-uefi.iso` | Draw framebuffer logo, print serial marker, stay running |
+| `test` | `dist/zillaos-0.0.2-dev-test-uefi.iso` | Print serial marker and exit QEMU with expected status 33 |
+| `demo` | `dist/zillaos-0.0.2-dev-demo-uefi.iso` | Draw framebuffer logo, print serial marker, stay running |
 
 For both modes, Limine 12.9.3 is downloaded on first use and SHA-256
 verified against the value supplied in GitHub's official release page.
