@@ -74,6 +74,38 @@ python3 scripts/smoke_test.py --timeout 90
 This is the recommended deployment-free test. QEMU uses software CPU
 emulation (`accel=tcg`), so no KVM or nested virtualization is required.
 
+## Interactive Zilla Desktop preview
+
+```bash
+git switch main
+git pull origin main
+cargo test --lib --target x86_64-unknown-linux-gnu --offline
+bash scripts/build.sh demo
+python3 scripts/run_vm.py --display gtk
+```
+
+In the QEMU window, use **F1** Launcher, **F2** Files, **F3** Terminal,
+**F4** Settings, **F5** dark/light theme, **Tab** to cycle, **Esc** to
+close an overlay/window. These views are examples only: Files does not
+access the disk and Terminal does not execute shell commands yet.
+The current input implementation polls translated PS/2 set-1 scancodes
+and may require future controller initialization on some systems.
+
+For automated GUI verification using a disposable headless QEMU machine
+with keyboard injection and a framebuffer screenshot:
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 scripts/desktop_smoke.py --timeout 90
+```
+
+Expected artifacts: `build/logs/desktop-qemu.log` and
+`build/logs/desktop-qemu.ppm`. **No successful GUI run has yet been
+observed in the current execution environment.** A passing test
+requires `ZILLAOS_DESKTOP_READY`, `ZILLAOS_DESKTOP_INPUT_POLL`,
+and keyboard-triggered `ZILLAOS_DESKTOP_STATE_CHANGED`, plus a
+non-flat QEMU framebuffer screenshot.
+
 ## Distinct boot modes
 
 | Mode | ISO | Guest behavior |
