@@ -8,6 +8,7 @@ from scripts import smoke_test, run_vm
 
 GOOD = (
     "ZillaOS v0.0.2-dev | x86-64 | Limine\r\n"
+    "ZILLAOS_IDT_READY\r\n"
     "ZILLAOS_CPU_PHYSICAL_BITS=0x0000000000000024\r\n"
     "ZILLAOS_CPU_VIRTUAL_BITS=0x0000000000000030\r\n"
     "ZILLAOS_CPU_READY\r\n"
@@ -22,6 +23,16 @@ GOOD = (
 )
 
 
+FAULT = (
+    "ZillaOS v0.0.2-dev | x86-64 | Limine\r\n"
+    "ZILLAOS_IDT_READY\r\n"
+    "ZILLAOS_EXCEPTION_VECTOR=0x0000000000000006\r\n"
+    "ZILLAOS_EXCEPTION_ERROR=0x0000000000000000\r\n"
+    "ZILLAOS_EXCEPTION_RIP=0xffffffff80001000\r\n"
+    "ZILLAOS_EXCEPTION_FATAL\r\n"
+)
+
+
 class BootEvidenceTests(unittest.TestCase):
     def test_complete_evidence_passes(self):
         self.assertTrue(smoke_test.boot_passed(33, GOOD))
@@ -29,6 +40,10 @@ class BootEvidenceTests(unittest.TestCase):
     def test_substring_marker_does_not_pass(self):
         self.assertFalse(smoke_test.boot_passed(
             33, GOOD.replace("ZILLAOS_BOOT_OK", "boot: ZILLAOS_BOOT_OK is not ready")))
+
+    def test_missing_idt_ready_fails(self):
+        self.assertFalse(smoke_test.boot_passed(
+            33, GOOD.replace("ZILLAOS_IDT_READY", "NO_IDT")))
 
     def test_wrong_exit_fails(self):
         self.assertFalse(smoke_test.boot_passed(0, GOOD))
@@ -72,6 +87,25 @@ class BootEvidenceTests(unittest.TestCase):
             smoke_test.serial_hex("ZILLAOS_CPU_PHYSICAL_BITS=0x24\r\n",
                                   "ZILLAOS_CPU_PHYSICAL_BITS"),
             36)
+
+
+class ExceptionEvidenceTests(unittest.TestCase):
+    def test_ud2_trap_evidence_passes(self):
+        self.assertTrue(smoke_test.fault_passed(35, FAULT))
+
+    def test_triple_fault_exit_does_not_pass(self):
+        self.assertFalse(smoke_test.fault_passed(0, FAULT))
+
+    def test_wrong_exception_vector_fails(self):
+        self.assertFalse(smoke_test.fault_passed(
+            35, FAULT.replace("=0x0000000000000006", "=0x000000000000000e")))
+
+    def test_fault_without_diagnostics_fails(self):
+        self.assertFalse(smoke_test.fault_passed(
+            35, FAULT.replace("ZILLAOS_EXCEPTION_FATAL", "KERNEL_RESET")))
+
+    def test_normal_boot_does_not_pass_as_fault(self):
+        self.assertFalse(smoke_test.fault_passed(33, GOOD))
 
 
 class VmConfigurationTests(unittest.TestCase):
