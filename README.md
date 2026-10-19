@@ -2,7 +2,7 @@
 
 **ZillaOS** is an experimental, independent operating system project: a Rust-first, capability-oriented microkernel with isolated user-space services. This is a learning and engineering project. The **first kernel bootstrap source is committed**, but a successful boot has not yet been independently verified.
 
-> Status (2026-10-19): M1 boot implementation plus early M2 physical frame planner committed to **main**. **Rust compilation, host tests and QEMU boot: NOT RUN** in this environment.
+> Status (2026-10-19): **v0.0.2-dev** committed directly to **main**. CPUID, Limine HHDM, RAM readback/zero test, paging metadata and negative tests are implemented in source. **Rust build and QEMU boot NOT VERIFIED**.
 
 ## Mission / Мета
 
@@ -56,7 +56,9 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 - [Build and QEMU smoke test](docs/BUILD.md) — first kernel source, pinned Limine archive and reproducible test commands.
 - [Run in VM on Windows and Linux](docs/VM.md) — WSL2 setup, graphical demo, host dependency checks.
 - [Architecture](docs/ARCHITECTURE.md) — security boundaries, kernel components, memory model, IPC and interface contracts.
-- [Early physical memory manager](docs/MEMORY.md) — bounded Limine map copy, usable frame reservations, constraints and tests.
+- [Early physical memory manager](docs/MEMORY.md) — bounded Limine map copy, CPU physical limits, frame-readback experiments.
+- [Paging design](docs/PAGING.md) — canonical addresses and typed page-table metadata.
+- [Changelog](docs/CHANGELOG.md) — v0.0.2-dev details and release blockers.
 - [Roadmap and acceptance criteria](docs/ROADMAP.md).
 - [Architecture decisions](docs/DECISIONS.md).
 - [Threat model and testing](docs/VALIDATION.md).
@@ -97,4 +99,4 @@ bash scripts/build.sh demo
 python3 scripts/run_vm.py --display gtk
 ```
 
-This creates distinct test and graphical-demo UEFI images, and verifies test-mode boot in QEMU/OVMF when prerequisites are present. Demo mode draws a framebuffer splash and remains running. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test. The early M2 kernel also expects a `ZILLAOS_MEMORY_READY` serial marker, but this has not yet been observed in an emulator.
+This creates distinct test and graphical-demo UEFI images, and verifies test-mode boot in QEMU/OVMF when prerequisites are present. Demo mode draws a framebuffer splash and remains running. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test. The M2 boot integration additionally requires `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK` and `ZILLAOS_MEMORY_READY`; none has been observed in a real emulator run yet.
