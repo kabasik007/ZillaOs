@@ -9,21 +9,24 @@ from scripts import smoke_test, run_vm
 class BootEvidenceTests(unittest.TestCase):
     def test_success_requires_both_signals(self):
         self.assertTrue(smoke_test.boot_passed(
-            33, "ZILLAOS_FRAMEBUFFER_READY\nZILLAOS_BOOT_OK\n"))
+            33, "ZILLAOS_MEMORY_READY\nZILLAOS_FRAMEBUFFER_READY\nZILLAOS_BOOT_OK\n"))
+
+    def test_missing_memory_validation_fails(self):
+        self.assertFalse(smoke_test.boot_passed(33, "ZILLAOS_BOOT_OK"))
 
     def test_missing_success_marker_fails(self):
         self.assertFalse(smoke_test.boot_passed(33, "UEFI booted, not our kernel"))
 
     def test_failure_marker_even_with_success_fails(self):
         self.assertFalse(smoke_test.boot_passed(
-            33, "ZILLAOS_BOOT_OK\nZILLAOS_PANIC\n"))
+            33, "ZILLAOS_MEMORY_READY\nZILLAOS_BOOT_OK\nZILLAOS_PANIC\n"))
 
     def test_wrong_exit_even_with_marker_fails(self):
-        self.assertFalse(smoke_test.boot_passed(0, "ZILLAOS_BOOT_OK"))
+        self.assertFalse(smoke_test.boot_passed(0, "ZILLAOS_MEMORY_READY\nZILLAOS_BOOT_OK"))
 
     def test_explicit_fail_marker_fails(self):
         self.assertFalse(smoke_test.boot_passed(
-            33, "ZILLAOS_BOOT_FAIL\nZILLAOS_BOOT_OK"))
+            33, "ZILLAOS_MEMORY_READY\nZILLAOS_BOOT_FAIL\nZILLAOS_BOOT_OK"))
 
 
 class VmConfigurationTests(unittest.TestCase):
