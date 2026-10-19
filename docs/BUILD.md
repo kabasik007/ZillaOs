@@ -17,6 +17,19 @@ cd ZillaOs
 bash scripts/build.sh
 ```
 
+For a readable graphical QEMU window instead of an auto-exiting smoke test:
+
+```bash
+bash scripts/build.sh demo
+python3 scripts/run_vm.py --display gtk
+```
+
+The demo displays an early graphical splash (not a desktop) and stays
+running until the VM is stopped. The test build is created with
+`bash scripts/build.sh test` and generates
+`dist/zillaos-0.0.1-test-uefi.iso`; the demo image is
+`dist/zillaos-0.0.1-demo-uefi.iso`.
+
 The build script checks the downloaded Limine binary archive against SHA-256
 `e02a473c6dc6df25159697f94930272397f21fd86e5d4eeee61bba72c95ec8d2`
 before unpacking it, compiles the bare-metal Rust kernel, and creates
@@ -36,13 +49,20 @@ ZILLAOS_MEMMAP_REGIONS=0x...
 ZILLAOS_BOOT_OK
 ```
 
+Host-only tests (run even before Rust or QEMU are installed):
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 scripts/doctor.py
+```
+
 The test requires both the success marker and QEMU's debug-exit status 33;
 fail markers, hangs and missing image files must cause test failure.
 OVMF variable storage is copied to a new temporary directory for each run.
 
 ### Windows
 
-For initial development use Ubuntu under **WSL2** for ISO build scripting;
+For initial development use Ubuntu under **WSL2** for ISO build scripting; see [Windows + Linux VM Quickstart](VM.md).
 QEMU + OVMF can run on Windows or under a supported Linux environment.
 Do **not** write boot images to actual physical disks. The current kernel
 is a QEMU lab artifact; debug-exit I/O port `0xf4` is test-specific.
