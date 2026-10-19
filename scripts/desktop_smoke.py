@@ -21,7 +21,7 @@ else:
     from smoke_test import OVMF_PAIRS, ROOT
 
 DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.2-dev-demo-uefi.iso"
-REQUIRED = ("ZILLAOS_DESKTOP_READY", "ZILLAOS_DESKTOP_INPUT_POLL", "ZILLAOS_WINDOW_MANAGER_READY")
+REQUIRED = ("ZILLAOS_DESKTOP_READY", "ZILLAOS_DESKTOP_INPUT_POLL", "ZILLAOS_WINDOW_MANAGER_READY", "ZILLAOS_MOUSE_READY")
 KEY_MARKER = "ZILLAOS_DESKTOP_STATE_CHANGED"
 FAILURE = ("ZILLAOS_BOOT_FAIL", "ZILLAOS_PANIC", "ZILLAOS_EXCEPTION_FATAL")
 
@@ -213,7 +213,32 @@ def main() -> int:
                           file=sys.stderr)
                     return 1
 
-                print(f"PASS: ZillaOS GUI 3 windows, focus, minimize and restore; screenshot {dimensions[0]}x{dimensions[1]}")
+                # HMP mouse_move and mouse_button are supported by QEMU's
+                # monitor; expected serial markers come from actual PS/2
+                # packets, not merely an injected command succeeding.
+                monitor_command(monitor, "mouse_move 20 10")
+                if not wait_until(
+                    lambda: has_line(read_log(log), "ZILLAOS_MOUSE_MOTION_DETECTED"),
+                    guest, deadline,
+                ):
+                    print("FAIL: no PS/2 mouse movement reached desktop", file=sys.stderr)
+                    return 1
+                monitor_command(monitor, "mouse_button 1")
+                if not wait_until(
+                    lambda: has_line(read_log(log), "ZILLAOS_MOUSE_LEFT_DOWN"),
+                    guest, deadline,
+                ):
+                    print("FAIL: left mouse press was not decoded", file=sys.stderr)
+                    return 1
+                monitor_command(monitor, "mouse_button 0")
+                if not wait_until(
+                    lambda: has_line(read_log(log), "ZILLAOS_MOUSE_LEFT_UP"),
+                    guest, deadline,
+                ):
+                    print("FAIL: left mouse release was not decoded", file=sys.stderr)
+                    return 1
+
+                print(f"PASS: ZillaOS GUI 3 windows, focus, minimize/restore, PS/2 mouse motion+click; screenshot {dimensions[0]}x{dimensions[1]}")
                 print(f"Screen: {args.output}; serial: {log}")
                 return 0
             finally:
