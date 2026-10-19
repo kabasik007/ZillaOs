@@ -103,8 +103,9 @@ python3 -m unittest discover -s tests -v
 python3 scripts/desktop_smoke.py --timeout 90
 ```
 
-Expected artifacts: `build/logs/desktop-qemu.log` and
-`build/logs/desktop-qemu.ppm`. **No successful GUI run has yet been
+Expected artifacts: `build/logs/desktop-qemu.log`,
+`build/logs/desktop-qemu.ppm`, and
+`build/logs/desktop-qemu-cursor.ppm` (after pointer motion). **No successful GUI run has yet been
 observed in the current execution environment.** A passing test
 requires `ZILLAOS_DESKTOP_READY`, `ZILLAOS_DESKTOP_INPUT_POLL`,
 keyboard-triggered `ZILLAOS_DESKTOP_STATE_CHANGED`, mouse movement and
