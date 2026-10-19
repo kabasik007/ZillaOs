@@ -99,6 +99,8 @@ pub fn debug_exit(value: u32) -> ! {
     }
     loop {
         // SAFETY: halt idle CPU if debug-exit device is not present.
-        unsafe {\n            asm!("cli; hlt", options(nomem, nostack));\n        }
+        unsafe {
+            asm!("cli; hlt", options(nomem, nostack));
+        }
     }
 }
