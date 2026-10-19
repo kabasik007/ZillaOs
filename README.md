@@ -1,8 +1,8 @@
 # ZillaOS
 
-**ZillaOS** is an experimental, independent operating system project: a Rust-first, capability-oriented microkernel with isolated user-space services. This is a learning and engineering project, **not yet a bootable operating system**.
+**ZillaOS** is an experimental, independent operating system project: a Rust-first, capability-oriented microkernel with isolated user-space services. This is a learning and engineering project. The **first kernel bootstrap source is committed**, but a successful boot has not yet been independently verified.
 
-> Status: architecture baseline v0.1 (2026-10-19). No working kernel has been published or verified.
+> Status: architecture baseline v0.1 + M1 source bootstrap (2026-10-19). **Build/QEMU smoke test: NOT RUN** in the current environment.
 
 ## Mission / Мета
 
@@ -53,6 +53,7 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 
 ## Documentation
 
+- [Build and QEMU smoke test](docs/BUILD.md) — first kernel source, pinned Limine archive and reproducible test commands.
 - [Architecture](docs/ARCHITECTURE.md) — security boundaries, kernel components, memory model, IPC and interface contracts.
 - [Roadmap and acceptance criteria](docs/ROADMAP.md).
 - [Architecture decisions](docs/DECISIONS.md).
@@ -81,3 +82,12 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 Canonical repository: [kabasik007/ZillaOs](https://github.com/kabasik007/ZillaOs). Default development branch: `main` for the architecture bootstrap; follow-on code changes should be reviewed through branches/PRs. License decision: **TBD before importing dependencies or accepting external contributions**.
 
 Methodology: [Be Ambitious Pro](https://app.notion.com/p/3fb91a1af397814782cac435379a82a7) — outcome-led engineering, independent validation, real PASS/FAIL evidence.
+
+## M1 development commands
+
+```bash
+bash scripts/build.sh
+python3 scripts/smoke_test.py --timeout 90
+```
+
+This creates a UEFI ISO and verifies boot in QEMU/OVMF when prerequisites are present. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test.
