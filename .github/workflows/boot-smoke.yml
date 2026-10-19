@@ -51,8 +51,11 @@ jobs:
             exit 1
           fi
 
-      - name: Boot in QEMU + OVMF
-        run: python3 scripts/smoke_test.py --timeout 90
+      - name: Boot in QEMU + OVMF and capture serial evidence
+        run: |
+          set -o pipefail
+          mkdir -p build/logs
+          python3 scripts/smoke_test.py --timeout 90 2>&1 | tee build/logs/qemu-smoke.log
 
       - name: Save image and logs
         if: always()
@@ -62,5 +65,6 @@ jobs:
           path: |
             dist/*.iso
             target/x86_64-unknown-none/release/zillaos-kernel
+            build/logs/qemu-smoke.log
           if-no-files-found: warn
           retention-days: 7
