@@ -137,9 +137,74 @@ impl Layout {
     }
 }
 
+
+/// Minimal translated PS/2 scan-set-1 decoder. Device I/O remains outside
+/// this pure state machine, so event handling can be host-unit-tested.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScancodeDecoder {
+    extended: bool,
+}
+
+impl Default for ScancodeDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ScancodeDecoder {
+    pub const fn new() -> Self {
+        Self { extended: false }
+    }
+
+    pub fn feed(&mut self, scan_code: u8) -> Option<Key> {
+        if scan_code == 0xe0 {
+            self.extended = true;
+            return None;
+        }
+        if scan_code & 0x80 != 0 {
+            self.extended = false;
+            return None;
+        }
+        if self.extended {
+            self.extended = false;
+            return None;
+        }
+        match scan_code {
+            0x3b => Some(Key::Launcher),     // F1
+            0x3c => Some(Key::Files),        // F2
+            0x3d => Some(Key::Terminal),     // F3
+            0x3e => Some(Key::Settings),     // F4
+            0x3f => Some(Key::ToggleTheme),  // F5
+            0x0f => Some(Key::NextApp),      // Tab
+            0x01 => Some(Key::Escape),       // Escape
+            _ => None,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.extended = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn translated_scan_codes_and_releases_are_stable() {
+        let mut decoder = ScancodeDecoder::new();
+        assert_eq!(decoder.feed(0x3b), Some(Key::Launcher));
+        assert_eq!(decoder.feed(0xbb), None); // F1 release
+        assert_eq!(decoder.feed(0x3c), Some(Key::Files));
+        assert_eq!(decoder.feed(0x3d), Some(Key::Terminal));
+        assert_eq!(decoder.feed(0x3e), Some(Key::Settings));
+        assert_eq!(decoder.feed(0x3f), Some(Key::ToggleTheme));
+        assert_eq!(decoder.feed(0x0f), Some(Key::NextApp));
+        assert_eq!(decoder.feed(0x01), Some(Key::Escape));
+        assert_eq!(decoder.feed(0xe0), None); // extended prefix
+        assert_eq!(decoder.feed(0x4b), None); // no arrow support yet
+        assert_eq!(decoder.feed(0x01), Some(Key::Escape));
+    }
 
     #[test]
     fn starts_with_files_window() {
