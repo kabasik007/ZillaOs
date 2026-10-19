@@ -1,75 +1,48 @@
-//! Minimal polling i8042 keyboard input for a QEMU q35 guest.
-//! Relies on BIOS/OVMF-initialized translated set-1 scan codes.
-//! Never enables interrupts and never assumes PS/2 exists on native PCs.
-//! Production input must be a separate driver service.
+//! Poll translated scan-set-1 bytes from QEMU's i8042 keyboard port.
+//! A single CPU polls without enabling IRQs; native USB input unsupported.
 
 use core::arch::asm;
-use zillaos_kernel::desktop::Key;
+use zillaos_kernel::desktop::{Key, ScancodeDecoder};
 
 pub struct Keyboard {
-    extended: bool,
+    decoder: ScancodeDecoder,
 }
 
 impl Keyboard {
     pub const fn new() -> Self {
-        Self { extended: false }
+        Self {
+            decoder: ScancodeDecoder::new(),
+        }
     }
 
     pub fn poll(&mut self) -> Option<Key> {
-        // SAFETY: i8042 I/O ports exist in the supported QEMU x86-64 target.
-        // Status polling does not reconfigure the controller or IRQ masks.
+        // SAFETY: x86-64 privileged I/O ports of QEMU i8042 controller.
         let status = unsafe { inb(0x64) };
         if status & 1 == 0 {
             return None;
         }
-        // Read exactly once to consume the byte, even if it is AUX/unknown.
-        let byte = unsafe { inb(0x60) };
-        // Bit 5 marks data received from PS/2 auxiliary (mouse) device.
+        // Consume exactly one byte regardless of whether it came from
+        // keyboard or auxiliary port, to avoid an input queue stall.
+        let value = unsafe { inb(0x60) };
         if status & 0x20 != 0 {
-            self.extended = false;
+            self.decoder.reset();
             return None;
         }
-        self.decode_set1(byte)
-    }
-
-    pub fn decode_set1(&mut self, code: u8) -> Option<Key> {
-        if code == 0xe0 {
-            self.extended = true;
-            return None;
-        }
-        // Key release and scan-set prefixes should never change GUI state.
-        if code & 0x80 != 0 {
-            self.extended = false;
-            return None;
-        }
-        if self.extended {
-            self.extended = false;
-            return None;
-        }
-        match code {
-            0x3b => Some(Key::Launcher),     // F1
-            0x3c => Some(Key::Files),        // F2
-            0x3d => Some(Key::Terminal),     // F3
-            0x3e => Some(Key::Settings),     // F4
-            0x3f => Some(Key::ToggleTheme),  // F5
-            0x0f => Some(Key::NextApp),      // Tab
-            0x01 => Some(Key::Escape),       // Escape
-            _ => None,
-        }
+        self.decoder.feed(value)
     }
 }
 
 #[inline]
 unsafe fn inb(port: u16) -> u8 {
-    let byte: u8;
-    // SAFETY: privileged x86-64 port read with no Rust memory side effects.
+    let value: u8;
+    // SAFETY: hardware port read; no pointers or Rust-owned memory touched.
     unsafe {
         asm!(
             "in al, dx",
             in("dx") port,
-            out("al") byte,
+            out("al") value,
             options(nomem, nostack, preserves_flags)
         );
     }
-    byte
+    value
 }
