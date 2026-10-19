@@ -9,9 +9,11 @@ launcher visibility, dark/light mode, keyboard map and bounds. It has
 host-testable unit tests. This logic must remain independent of the CPU
 and the framebuffer to allow eventual user-space reuse.
 
-`src/input.rs` is the current single-core **polling** PS/2 keyboard adapter
-for QEMU q35. Translated set-1 scan codes feed the desktop event state
-machine; unknown and release events are ignored. Do not assume every
+`src/input.rs` is the current single-core **polling** PS/2 keyboard-and-mouse adapter
+for QEMU q35. Translated set-1 scan codes and PS/2 AUX packets feed the desktop event state
+machine; unknown and release keyboard events are ignored. Mouse input
+initialization uses a bounded timeout and falls back to keyboard-only.
+See [MOUSE.md](MOUSE.md) for exact protocol and security limits. Do not assume every
 modern PC has an i8042 device or that firmware left it enabled.
 
 `src/window_manager.rs` is a pure no_std model of a three-window
@@ -22,7 +24,7 @@ events to the model. None of these demo windows represents a real process.
 `src/graphics.rs` is an experimental **immediate-mode** renderer. It
 checks Limine RGB32 framebuffer metadata and writes bounded 32-bit pixels,
 rendering a background, menu bar, app window, dock, launcher and fonts.
-The renderer re-renders on state changes, and has no persistent global
+The renderer draws a software pointer last; direct framebuffer redraws happen on mouse and keyboard state changes. It has no persistent global
 framebuffer pointer. It does not allocate a heap.
 
 `src/framebuffer.rs` remains the old minimal splash for the `test` and
