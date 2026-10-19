@@ -1,97 +1,60 @@
-# Early physical memory management (M2 foundation)
+# ZillaOS — early physical RAM manager (M2 foundation)
 
-**Status: source implemented in main, execution NOT VERIFIED.**
-This is **not** a complete virtual memory manager, general allocator, or
-production frame manager. No physical pages are mapped, zeroed or freed yet.
+**State:** initial code committed directly to `main`. Rust/QEMU boot is **NOT VERIFIED** as of 2026-10-19.
 
-## Data flow
+## Boot sequence
 
 ```text
-Limine base revision 6
-   | memmap response (bootloader-reclaimable structures)
+Limine 12.9.3 / base revision 6
+   | memory map (max 256 copied entries), HHDM offset
    v
-src/limine.rs: memory_map()
-   | copy up to 128 entries into kernel-owned fixed array
+CPUID: physical address width, virtual 48/57-bit width, NX feature
    v
-zillaos_kernel::memory::FrameAllocator::from_regions()
-   | validate ranges, reject overlaps and 64-bit overflow
-   | keep usable type=0 pages, reserve page zero and other types
-   | align to 4096-byte boundaries, sort ascending
+FrameAllocator::from_regions_with_physical_bits()
+   | validates zero length, overflow and safe overlap rules
+   | reserves every non-USABLE region (including ACPI and modules)
+   | only allocates type-0 usable RAM, aligned to 4096 bytes
    v
-reserve_frame() -> PhysicalFrame{address}
-   | returns 4096-byte-aligned unique *physical address*
-   | NO dereferencing or MMU configuration
+reserve two unique physical 4 KiB frames
    v
-two reserved test frames, serial "ZILLAOS_MEMORY_READY"
+map via Limine HHDM (not guessed identity mapping)
+   | write/read two different deterministic 4096-byte patterns
+   | compare every u64 word; zero both frames after validation
+   v
+serial: ZILLAOS_FRAME_PROBE_OK / ZILLAOS_MEMORY_READY
 ```
 
-## Safety and compatibility assumptions
+## Corrected Limine memory-map semantics
 
-- The Limine pointer graph is trusted only during boot. It is copied before
-  any future attempt to reclaim bootloader memory.
-- Count limit 128 is explicit and deliberately bounded for early boot; a
-  larger map is rejected rather than silently truncated.
-- Any unknown memory type is reserved. Only `LIMINE_MEMMAP_USABLE` (type 0)
-  can produce frames. Bootloader reclaimable, executable, ACPI, framebuffer,
-  and reserved ranges are **not** included.
-- Zero-length ranges, overlapping ranges (including overlaps between usable
-  and reserved), integer overflow, and physical addresses above 52 bits are
-  rejected rather than guessing. The 52-bit bound is a provisional
-  x86-64 ceiling, not runtime CPUID detection.
-- The low first 4 KiB page is intentionally never allocated.
-- Misaligned edge fragments are never included in returned frames.
-- Allocation is **bump-only** across sorted usable ranges. There is no
-  free, reclaim, reuse, zeroing, memory sanitization, ownership transfer,
-  IOMMU or page table API yet.
-- A frame **address** is not a Rust pointer. A future paging/HHDM module
-  must safely map it before touching it. In particular, never assume a
-  physical address is an identity-mapped virtual address.
-- In the current boot demonstration, the allocator remains local to
-  `_start`. Future kernel subsystems must not create independent allocators
-  over the same boot map, or they could double-allocate frames.
+The Limine specification explicitly states:
+- Entries are sorted by base; usable and bootloader-reclaimable regions are 4 KiB aligned.
+- USABLE regions are guaranteed **not** to overlap any other entry.
+- Non-USABLE entries **may** overlap each other and need not be aligned.
 
-## Host-side Rust tests
+We therefore reject overlaps involving any usable region, but allow overlap between non-usable entries. This removes a boot-blocking false-positive from the initial allocator.
 
-In Ubuntu/WSL2 after installing Rust:
+The firmware map is considered trusted during boot and copied to a fixed array before bootloader-reclaimable memory could ever be repurposed.
+
+## Guarantees and limits
+
+- Capacity: 256 entries; maps exceeding this fail explicitly (never silently truncated).
+- Conservative physical limit: 32 to 52 address bits from CPUID. Frames above the reported address limit are never returned.
+- Lowest 4 KiB physical page is never allocated.
+- Only type 0 RAM can be reserved. ACPI, bootloader reclaimable, firmware, framebuffer and unknown types cannot be allocated.
+- No double allocation from a single allocator instance; no free/reclaim yet.
+- Two-page HHDM experiment writes only within two specifically reserved, exclusive and mapped usable pages; both are cleared afterward.
+- This test **does not** establish RAM ECC correctness, physical memory isolation, safe DMA, full MMU control, or protection from a malicious bootloader.
+- The allocator remains bootstrap-local: later subsystems must receive shared ownership of a singleton frame manager, not independently reconstruct it from the original map.
+- The HHDM exists only because Limine maps it; the eventual native page-table manager must install its own mappings before bootloader page tables can be reclaimed.
+
+## Tests (written, not yet executed end-to-end)
 
 ```bash
 cargo test --lib --target x86_64-unknown-linux-gnu --offline
-```
-
-Tests cover alignment, ordering, uniqueness, exhaustion, memory region
-overlaps, unknown/reserved types, zero page exclusion, arithmetic overflow,
-empty entries, physical limit and region count ceiling.
-
-## Emulator smoke
-
-```bash
 bash scripts/build.sh test
 python3 scripts/smoke_test.py --timeout 90
 ```
 
-Expected on the serial port before `ZILLAOS_BOOT_OK`:
+The serial smoke test accepts PASS only when it sees a unique CPU physical-width line, nonzero usable frame count, two different page-aligned addresses below CPU's physical limit, a valid HHDM offset, the exact frame-probe success marker, the memory-ready marker, the boot marker and QEMU exit code 33.
 
-```text
-ZILLAOS_MEMMAP_REGIONS=0x...
-ZILLAOS_USABLE_FRAMES=0x...
-ZILLAOS_TEST_FRAME_1=0x...
-ZILLAOS_TEST_FRAME_2=0x...
-ZILLAOS_MEMORY_READY
-```
-
-The test harness checks both `ZILLAOS_MEMORY_READY` and
-`ZILLAOS_BOOT_OK` and QEMU's exit code 33. Build/boot gates have not yet
-passed in this execution environment, and cannot be called complete.
-
-## Requirements for full M2 verification (future)
-
-1. Independently compile and run all Rust host tests.
-2. Confirm QEMU/OVMF boots; capture serial log and build versions.
-3. Determine physical address width using CPUID, rather than a fixed
-   conservative limit.
-4. Add verified page-table walker with explicit HHDM base and mappings.
-5. Add guarded kernel stacks, exception vectors and a page-fault test.
-6. Add ownership rules and a longer-lived synchronized physical allocator.
-7. Prove that no page is allocated twice, and no reserved range is returned.
-
-Official spec: https://github.com/limine-bootloader/limine-protocol/blob/trunk/PROTOCOL.md
+See [PAGING.md](PAGING.md) and [VALIDATION.md](VALIDATION.md) for remaining safety work.
