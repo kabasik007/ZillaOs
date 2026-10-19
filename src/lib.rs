@@ -11,3 +11,4 @@ pub mod exceptions;
 pub mod desktop;
 pub mod window_manager;
 pub mod mouse;
+pub mod raster;
