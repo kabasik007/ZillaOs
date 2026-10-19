@@ -1,11 +1,13 @@
 #![no_std]
 #![no_main]
 
-// Kernel milestone M1 + early M2: validate Limine memory map and reserve
-// two distinct physical 4 KiB frames, without mapping or writing to them.
+// M2 integration: CPUID physical-address width, bounded Limine map,
+// exclusive 4KiB frame reservations, HHDM pattern/readback/zero probe.
 
+mod cpu;
 mod framebuffer;
 mod limine;
+mod memtest;
 mod serial;
 
 use core::panic::PanicInfo;
@@ -14,44 +16,50 @@ use zillaos_kernel::memory::FrameAllocator;
 #[unsafe(no_mangle)]
 pub extern "C" fn _start() -> ! {
     serial::init();
-    serial::write("ZillaOS v0.0.1 | x86-64 | Limine\n");
+    serial::write("ZillaOS v0.0.2-dev | x86-64 | Limine\n");
 
-    let map = match limine::memory_map() {
-        Ok(map) => map,
-        Err(error) => {
-            match error {
-                limine::BootError::UnsupportedRevision => {
-                    serial::write("ERR: unsupported Limine base revision\n");
-                }
-                limine::BootError::MissingMemoryMap => {
-                    serial::write("ERR: no Limine memory map response\n");
-                }
-                limine::BootError::InvalidMemoryMap => {
-                    serial::write("ERR: invalid Limine memory map metadata\n");
-                }
-            }
+    let cpu = match cpu::detect() {
+        Ok(info) => info,
+        Err(_) => {
+            serial::write("ERR: unsupported or invalid x86-64 CPUID\n");
             return_boot_failure();
         }
     };
+    serial::write("ZILLAOS_CPU_PHYSICAL_BITS=");
+    serial::write_hex(cpu.physical_address_bits as u64);
+    serial::write("\nZILLAOS_CPU_VIRTUAL_BITS=");
+    serial::write_hex(cpu.virtual_address_bits as u64);
+    serial::write("\n");
+    if cpu.nx_supported {
+        serial::write("ZILLAOS_CPU_NX_SUPPORTED\n");
+    }
+    serial::write("ZILLAOS_CPU_READY\n");
 
+    let map = match limine::memory_map() {
+        Ok(map) => map,
+        Err(_) => {
+            serial::write("ERR: no valid Limine memory map\n");
+            return_boot_failure();
+        }
+    };
     serial::write("ZILLAOS_MEMMAP_REGIONS=");
     serial::write_hex(map.count as u64);
     serial::write("\n");
 
-    let mut allocator = match FrameAllocator::from_regions(&map.regions[..map.count]) {
+    let mut allocator = match FrameAllocator::from_regions_with_physical_bits(
+        &map.regions[..map.count],
+        cpu.physical_address_bits,
+    ) {
         Ok(allocator) => allocator,
-        Err(_error) => {
-            serial::write("ERR: invalid/overlapping/empty physical memory map\n");
+        Err(_) => {
+            serial::write("ERR: unsafe or invalid physical memory map\n");
             return_boot_failure();
         }
     };
-
     serial::write("ZILLAOS_USABLE_FRAMES=");
     serial::write_hex(allocator.remaining_frames());
     serial::write("\n");
 
-    // The early bump allocator can *reserve* addresses, not yet map pages.
-    // Retain it until shutdown; its frames are not returned to other code.
     let first = match allocator.reserve_frame() {
         Some(frame) => frame,
         None => return_boot_failure(),
@@ -60,12 +68,31 @@ pub extern "C" fn _start() -> ! {
         Some(frame) if frame.address != first.address => frame,
         _ => return_boot_failure(),
     };
-
     serial::write("ZILLAOS_TEST_FRAME_1=");
     serial::write_hex(first.address);
     serial::write("\nZILLAOS_TEST_FRAME_2=");
     serial::write_hex(second.address);
-    serial::write("\nZILLAOS_MEMORY_READY\n");
+    serial::write("\n");
+
+    let offset = match limine::hhdm_offset() {
+        Ok(offset) => offset,
+        Err(_) => {
+            serial::write("ERR: Limine HHDM missing or invalid\n");
+            return_boot_failure();
+        }
+    };
+    serial::write("ZILLAOS_HHDM_OFFSET=");
+    serial::write_hex(offset);
+    serial::write("\n");
+
+    // SAFETY: allocator returns distinct, exclusively owned USABLE physical
+    // pages, and Limine base revision 6 maps USABLE pages via the HHDM.
+    if unsafe { memtest::two_frame_probe(first, second, offset) }.is_err() {
+        serial::write("ERR: physical frame HHDM readback mismatch\n");
+        return_boot_failure();
+    }
+    serial::write("ZILLAOS_FRAME_PROBE_OK\n");
+    serial::write("ZILLAOS_MEMORY_READY\n");
 
     if framebuffer::render() {
         serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
