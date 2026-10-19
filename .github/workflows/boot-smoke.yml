@@ -81,5 +81,6 @@ jobs:
             build/logs/qemu-fault.log
             build/logs/desktop-qemu.log
             build/logs/desktop-qemu.ppm
+            build/logs/desktop-qemu-cursor.ppm
           if-no-files-found: warn
           retention-days: 7
