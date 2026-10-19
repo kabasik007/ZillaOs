@@ -71,7 +71,7 @@ impl Screen {
             let glyph = glyph(c.to_ascii_uppercase());
             for (row, bits) in glyph.iter().enumerate() {
                 for column in 0..5 {
-                    if (bits & (1 << (4 - column))) != 0 {
+                    if (*bits & (1u8 << (4 - column))) != 0 {
                         self.rectangle(px + column * scale, y + row * scale,
                                        scale, scale, rgb);
                     }
