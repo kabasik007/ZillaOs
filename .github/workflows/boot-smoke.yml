@@ -32,8 +32,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Validate VM helper syntax and host-side tests
+        run: |
+          python3 -m compileall -q scripts tests
+          python3 -m unittest discover -s tests -v
+          bash -n scripts/build.sh
+
       - name: Build UEFI ISO
-        run: bash scripts/build.sh
+        run: bash scripts/build.sh test
 
       - name: Negative smoke (missing image must fail)
         run: |
