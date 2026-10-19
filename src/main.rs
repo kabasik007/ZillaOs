@@ -136,14 +136,39 @@ pub extern "C" fn _start() -> ! {
             serial::write("ZILLAOS_DESKTOP_NO_FRAMEBUFFER\n");
         }
 
-        // No IRQs yet: the demo reads scan-set-1 bytes from the QEMU
-        // i8042 controller by polling, and only redraws on state changes.
-        let mut keyboard = input::Keyboard::new();
+        // Firmware may not expose an i8042 second port. If mouse init
+        // fails the keyboard-only desktop continues to operate.
+        let mut input = input::Input::initialize();
+        if input.mouse_available() {
+            desktop.enable_pointer();
+            serial::write("ZILLAOS_MOUSE_READY\n");
+            if desktop_available {
+                graphics::render(&desktop);
+            }
+        } else {
+            serial::write("ZILLAOS_MOUSE_UNAVAILABLE\n");
+        }
         serial::write("ZILLAOS_DESKTOP_INPUT_POLL\n");
         serial::write("ZILLAOS_WINDOW_MANAGER_READY\n");
+
+        // Poll both keyboard and mouse data from a SINGLE i8042 reader.
+        // No interrupts, threads or real process messages exist yet.
         loop {
-            if let Some(key) = keyboard.poll() {
-                if desktop.handle(key) {
+            let previous_windows = desktop.windows;
+            let previous_launcher = desktop.launcher;
+            let previous_theme = desktop.dark;
+            let event = input.poll();
+            let changed = match event {
+                Some(input::InputEvent::Key(key)) => desktop.handle(key),
+                Some(input::InputEvent::Mouse(packet)) => desktop.handle_mouse(packet),
+                None => false,
+            };
+            if changed {
+                // Pointer-only motion must not flood the serial log.
+                if previous_windows != desktop.windows
+                    || previous_launcher != desktop.launcher
+                    || previous_theme != desktop.dark
+                {
                     serial::write("ZILLAOS_DESKTOP_STATE_CHANGED\n");
                     serial::write("ZILLAOS_DESKTOP_VISIBLE=");
                     serial::write_hex(desktop.windows.visible_count() as u64);
@@ -154,9 +179,9 @@ pub extern "C" fn _start() -> ! {
                         Some(zillaos_kernel::desktop::App::Settings) => serial::write("SETTINGS\n"),
                         None => serial::write("NONE\n"),
                     }
-                    if desktop_available {
-                        graphics::render(&desktop);
-                    }
+                }
+                if desktop_available {
+                    graphics::render(&desktop);
                 }
             }
             core::hint::spin_loop();
