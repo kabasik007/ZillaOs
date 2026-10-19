@@ -18,3 +18,6 @@ debug = true
 [features]
 # The demo image stays on screen; the test image exits QEMU deterministically.
 vm-demo = []
+
+# Build the negative QEMU image which deliberately traps on UD2.
+exception-self-test = []
