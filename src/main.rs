@@ -124,6 +124,13 @@ pub extern "C" fn _start() -> ! {
         };
         let desktop_available = graphics::render(&desktop);
         if desktop_available {
+            if graphics::has_backbuffer() {
+                serial::write("ZILLAOS_GRAPHICS_BUFFERED_READY\n");
+            } else {
+                serial::write("ZILLAOS_GRAPHICS_DIRECT_FALLBACK\n");
+            }
+        }
+        if desktop_available {
             serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
         } else {
             serial::write("ZILLAOS_FRAMEBUFFER_UNAVAILABLE\n");
@@ -198,7 +205,18 @@ pub extern "C" fn _start() -> ! {
                     }
                 }
                 if desktop_available {
-                    graphics::render(&desktop);
+                    let scene_changed = previous_windows != desktop.windows
+                        || previous_launcher != desktop.launcher
+                        || previous_theme != desktop.dark;
+                    // Mouse-only updates restore <= two cursor rectangles.
+                    // Full redraw is reserved for actual window/theme changes
+                    // or for devices beyond the 1280x800 backing capacity.
+                    if !mouse_event
+                        || scene_changed
+                        || !graphics::redraw_cursor(previous_pointer, &desktop)
+                    {
+                        graphics::render(&desktop);
+                    }
                 }
             }
             core::hint::spin_loop();
