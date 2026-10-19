@@ -27,13 +27,13 @@ python3 scripts/run_vm.py --display gtk
 The demo displays an early graphical splash (not a desktop) and stays
 running until the VM is stopped. The test build is created with
 `bash scripts/build.sh test` and generates
-`dist/zillaos-0.0.1-test-uefi.iso`; the demo image is
-`dist/zillaos-0.0.1-demo-uefi.iso`.
+`dist/zillaos-0.0.2-dev-test-uefi.iso`; the demo image is
+`dist/zillaos-0.0.2-dev-demo-uefi.iso`.
 
 The build script checks the downloaded Limine binary archive against SHA-256
 `e02a473c6dc6df25159697f94930272397f21fd86e5d4eeee61bba72c95ec8d2`
 before unpacking it, compiles the bare-metal Rust kernel, and creates
-`dist/zillaos-0.0.1-uefi.iso` with Limine's UEFI CD boot image.
+`dist/zillaos-0.0.2-dev-uefi.iso` with Limine's UEFI CD boot image.
 
 ### Run the controlled boot smoke test
 
