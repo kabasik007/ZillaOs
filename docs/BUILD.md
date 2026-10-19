@@ -38,6 +38,7 @@ before unpacking it, compiles the bare-metal Rust kernel, and creates
 ### Run the controlled boot smoke test
 
 ```bash
+cargo test --lib --target x86_64-unknown-linux-gnu --offline
 python3 scripts/smoke_test.py --timeout 90
 ```
 
@@ -46,6 +47,10 @@ Expected serial markers:
 ```text
 ZillaOS v0.0.1 | x86-64 | Limine
 ZILLAOS_MEMMAP_REGIONS=0x...
+ZILLAOS_USABLE_FRAMES=0x...
+ZILLAOS_TEST_FRAME_1=0x...
+ZILLAOS_TEST_FRAME_2=0x...
+ZILLAOS_MEMORY_READY
 ZILLAOS_BOOT_OK
 ```
 
@@ -56,7 +61,7 @@ python3 -m unittest discover -s tests -v
 python3 scripts/doctor.py
 ```
 
-The test requires both the success marker and QEMU's debug-exit status 33;
+The test requires the memory readiness marker, the boot success marker and QEMU's debug-exit status 33;
 fail markers, hangs and missing image files must cause test failure.
 OVMF variable storage is copied to a new temporary directory for each run.
 
