@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,18 +19,48 @@ OVMF_PAIRS = [
 ]
 SUCCESS_MARKER = "ZILLAOS_BOOT_OK"
 MEMORY_MARKER = "ZILLAOS_MEMORY_READY"
+FRAME_MARKER = "ZILLAOS_FRAME_PROBE_OK"
+CPU_MARKER = "ZILLAOS_CPU_READY"
 FAILURE_MARKERS = ("ZILLAOS_PANIC", "ZILLAOS_BOOT_FAIL")
 EXPECTED_EXIT = 33  # QEMU debug-exit: (0x10 << 1) | 1.
 
 
+def serial_hex(output: str, key: str) -> int | None:
+    """Accept exactly one line with a complete hexadecimal value."""
+    pattern = rf"(?m)^{re.escape(key)}=(0x[0-9a-fA-F]+)\\r?$"
+    values = re.findall(pattern, output)
+    return int(values[0], 16) if len(values) == 1 else None
+
+
 def boot_passed(exit_code: int, output: str) -> bool:
-    """Evidence gate: BOTH correct QEMU exit status and serial marker required."""
-    return (
-        exit_code == EXPECTED_EXIT
-        and SUCCESS_MARKER in output
-        and MEMORY_MARKER in output
-        and not any(marker in output for marker in FAILURE_MARKERS)
-    )
+    """A successful boot proves CPU, frame uniqueness, HHDM and readback."""
+    required = (SUCCESS_MARKER, MEMORY_MARKER, FRAME_MARKER, CPU_MARKER)
+    if (
+        exit_code != EXPECTED_EXIT
+        or not all(marker in output for marker in required)
+        or any(marker in output for marker in FAILURE_MARKERS)
+    ):
+        return False
+
+    physical_bits = serial_hex(output, "ZILLAOS_CPU_PHYSICAL_BITS")
+    usable_frames = serial_hex(output, "ZILLAOS_USABLE_FRAMES")
+    first = serial_hex(output, "ZILLAOS_TEST_FRAME_1")
+    second = serial_hex(output, "ZILLAOS_TEST_FRAME_2")
+    hhdm = serial_hex(output, "ZILLAOS_HHDM_OFFSET")
+
+    if (
+        physical_bits is None or not 32 <= physical_bits <= 52
+        or usable_frames is None or usable_frames < 2
+        or first is None or second is None
+        or first == second or first < 4096 or second < 4096
+        or first % 4096 != 0 or second % 4096 != 0
+        or first >= (1 << physical_bits)
+        or second >= (1 << physical_bits)
+        or hhdm is None or hhdm < 0xff00000000000000
+        or hhdm % 4096 != 0
+    ):
+        return False
+    return True
 
 
 def main() -> int:
