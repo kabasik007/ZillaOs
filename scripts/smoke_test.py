@@ -21,6 +21,9 @@ SUCCESS_MARKER = "ZILLAOS_BOOT_OK"
 MEMORY_MARKER = "ZILLAOS_MEMORY_READY"
 FRAME_MARKER = "ZILLAOS_FRAME_PROBE_OK"
 CPU_MARKER = "ZILLAOS_CPU_READY"
+IDT_MARKER = "ZILLAOS_IDT_READY"
+FAULT_MARKER = "ZILLAOS_EXCEPTION_FATAL"
+FAULT_EXIT = 35
 FAILURE_MARKERS = ("ZILLAOS_PANIC", "ZILLAOS_BOOT_FAIL")
 EXPECTED_EXIT = 33  # QEMU debug-exit: (0x10 << 1) | 1.
 
@@ -39,7 +42,7 @@ def has_marker(output: str, marker: str) -> bool:
 
 def boot_passed(exit_code: int, output: str) -> bool:
     """A successful boot proves CPU, frame uniqueness, HHDM and readback."""
-    required = (SUCCESS_MARKER, MEMORY_MARKER, FRAME_MARKER, CPU_MARKER)
+    required = (SUCCESS_MARKER, MEMORY_MARKER, FRAME_MARKER, CPU_MARKER, IDT_MARKER)
     if (
         exit_code != EXPECTED_EXIT
         or not all(has_marker(output, marker) for marker in required)
@@ -68,9 +71,24 @@ def boot_passed(exit_code: int, output: str) -> bool:
     return True
 
 
+def fault_passed(exit_code: int, output: str) -> bool:
+    """Negative integration: UD2 must trap at vector 6, not triple-fault."""
+    return (
+        exit_code == FAULT_EXIT
+        and has_marker(output, IDT_MARKER)
+        and has_marker(output, FAULT_MARKER)
+        and serial_hex(output, "ZILLAOS_EXCEPTION_VECTOR") == 6
+        and serial_hex(output, "ZILLAOS_EXCEPTION_ERROR") == 0
+        and serial_hex(output, "ZILLAOS_EXCEPTION_RIP") is not None
+        and not has_marker(output, SUCCESS_MARKER)
+        and not any(has_marker(output, marker) for marker in FAILURE_MARKERS)
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--iso", type=Path, default=DEFAULT_ISO)
+    parser.add_argument("--iso", type=Path)
+    parser.add_argument("--expect-fault", action="store_true", help="expect intentional UD2 trap, exit 35")
     parser.add_argument("--timeout", type=int, default=60)
     parser.add_argument("--ovmf-code", type=Path)
     parser.add_argument("--ovmf-vars", type=Path)
@@ -79,7 +97,8 @@ def main() -> int:
     if args.timeout < 1:
         parser.error("--timeout must be positive")
 
-    iso = args.iso.resolve()
+    default_iso = (ROOT / "dist" / "zillaos-0.0.2-dev-fault-uefi.iso") if args.expect_fault else DEFAULT_ISO
+    iso = (args.iso or default_iso).resolve()
     if not iso.is_file() or iso.stat().st_size == 0:
         print(f"FAIL: missing or empty boot image: {iso}", file=sys.stderr)
         return 2
@@ -143,13 +162,17 @@ def main() -> int:
 
         output = result.stdout
         print(output)
-        if not boot_passed(result.returncode, output):
+        verdict = fault_passed if args.expect_fault else boot_passed
+        if not verdict(result.returncode, output):
             print(
-                f"FAIL: exit={result.returncode}; CPU/memory/HHDM/frame evidence incomplete",
+                f"FAIL: exit={result.returncode}; expected diagnostic evidence incomplete",
                 file=sys.stderr,
             )
             return 1
-        print("PASS: ZillaOS booted, validated CPU/HHDM/frame probe and exited via QEMU device")
+        if args.expect_fault:
+            print("PASS: UD2 intercepted by IDT vector 6, QEMU exit 35")
+        else:
+            print("PASS: ZillaOS booted, validated CPU/HHDM/frame probe and exited via QEMU device")
         return 0
 
 
