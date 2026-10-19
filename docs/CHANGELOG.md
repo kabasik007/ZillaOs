@@ -4,6 +4,14 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Zilla Graphics Engine — D1a
+
+- Added no_std RGB32 raster geometry, checked span-filling and cursor damage tests.
+- Added 4,096,000-byte static backing scene supporting up to 1280×800 without heap or a large stack allocation. Larger displays use the original clipped direct renderer.
+- Full desktop redraw composes into BSS then transfers a complete scene to Limine. Pointer-only movements restore at most two 12×20 cursor regions and redraw a direct software cursor instead of repainting all windows.
+- Headless QEMU screenshot regression compares actual RGB data before/after pointer motion and saves the screenshot pair in CI artifacts.
+- **Not yet measured or proven by a real Rust build/QEMU run.** No GPU, vsync or hardware swapchain; full-frame transfers may still tear. See [GRAPHICS.md](GRAPHICS.md).
+
 ### Mouse and pointer interaction — D0.6
 
 - Added hardware-independent Rust decoder for signed three-byte PS/2 mouse packets and unit tests.
