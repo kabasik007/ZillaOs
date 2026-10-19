@@ -6,11 +6,11 @@ ROOT="$PWD"
 
 MODE="${1:-test}"
 case "$MODE" in
-    test|demo) ;;
-    *) echo "Usage: bash scripts/build.sh [test|demo]" >&2; exit 2 ;;
+    test|demo|fault) ;;
+    *) echo "Usage: bash scripts/build.sh [test|demo|fault]" >&2; exit 2 ;;
 esac
 if (( $# > 1 )); then
-    echo "Usage: bash scripts/build.sh [test|demo]" >&2
+    echo "Usage: bash scripts/build.sh [test|demo|fault]" >&2
     exit 2
 fi
 
@@ -62,12 +62,15 @@ find_limine_file() {
 echo "Building ZillaOS kernel (mode: $MODE)"
 if [[ "$MODE" == "demo" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features vm-demo
+elif [[ "$MODE" == "fault" ]]; then
+    cargo build --release --target x86_64-unknown-none --offline --features exception-self-test
 else
     cargo build --release --target x86_64-unknown-none --offline --no-default-features
 fi
 
 KERNEL="$ROOT/target/x86_64-unknown-none/release/zillaos-kernel"
 test -s "$KERNEL" || { echo "Missing kernel ELF" >&2; exit 5; }
+cp "$KERNEL" "$ROOT/dist/zillaos-0.0.2-dev-${MODE}-kernel.elf"
 
 rm -rf -- "$STAGING"
 mkdir -p "$STAGING/EFI/BOOT" "$STAGING/boot"
