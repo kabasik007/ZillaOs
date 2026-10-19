@@ -1,4 +1,4 @@
-"""Fast host-side tests: intentionally no QEMU, Rust or network dependency."""
+"""Host-only black-box verdict tests; no QEMU or Rust required."""
 from pathlib import Path
 import tempfile
 import unittest
@@ -6,27 +6,68 @@ import unittest
 from scripts import smoke_test, run_vm
 
 
+GOOD = (
+    "ZillaOS v0.0.2-dev | x86-64 | Limine\r\n"
+    "ZILLAOS_CPU_PHYSICAL_BITS=0x0000000000000024\r\n"
+    "ZILLAOS_CPU_VIRTUAL_BITS=0x0000000000000030\r\n"
+    "ZILLAOS_CPU_READY\r\n"
+    "ZILLAOS_MEMMAP_REGIONS=0x0000000000000010\r\n"
+    "ZILLAOS_USABLE_FRAMES=0x0000000000001234\r\n"
+    "ZILLAOS_TEST_FRAME_1=0x0000000000001000\r\n"
+    "ZILLAOS_TEST_FRAME_2=0x0000000000002000\r\n"
+    "ZILLAOS_HHDM_OFFSET=0xffff800000000000\r\n"
+    "ZILLAOS_FRAME_PROBE_OK\r\n"
+    "ZILLAOS_MEMORY_READY\r\n"
+    "ZILLAOS_BOOT_OK\r\n"
+)
+
+
 class BootEvidenceTests(unittest.TestCase):
-    def test_success_requires_both_signals(self):
-        self.assertTrue(smoke_test.boot_passed(
-            33, "ZILLAOS_MEMORY_READY\nZILLAOS_FRAMEBUFFER_READY\nZILLAOS_BOOT_OK\n"))
+    def test_complete_evidence_passes(self):
+        self.assertTrue(smoke_test.boot_passed(33, GOOD))
 
-    def test_missing_memory_validation_fails(self):
-        self.assertFalse(smoke_test.boot_passed(33, "ZILLAOS_BOOT_OK"))
+    def test_wrong_exit_fails(self):
+        self.assertFalse(smoke_test.boot_passed(0, GOOD))
 
-    def test_missing_success_marker_fails(self):
-        self.assertFalse(smoke_test.boot_passed(33, "UEFI booted, not our kernel"))
-
-    def test_failure_marker_even_with_success_fails(self):
+    def test_missing_frame_probe_fails(self):
         self.assertFalse(smoke_test.boot_passed(
-            33, "ZILLAOS_MEMORY_READY\nZILLAOS_BOOT_OK\nZILLAOS_PANIC\n"))
+            33, GOOD.replace("ZILLAOS_FRAME_PROBE_OK", "FRAME_PROBE_UNAVAILABLE")))
 
-    def test_wrong_exit_even_with_marker_fails(self):
-        self.assertFalse(smoke_test.boot_passed(0, "ZILLAOS_MEMORY_READY\nZILLAOS_BOOT_OK"))
-
-    def test_explicit_fail_marker_fails(self):
+    def test_missing_memory_ready_fails(self):
         self.assertFalse(smoke_test.boot_passed(
-            33, "ZILLAOS_MEMORY_READY\nZILLAOS_BOOT_FAIL\nZILLAOS_BOOT_OK"))
+            33, GOOD.replace("ZILLAOS_MEMORY_READY", "NO_MEMORY")))
+
+    def test_aliased_frames_fail(self):
+        self.assertFalse(smoke_test.boot_passed(
+            33, GOOD.replace("ZILLAOS_TEST_FRAME_2=0x0000000000002000",
+                             "ZILLAOS_TEST_FRAME_2=0x0000000000001000")))
+
+    def test_unaligned_frame_fails(self):
+        self.assertFalse(smoke_test.boot_passed(
+            33, GOOD.replace("ZILLAOS_TEST_FRAME_2=0x0000000000002000",
+                             "ZILLAOS_TEST_FRAME_2=0x0000000000002001")))
+
+    def test_address_exceeding_cpuid_width_fails(self):
+        self.assertFalse(smoke_test.boot_passed(
+            33, GOOD.replace("ZILLAOS_TEST_FRAME_2=0x0000000000002000",
+                             "ZILLAOS_TEST_FRAME_2=0x0000002000000000")))
+
+    def test_invalid_hhdm_fails(self):
+        self.assertFalse(smoke_test.boot_passed(
+            33, GOOD.replace("0xffff800000000000", "0x0000000000000000")))
+
+    def test_duplicate_value_line_fails(self):
+        self.assertFalse(smoke_test.boot_passed(
+            33, GOOD + "ZILLAOS_USABLE_FRAMES=0x0000000000001234\n"))
+
+    def test_bad_failure_marker_fails(self):
+        self.assertFalse(smoke_test.boot_passed(33, GOOD + "ZILLAOS_PANIC\n"))
+
+    def test_parser_accepts_crlf(self):
+        self.assertEqual(
+            smoke_test.serial_hex("ZILLAOS_CPU_PHYSICAL_BITS=0x24\r\n",
+                                  "ZILLAOS_CPU_PHYSICAL_BITS"),
+            36)
 
 
 class VmConfigurationTests(unittest.TestCase):
