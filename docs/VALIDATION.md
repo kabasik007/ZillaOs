@@ -71,6 +71,8 @@ Observations: <facts, logs, reproducer>
 - [x] Kernel source exists (M1 bootstrap + early M2 CPUID, HHDM readback and paging metadata; not yet compiled).
 - [x] Host Rust memory/paging unit tests written (not yet run).
 - [x] QEMU serial smoke test checks CPU/HHDM/frame integrity and guards against forged success markers.
+- [x] Fatal IDT (#UD/#GP/#PF) and opt-in UD2 fault-mode test implemented in source (NOT RUN).
+- [ ] Negative UD2 QEMU test recorded: vector 6, error code 0, exit 35.
 - [ ] Bounded two-frame HHDM write/read/zero integration probe actually observed in QEMU.
 - [ ] Rust host memory unit tests executed.
 - [ ] Clean reproducible build executed.
