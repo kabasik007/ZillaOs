@@ -6,17 +6,23 @@
 
 use core::ptr;
 use zillaos_kernel::memory::{PhysicalFrame, PAGE_SIZE};
+use zillaos_kernel::paging::is_canonical;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ProbeError {
     InvalidHhdmOffset,
+    NonCanonicalMapping,
     AddressOverflow,
     UnalignedPhysicalFrame,
     AliasedFrames,
     PatternMismatch,
 }
 
-fn mapped_frame(frame: PhysicalFrame, hhdm_offset: u64) -> Result<*mut u64, ProbeError> {
+fn mapped_frame(
+    frame: PhysicalFrame,
+    hhdm_offset: u64,
+    virtual_bits: u8,
+) -> Result<*mut u64, ProbeError> {
     if frame.address % PAGE_SIZE != 0 {
         return Err(ProbeError::UnalignedPhysicalFrame);
     }
@@ -30,6 +36,9 @@ fn mapped_frame(frame: PhysicalFrame, hhdm_offset: u64) -> Result<*mut u64, Prob
     // No fixed offset is assumed; the 4 KiB buffer must be contiguous.
     if hhdm_offset == 0 || virtual_address < hhdm_offset || virtual_end < virtual_address {
         return Err(ProbeError::InvalidHhdmOffset);
+    }
+    if !is_canonical(virtual_address, virtual_bits) || !is_canonical(virtual_end, virtual_bits) {
+        return Err(ProbeError::NonCanonicalMapping);
     }
     if virtual_address & 7 != 0 {
         return Err(ProbeError::UnalignedPhysicalFrame);
@@ -46,12 +55,13 @@ pub unsafe fn two_frame_probe(
     first: PhysicalFrame,
     second: PhysicalFrame,
     hhdm_offset: u64,
+    virtual_bits: u8,
 ) -> Result<(), ProbeError> {
     if first.address == second.address {
         return Err(ProbeError::AliasedFrames);
     }
-    let a = mapped_frame(first, hhdm_offset)?;
-    let b = mapped_frame(second, hhdm_offset)?;
+    let a = mapped_frame(first, hhdm_offset, virtual_bits)?;
+    let b = mapped_frame(second, hhdm_offset, virtual_bits)?;
     const WORDS: usize = PAGE_SIZE as usize / core::mem::size_of::<u64>();
 
     // SAFETY: caller owns both aligned mapped pages. All pointer arithmetic
