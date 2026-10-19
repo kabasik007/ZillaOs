@@ -6,6 +6,7 @@
 
 mod cpu;
 mod framebuffer;
+mod interrupts;
 mod limine;
 mod memtest;
 mod serial;
@@ -17,6 +18,19 @@ use zillaos_kernel::memory::FrameAllocator;
 pub extern "C" fn _start() -> ! {
     serial::init();
     serial::write("ZillaOS v0.0.2-dev | x86-64 | Limine\n");
+
+    if interrupts::install().is_err() {
+        serial::write("ERR: cannot install minimal CPU exception handlers\n");
+        return_boot_failure();
+    }
+    serial::write("ZILLAOS_IDT_READY\n");
+
+    // In the explicit fault-test ISO only: UD2 must enter vector 6 handler.
+    // The handler prints diagnostics and exits QEMU with code 35.
+    #[cfg(feature = "exception-self-test")]
+    unsafe {
+        core::arch::asm!("ud2", options(noreturn));
+    }
 
     let cpu = match cpu::detect() {
         Ok(info) => info,
