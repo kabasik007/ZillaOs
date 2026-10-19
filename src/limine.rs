@@ -27,6 +27,42 @@ struct MemoryMapResponse {
 }
 
 #[repr(C)]
+struct FramebufferResponse {
+    revision: u64,
+    framebuffer_count: u64,
+    framebuffers: *const *const RawFramebuffer,
+}
+
+#[repr(C)]
+struct RawFramebuffer {
+    address: *mut u8,
+    width: u64,
+    height: u64,
+    pitch: u64,
+    bpp: u16,
+    memory_model: u8,
+    red_size: u8,
+    red_shift: u8,
+    green_size: u8,
+    green_shift: u8,
+    blue_size: u8,
+    blue_shift: u8,
+    unused: [u8; 7],
+    edid_size: u64,
+    edid: *const u8,
+}
+
+pub struct Framebuffer {
+    pub address: *mut u8,
+    pub width: usize,
+    pub height: usize,
+    pub pitch: usize,
+    pub red_shift: u8,
+    pub green_shift: u8,
+    pub blue_shift: u8,
+}
+
+#[repr(C)]
 #[allow(dead_code)]
 struct MemoryMapEntry {
     base: u64,
@@ -57,6 +93,19 @@ static MEMORY_MAP: Request<MemoryMapResponse> = Request {
         0x0a82e883a194f07b,
         0x67cf3d9d378a806f,
         0xe304acdfc50c3c62,
+    ],
+    revision: 0,
+    response: AtomicPtr::new(ptr::null_mut()),
+};
+
+#[used]
+#[unsafe(link_section = ".limine_requests")]
+static FRAMEBUFFER: Request<FramebufferResponse> = Request {
+    id: [
+        0xc7b1dd30df4c8b88,
+        0x0a82e883a194f07b,
+        0x9d5827dcd881dd75,
+        0xa3148604f6fab11b,
     ],
     revision: 0,
     response: AtomicPtr::new(ptr::null_mut()),
@@ -97,4 +146,61 @@ pub fn memory_region_count() -> Result<u64, BootError> {
         return Err(BootError::InvalidMemoryMap);
     }
     Ok(response.entry_count)
+}
+
+/** A strictly bounded 32-bit RGB framebuffer for the QEMU boot splash.
+
+The pointers originate from the already-trusted Limine bootloader. We do not
+claim native hardware verification or arbitrary firmware-pointer safety.
+Returned pixel bounds are capped to 64 MiB before rendering.
+*/
+pub fn framebuffer() -> Option<Framebuffer> {
+    let response = FRAMEBUFFER.response.load(Ordering::Acquire);
+    if response.is_null() {
+        return None;
+    }
+    // SAFETY: bootloader-provided response during the boot handoff.
+    let response = unsafe { &*response };
+    if response.framebuffer_count == 0 || response.framebuffers.is_null() {
+        return None;
+    }
+    // SAFETY: Limine guarantees at least framebuffer_count valid pointers.
+    let first = unsafe { *response.framebuffers };
+    if first.is_null() {
+        return None;
+    }
+    // SAFETY: Limine provides a mapped framebuffer structure.
+    let fb = unsafe { &*first };
+    let width = usize::try_from(fb.width).ok()?;
+    let height = usize::try_from(fb.height).ok()?;
+    let pitch = usize::try_from(fb.pitch).ok()?;
+    if fb.address.is_null()
+        || (fb.address as usize) % 4 != 0
+        || fb.bpp != 32
+        || fb.memory_model != 1
+        || fb.red_size != 8
+        || fb.green_size != 8
+        || fb.blue_size != 8
+        || fb.red_shift > 24
+        || fb.green_shift > 24
+        || fb.blue_shift > 24
+        || width < 320
+        || height < 200
+        || width > 8192
+        || height > 8192
+        || pitch % 4 != 0
+        || pitch < width.checked_mul(4)?
+        || height.checked_mul(pitch)? > 64 * 1024 * 1024
+    {
+        return None;
+    }
+    Some(Framebuffer {
+        address: fb.address,
+        width,
+        height,
+        pitch,
+        red_shift: fb.red_shift,
+        green_shift: fb.green_shift,
+        blue_shift: fb.blue_shift,
+    })
 }
