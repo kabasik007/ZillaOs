@@ -35,6 +35,17 @@ The build script checks the downloaded Limine binary archive against SHA-256
 before unpacking it, compiles the bare-metal Rust kernel, and creates
 `dist/zillaos-0.0.2-dev-test-uefi.iso` (or `-demo-uefi.iso`) with Limine's UEFI CD boot image.
 
+### Run both normal boot and controlled CPU fault tests
+
+```bash
+bash scripts/build.sh test
+python3 scripts/smoke_test.py --timeout 90
+bash scripts/build.sh fault
+python3 scripts/smoke_test.py --expect-fault --timeout 90
+```
+
+The `fault` image deliberately executes UD2; passing means CPU exception vector 6 is reported and QEMU exits 35. See [EXCEPTIONS.md](EXCEPTIONS.md).
+
 ### Run the controlled boot smoke test
 
 ```bash
