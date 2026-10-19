@@ -1,10 +1,10 @@
 //! Minimal audited Limine protocol structures for v0.0.1.
 //! The canonical source is limine-protocol/PROTOCOL.md, base revision 6.
-//! No allocator is available yet. We only read the memory-map count.
+//! We copy a bounded memory map before any future reclaiming of boot data.
 
 use core::ptr;
-use zillaos_kernel::memory::{MemoryRegion, MAX_MEMORY_REGIONS};
 use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use zillaos_kernel::memory::{MemoryRegion, MAX_MEMORY_REGIONS};
 
 #[repr(C)]
 struct RevisionTag {
