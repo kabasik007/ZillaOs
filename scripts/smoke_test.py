@@ -27,7 +27,7 @@ EXPECTED_EXIT = 33  # QEMU debug-exit: (0x10 << 1) | 1.
 
 def serial_hex(output: str, key: str) -> int | None:
     """Accept exactly one line with a complete hexadecimal value."""
-    pattern = rf"(?m)^{re.escape(key)}=(0x[0-9a-fA-F]+)\\r?$"
+    pattern = rf"(?m)^{re.escape(key)}=(0x[0-9a-fA-F]+)\r?$"
     values = re.findall(pattern, output)
     return int(values[0], 16) if len(values) == 1 else None
 
