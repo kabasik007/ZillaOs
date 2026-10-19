@@ -15,7 +15,10 @@ import sys
 import tempfile
 import time
 
-from smoke_test import OVMF_PAIRS, ROOT
+if __package__:
+    from .smoke_test import OVMF_PAIRS, ROOT
+else:
+    from smoke_test import OVMF_PAIRS, ROOT
 
 DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.2-dev-demo-uefi.iso"
 REQUIRED = ("ZILLAOS_DESKTOP_READY", "ZILLAOS_DESKTOP_INPUT_POLL")
