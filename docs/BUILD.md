@@ -1,4 +1,4 @@
-# Build / run ZillaOS v0.0.1
+# Build / run ZillaOS v0.0.2-dev
 
 **Status:** code committed; runtime build and QEMU boot require a suitable toolchain and **have not been independently verified** merely by committing source files.
 
@@ -33,7 +33,7 @@ running until the VM is stopped. The test build is created with
 The build script checks the downloaded Limine binary archive against SHA-256
 `e02a473c6dc6df25159697f94930272397f21fd86e5d4eeee61bba72c95ec8d2`
 before unpacking it, compiles the bare-metal Rust kernel, and creates
-`dist/zillaos-0.0.2-dev-uefi.iso` with Limine's UEFI CD boot image.
+`dist/zillaos-0.0.2-dev-test-uefi.iso` (or `-demo-uefi.iso`) with Limine's UEFI CD boot image.
 
 ### Run the controlled boot smoke test
 
@@ -45,11 +45,16 @@ python3 scripts/smoke_test.py --timeout 90
 Expected serial markers:
 
 ```text
-ZillaOS v0.0.1 | x86-64 | Limine
+ZillaOS v0.0.2-dev | x86-64 | Limine
+ZILLAOS_CPU_PHYSICAL_BITS=0x...
+ZILLAOS_CPU_VIRTUAL_BITS=0x...
+ZILLAOS_CPU_READY
 ZILLAOS_MEMMAP_REGIONS=0x...
 ZILLAOS_USABLE_FRAMES=0x...
 ZILLAOS_TEST_FRAME_1=0x...
 ZILLAOS_TEST_FRAME_2=0x...
+ZILLAOS_HHDM_OFFSET=0x...
+ZILLAOS_FRAME_PROBE_OK
 ZILLAOS_MEMORY_READY
 ZILLAOS_BOOT_OK
 ```
@@ -61,7 +66,7 @@ python3 -m unittest discover -s tests -v
 python3 scripts/doctor.py
 ```
 
-The test requires the memory readiness marker, the boot success marker and QEMU's debug-exit status 33;
+The test requires CPU, HHDM and frame-probe evidence, the memory/boot readiness markers and QEMU's debug-exit status 33;
 fail markers, hangs and missing image files must cause test failure.
 OVMF variable storage is copied to a new temporary directory for each run.
 
