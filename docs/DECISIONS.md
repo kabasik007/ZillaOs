@@ -57,3 +57,23 @@ We keep consequential choices explicit. Status `Accepted for planning` is not pr
 ## Rules for changing an ADR
 
 Propose a replacement ADR in a PR with measurable evidence, migration implications and negative tests. Record supersession rather than silently changing earlier rationale.
+
+
+## ADR-0014 — Limine-compatible usable memory validation
+**Status:** Accepted for v0.0.2-dev source · **2026-10-19**  
+**Decision:** memory-map overlaps are forbidden if either entry has type USABLE, but overlaps among exclusively non-USABLE entries are permitted. Unknown types remain reserved. Only type-0 USABLE RAM is ever allocated.  
+**Reason:** Limine protocol guarantees usable regions do not overlap any other region but explicitly permits overlaps between non-usable entries. Old ZillaOS rejected all overlaps and could refuse valid firmware maps.  
+**Risk:** Firmware/bootloader metadata is still a trust assumption; bounded parser and kernel error handling reduce but do not eliminate this risk.  
+**Verification:** Rust host unit tests and QEMU boot evidence must pass before release.
+
+## ADR-0015 — Early RAM readback through Limine HHDM
+**Status:** Experimental source, NOT YET RUNTIME VERIFIED · **2026-10-19**  
+**Decision:** request HHDM dynamically, detect physical and virtual CPU address widths, reserve exactly two distinct 4 KiB USABLE frames and perform a bounded 64-bit pattern/write/read/zero experiment under supervisor privilege.  
+**Reason:** verifies frame planning, address translation assumptions and actual guest RAM I/O before attempting kernel-owned page tables.  
+**Risk:** HHDM mappings are owned by Limine; this is not a general allocator, security isolation proof, or replacement for page tables.  
+**Verification:** require complete QEMU serial evidence, debug-exit 33, host memory/paging tests, and captured runtime logs. Fail closed on invalid widths, noncanonical mappings or mismatches.
+
+## ADR-0016 — No silent release from unverified source
+**Status:** Accepted · **2026-10-19**  
+**Decision:** v0.0.2-dev artifacts remain explicitly pre-release. `main` may receive source development commits on user request, but no project milestone is labelled VERIFIED without compilation, executed tests and recorded emulator evidence.  
+**Reason:** a repository update, passing static source checks and a visual demo are insufficient evidence of a functioning kernel.  
