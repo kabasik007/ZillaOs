@@ -89,8 +89,11 @@ In the QEMU window, use **F1** Launcher, **F2** Files, **F3** Terminal,
 **Tab** focus, **arrows** to move, **Shift + arrows** to resize, **Esc** to
 close an overlay/window. These views are examples only: Files does not
 access the disk and Terminal does not execute shell commands yet.
-The current input implementation polls translated PS/2 set-1 scancodes
-and may require future controller initialization on some systems.
+The current input implementation polls translated PS/2 set-1 scancodes and
+tries to initialize an emulated PS/2 mouse through the i8042 AUX port. In
+QEMU it should allow a visible cursor, Dock clicks, title-bar dragging and
+window buttons. If the mouse is missing, keyboard shortcuts still work.
+The entire GUI and mouse path **requires actual QEMU verification**.
 
 For automated GUI verification using a disposable headless QEMU machine
 with keyboard injection and a framebuffer screenshot:
@@ -104,7 +107,8 @@ Expected artifacts: `build/logs/desktop-qemu.log` and
 `build/logs/desktop-qemu.ppm`. **No successful GUI run has yet been
 observed in the current execution environment.** A passing test
 requires `ZILLAOS_DESKTOP_READY`, `ZILLAOS_DESKTOP_INPUT_POLL`,
-and keyboard-triggered `ZILLAOS_DESKTOP_STATE_CHANGED`, plus a
+keyboard-triggered `ZILLAOS_DESKTOP_STATE_CHANGED`, mouse movement and
+button-edge markers, plus a
 non-flat QEMU framebuffer screenshot.
 
 ## Distinct boot modes
