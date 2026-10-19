@@ -21,13 +21,24 @@ else:
     from smoke_test import OVMF_PAIRS, ROOT
 
 DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.2-dev-demo-uefi.iso"
-REQUIRED = ("ZILLAOS_DESKTOP_READY", "ZILLAOS_DESKTOP_INPUT_POLL")
+REQUIRED = ("ZILLAOS_DESKTOP_READY", "ZILLAOS_DESKTOP_INPUT_POLL", "ZILLAOS_WINDOW_MANAGER_READY")
 KEY_MARKER = "ZILLAOS_DESKTOP_STATE_CHANGED"
 FAILURE = ("ZILLAOS_BOOT_FAIL", "ZILLAOS_PANIC", "ZILLAOS_EXCEPTION_FATAL")
 
 
 def has_line(log: str, line: str) -> bool:
     return line in {value.strip() for value in log.splitlines()}
+
+
+def has_window_state(log: str, visible: int, focus: str) -> bool:
+    """A single contiguous serial event must contain both the focus and count."""
+    lines = [line.strip() for line in log.splitlines()]
+    expected = [
+        KEY_MARKER,
+        f"ZILLAOS_DESKTOP_VISIBLE=0x{visible:016x}",
+        f"ZILLAOS_DESKTOP_FOCUS={focus}",
+    ]
+    return any(lines[i:i + 3] == expected for i in range(len(lines) - 2))
 
 
 def screenshot_dimensions(path: Path) -> tuple[int, int] | None:
@@ -151,10 +162,20 @@ def main() -> int:
                 if not wait_until(monitor.exists, guest, deadline):
                     print("FAIL: QEMU HMP monitor socket missing", file=sys.stderr)
                     return 1
-                monitor_command(monitor, "sendkey f3")
-                if not wait_until(lambda: has_line(read_log(log), KEY_MARKER), guest, deadline):
-                    print("FAIL: injected F3 produced no desktop state change", file=sys.stderr)
-                    return 1
+                for key, count, focus in [
+                    ("f3", 2, "TERMINAL"),
+                    ("f4", 3, "SETTINGS"),
+                    ("tab", 3, "FILES"),
+                ]:
+                    monitor_command(monitor, f"sendkey {key}")
+                    if not wait_until(
+                        lambda: has_window_state(read_log(log), count, focus),
+                        guest,
+                        deadline,
+                    ):
+                        print(f"FAIL: {key} did not produce {count} windows / {focus} focus",
+                              file=sys.stderr)
+                        return 1
 
                 screenshot_path = workdir / "frame.ppm"
                 reply = monitor_command(monitor, f"screendump {screenshot_path}")
@@ -169,7 +190,30 @@ def main() -> int:
                     print("FAIL: empty, flat or malformed screenshot", file=sys.stderr)
                     return 1
                 shutil.copyfile(screenshot_path, args.output)
-                print(f"PASS: ZillaOS GUI shown, F3 event received, screenshot {dimensions[0]}x{dimensions[1]}")
+
+                # Minimize and restore must not destroy the other windows.
+                monitor_command(monitor, "sendkey f6")
+                if not wait_until(
+                    lambda: has_window_state(read_log(log), 2, "SETTINGS"),
+                    guest,
+                    deadline,
+                ):
+                    print("FAIL: minimizing focused Files did not reveal Settings",
+                          file=sys.stderr)
+                    return 1
+
+                monitor_command(monitor, "sendkey f2")
+                if not wait_until(
+                    lambda: read_log(log).count("ZILLAOS_DESKTOP_FOCUS=FILES") >= 2
+                    and has_window_state(read_log(log), 3, "FILES"),
+                    guest,
+                    deadline,
+                ):
+                    print("FAIL: restoring Files through F2 did not focus a third window",
+                          file=sys.stderr)
+                    return 1
+
+                print(f"PASS: ZillaOS GUI 3 windows, focus, minimize and restore; screenshot {dimensions[0]}x{dimensions[1]}")
                 print(f"Screen: {args.output}; serial: {log}")
                 return 0
             finally:
