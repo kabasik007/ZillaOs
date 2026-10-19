@@ -20,7 +20,7 @@ LIMINE_URL="https://github.com/limine-bootloader/limine/releases/download/v${LIM
 DOWNLOAD_DIR="$ROOT/build/downloads"
 UNPACK_DIR="$ROOT/build/limine-${LIMINE_VERSION}"
 STAGING="$ROOT/build/iso-root"
-ISO="$ROOT/dist/zillaos-0.0.1-${MODE}-uefi.iso"
+ISO="$ROOT/dist/zillaos-0.0.2-dev-${MODE}-uefi.iso"
 ARCHIVE="$DOWNLOAD_DIR/limine-binary-${LIMINE_VERSION}.tar.xz"
 
 for command in cargo curl sha256sum tar find xorriso; do
