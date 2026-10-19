@@ -21,6 +21,8 @@
 
 ## M1 — v0.0.1 Boot
 
+**Current implementation status:** source committed (kernel, linker, Limine build script, QEMU smoke test, manually dispatched CI). **Verification: NOT RUN** — no Rust/QEMU toolchain in the present execution environment. Do not mark this milestone complete until all runtime gates pass.
+
 **Build:** pinned Rust toolchain, `x86_64-unknown-none`, Limine protocol + UEFI under QEMU/OVMF, boot image, serial console and framebuffer diagnostic optional.
 
 **PASS:** 
@@ -99,4 +101,4 @@ One milestone → one minimal PR → measured outcome → postmortem if failed �
 4. **BOOT-04**: QEMU serial logger and `ZILLAOS_BOOT_OK` marker.
 5. **BOOT-05**: automated QEMU smoke test with timeout, non-zero failure exit, clean CI report.
 
-All five are currently **Planned**, not implemented.
+BOOT-01 through BOOT-05 now have initial source implementations committed, but none has been validated by a successful end-to-end QEMU run yet. **Current status: IN PROGRESS / NOT VERIFIED**.
