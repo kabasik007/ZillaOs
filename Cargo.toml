@@ -14,3 +14,7 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 debug = true
+
+[features]
+# The demo image stays on screen; the test image exits QEMU deterministically.
+vm-demo = []
