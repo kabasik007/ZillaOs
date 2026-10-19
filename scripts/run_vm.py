@@ -14,7 +14,7 @@ if __package__:
 else:
     from smoke_test import OVMF_PAIRS, ROOT
 
-DEMO_ISO = ROOT / "dist" / "zillaos-0.0.1-demo-uefi.iso"
+DEMO_ISO = ROOT / "dist" / "zillaos-0.0.2-dev-demo-uefi.iso"
 
 
 def find_ovmf(code_override: Path | None, vars_override: Path | None) -> tuple[Path, Path] | None:
