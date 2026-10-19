@@ -46,10 +46,14 @@ impl Screen {
             // this static. The resolution fits 1280x800, and Region::clipped
             // guarantees each accessed span is in [0, BACKBUFFER_PIXELS).
             let buffer = unsafe { &mut *BACKBUFFER.0.get() };
-            for row in region.y..region.y + region.height {
-                let start = row * raster::BACKBUFFER_WIDTH + region.x;
-                buffer[start..start + region.width].fill(pixel);
-            }
+            raster::fill_rect(
+                buffer,
+                raster::BACKBUFFER_WIDTH,
+                self.fb.width,
+                self.fb.height,
+                region,
+                pixel,
+            );
         } else {
             self.write_direct(region, pixel);
         }
