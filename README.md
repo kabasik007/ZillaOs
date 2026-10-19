@@ -53,7 +53,7 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 
 ## Zilla Desktop — graphical desktop preview
 
-ZillaOS now contains a **source-level experimental desktop shell** for the QEMU `demo` image. It combines a macOS-inspired menu bar and dock, Windows-style sample Files/Terminal/Settings windows, and a configurable dark/light theme. The GUI renders directly to the Limine RGB32 framebuffer and accepts QEMU PS/2 keyboard input (F1 launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, Tab switch, Esc close). These are demonstration views **without** a real filesystem, terminal process or compositor. **Rust build, QEMU boot and interactive keyboard behavior remain NOT VERIFIED.**
+ZillaOS now contains a **source-level experimental desktop shell** for the QEMU `demo` image. It combines a macOS-inspired menu bar and dock, three overlapping Windows-style sample Files/Terminal/Settings windows with focus/z-order/minimize/maximize, and a configurable dark/light theme. The GUI renders directly to the Limine RGB32 framebuffer and accepts QEMU PS/2 keyboard input (F1 launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, F6 minimize, F7 maximize, Tab focus, arrows move, Shift+arrows resize, Esc hide). These are demonstration views **without** a real filesystem, terminal process or compositor. **Rust build, QEMU boot and interactive keyboard behavior remain NOT VERIFIED.**
 
 [Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) · [Desktop roadmap](docs/DESKTOP_ROADMAP.md)
 
