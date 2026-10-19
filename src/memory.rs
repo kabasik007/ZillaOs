@@ -135,11 +135,12 @@ impl FrameAllocator {
         if range_count == 0 || available_frames == 0 {
             return Err(MemoryError::NoUsableFrames);
         }
+        let cursor_address = ranges[0].start;
         Ok(Self {
             ranges,
             range_count,
             cursor_region: 0,
-            cursor_address: ranges[0].start,
+            cursor_address,
             available_frames,
         })
     }
