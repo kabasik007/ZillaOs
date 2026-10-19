@@ -2,13 +2,30 @@
 //! This draws directly into boot framebuffer memory (single-core demo only).
 //! Production GUI must run in a user-space compositor after process isolation.
 
+use core::cell::UnsafeCell;
 use core::ptr;
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::limine::{self, Framebuffer};
-use zillaos_kernel::desktop::{App, Desktop, Layout};
+use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
+use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
+
+// Fixed-size offscreen RGB32 surface: 1280 x 800 x 4 = 4,096,000 bytes.
+// It resides in the kernel's BSS, NEVER on the stack or a heap.
+// Larger Limine resolutions fall back to the original bounded direct renderer.
+struct Backbuffer(UnsafeCell<[u32; raster::BACKBUFFER_PIXELS]>);
+
+// SAFETY: the preemptive scheduler/IRQ handler/SMP renderer does not exist.
+// Exactly one bootstrap CPU accesses this static through Screen methods.
+unsafe impl Sync for Backbuffer {}
+static BACKBUFFER: Backbuffer = Backbuffer(UnsafeCell::new([0; raster::BACKBUFFER_PIXELS]));
+static BACKBUFFER_VALID: AtomicBool = AtomicBool::new(false);
+static BACKBUFFER_WIDTH: AtomicUsize = AtomicUsize::new(0);
+static BACKBUFFER_HEIGHT: AtomicUsize = AtomicUsize::new(0);
 
 struct Screen {
     fb: Framebuffer,
+    buffered: bool,
 }
 
 impl Screen {
@@ -21,26 +38,60 @@ impl Screen {
 
     #[inline]
     fn rectangle(&self, x: usize, y: usize, width: usize, height: usize, rgb: u32) {
-        let x0 = x.min(self.fb.width);
-        let y0 = y.min(self.fb.height);
-        let x1 = x.saturating_add(width).min(self.fb.width);
-        let y1 = y.saturating_add(height).min(self.fb.height);
-        if x0 >= x1 || y0 >= y1 {
-            return;
-        }
+        let Some(region) = Region::new(x, y, width, height)
+            .clipped(self.fb.width, self.fb.height) else { return };
         let pixel = self.rgb(rgb);
-        for row in y0..y1 {
-            for col in x0..x1 {
+        if self.buffered {
+            // SAFETY: a single early-boot CPU is the sole reader/writer of
+            // this static. The resolution fits 1280x800, and Region::clipped
+            // guarantees each accessed span is in [0, BACKBUFFER_PIXELS).
+            let buffer = unsafe { &mut *BACKBUFFER.0.get() };
+            for row in region.y..region.y + region.height {
+                let start = row * raster::BACKBUFFER_WIDTH + region.x;
+                buffer[start..start + region.width].fill(pixel);
+            }
+        } else {
+            self.write_direct(region, pixel);
+        }
+    }
+
+    /// Write pixels to the firmware-mapped display, bypassing the backing
+    /// layer. Reserved for flush and drawing the hardware-visible cursor.
+    fn write_direct(&self, region: Region, color: u32) {
+        let Some(region) = region.clipped(self.fb.width, self.fb.height) else { return };
+        for row in region.y..region.y + region.height {
+            for col in region.x..region.x + region.width {
                 let byte_offset = row * self.fb.pitch + col * 4;
-                // SAFETY: limine::framebuffer checked buffer pitch, dimensions,
-                // mapping, 4-byte alignment, total size and channel masks.
-                // Every write remains within the validated RGB32 framebuffer.
+                // SAFETY: framebuffer() validates pixel stride, alignment
+                // and mapped bounds. Region stays inside width and height.
                 unsafe {
-                    ptr::write_volatile(self.fb.address.add(byte_offset).cast::<u32>(), pixel);
+                    ptr::write_volatile(self.fb.address.add(byte_offset).cast::<u32>(), color);
                 }
             }
         }
     }
+
+    /// Transfer previously composed background pixels from the BSS buffer
+    /// into a clipped framebuffer area. Also restores cursor damage.
+    fn flush_region(&self, region: Region) {
+        if !self.buffered { return; }
+        let Some(region) = region.clipped(self.fb.width, self.fb.height) else { return };
+        // SAFETY: render/flush/cursor calls never run concurrently; bounded
+        // Region indices are within the statically allocated backing buffer.
+        let buffer = unsafe { &*BACKBUFFER.0.get() };
+        for row in region.y..region.y + region.height {
+            let start = row * raster::BACKBUFFER_WIDTH + region.x;
+            for col in 0..region.width {
+                let color = buffer[start + col];
+                let byte_offset = row * self.fb.pitch + (region.x + col) * 4;
+                // SAFETY: firmware RGB32 surface was validated by Limine.
+                unsafe {
+                    ptr::write_volatile(self.fb.address.add(byte_offset).cast::<u32>(), color);
+                }
+            }
+        }
+    }
+
 
     fn round_rect(&self, x: usize, y: usize, w: usize, h: usize, radius: usize, rgb: u32) {
         if w == 0 || h == 0 {
@@ -273,13 +324,17 @@ impl Screen {
         if !state.pointer.visible { return; }
         let x = state.pointer.x;
         let y = state.pointer.y;
+        // Draw directly, AFTER committing the background buffer. The cursor
+        // must never be saved into the backing pixels that will restore it.
         for row in 0..17usize {
             let width = if row < 12 { 2 + row / 2 } else { 3 };
-            self.rectangle(x, y.saturating_add(row), width + 2, 1, 0x092134);
-            self.rectangle(x.saturating_add(1), y.saturating_add(row),
-                           width, 1, 0xf4fbff);
+            self.write_direct(Region::new(x, y.saturating_add(row), width + 2, 1),
+                              self.rgb(0x092134));
+            self.write_direct(Region::new(x.saturating_add(1), y.saturating_add(row),
+                                          width, 1), self.rgb(0xf4fbff));
         }
-        self.rectangle(x.saturating_add(2), y.saturating_add(13), 3, 5, 0x1dd9b4);
+        self.write_direct(Region::new(x.saturating_add(2), y.saturating_add(13),
+                                      3, 5), self.rgb(0x1dd9b4));
     }
 
     fn key_legend(&self, state: &Desktop, layout: &Layout) {
@@ -299,7 +354,9 @@ impl Screen {
 pub fn render(state: &Desktop) -> bool {
     let Some(fb) = limine::framebuffer() else { return false };
     let Some(layout) = Layout::for_size(fb.width, fb.height) else { return false };
-    let screen = Screen { fb };
+    let buffered = raster::supports_backbuffer(fb.width, fb.height);
+    BACKBUFFER_VALID.store(false, Ordering::Release);
+    let screen = Screen { fb, buffered };
     screen.background(state.dark);
     screen.wallpaper_label(state, &layout);
     screen.top_panel(state, &layout);
@@ -311,6 +368,48 @@ pub fn render(state: &Desktop) -> bool {
     screen.dock(state, &layout);
     screen.launcher(state, &layout);
     screen.key_legend(state, &layout);
+
+    if buffered {
+        // Compose all GUI layers before a single complete screen transfer.
+        screen.flush_region(Region::new(0, 0, screen.fb.width, screen.fb.height));
+        BACKBUFFER_WIDTH.store(screen.fb.width, Ordering::Relaxed);
+        BACKBUFFER_HEIGHT.store(screen.fb.height, Ordering::Relaxed);
+        BACKBUFFER_VALID.store(true, Ordering::Release);
+    }
+    screen.cursor(state);
+    true
+}
+
+/// Whether the most recent complete scene is cached in BSS.
+pub fn has_backbuffer() -> bool {
+    BACKBUFFER_VALID.load(Ordering::Acquire)
+}
+
+/// Fast path for pointer movement without changing windows/theme/launcher.
+/// Restore the old and new cursor rectangles only (<=480 pixels total).
+/// Returns false when no cached background is available, in which case the
+/// caller MUST redraw the complete desktop.
+pub fn redraw_cursor(previous: Pointer, state: &Desktop) -> bool {
+    if !state.pointer.visible || !previous.visible || !has_backbuffer() {
+        return false;
+    }
+    let Some(fb) = limine::framebuffer() else { return false };
+    if !raster::supports_backbuffer(fb.width, fb.height)
+        || BACKBUFFER_WIDTH.load(Ordering::Relaxed) != fb.width
+        || BACKBUFFER_HEIGHT.load(Ordering::Relaxed) != fb.height
+    {
+        return false;
+    }
+
+    let screen = Screen { fb, buffered: true };
+    if let Some(region) = Region::cursor_at(previous.x, previous.y,
+                                            screen.fb.width, screen.fb.height) {
+        screen.flush_region(region);
+    }
+    if let Some(region) = Region::cursor_at(state.pointer.x, state.pointer.y,
+                                            screen.fb.width, screen.fb.height) {
+        screen.flush_region(region);
+    }
     screen.cursor(state);
     true
 }
