@@ -4,6 +4,14 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Mouse and pointer interaction — D0.6
+
+- Added hardware-independent Rust decoder for signed three-byte PS/2 mouse packets and unit tests.
+- Replaced keyboard-only 8042 reader with a shared keyboard/mouse polling adapter. AUX mouse initialization uses bounded waits and falls back to keyboard-only.
+- Added a software cursor and screen-bounded pointer coordinates; Dock and launcher click targets, window focus, title-bar dragging and red/yellow/green window controls.
+- Extended headless QEMU GUI smoke with actual HMP mouse movement and button-injection checks for `ZILLAOS_MOUSE_READY`, `ZILLAOS_MOUSE_MOTION_DETECTED`, `ZILLAOS_MOUSE_LEFT_DOWN` and `ZILLAOS_MOUSE_LEFT_UP`.
+- This is **source only; Rust compilation and guest PS/2 behavior remain NOT VERIFIED**. See [MOUSE.md](MOUSE.md).
+
 ### Experimental Zilla Desktop interface
 
 - Added a pure Rust `no_std` desktop state and keyboard-decoding module with host-side unit tests.
