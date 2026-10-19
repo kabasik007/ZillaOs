@@ -23,9 +23,15 @@ pub extern "C" fn _start() -> ! {
         }
         Err(error) => {
             match error {
-                limine::BootError::UnsupportedRevision => {\n                    serial::write("ERR: unsupported Limine base revision\\n")\n                },
-                limine::BootError::MissingMemoryMap => {\n                    serial::write("ERR: no Limine memory map response\\n")\n                },
-                limine::BootError::InvalidMemoryMap => {\n                    serial::write("ERR: invalid memory map metadata\\n")\n                },
+                limine::BootError::UnsupportedRevision => {
+                    serial::write("ERR: unsupported Limine base revision\n");
+                }
+                limine::BootError::MissingMemoryMap => {
+                    serial::write("ERR: no Limine memory map response\n");
+                }
+                limine::BootError::InvalidMemoryMap => {
+                    serial::write("ERR: invalid memory map metadata\n");
+                }
             }
             serial::write("ZILLAOS_BOOT_FAIL\n");
             serial::debug_exit(0x11);
