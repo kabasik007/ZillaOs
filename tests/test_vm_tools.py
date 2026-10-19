@@ -26,6 +26,10 @@ class BootEvidenceTests(unittest.TestCase):
     def test_complete_evidence_passes(self):
         self.assertTrue(smoke_test.boot_passed(33, GOOD))
 
+    def test_substring_marker_does_not_pass(self):
+        self.assertFalse(smoke_test.boot_passed(
+            33, GOOD.replace("ZILLAOS_BOOT_OK", "boot: ZILLAOS_BOOT_OK is not ready")))
+
     def test_wrong_exit_fails(self):
         self.assertFalse(smoke_test.boot_passed(0, GOOD))
 
