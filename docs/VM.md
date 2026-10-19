@@ -55,8 +55,9 @@ procedure and must not be mistaken for a passing test report.
    python3 scripts/run_vm.py --display gtk
    ```
 
-   Expected after validated Limine boot: ZillaOS splash on framebuffer and
-   `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY` in Ubuntu terminal.
+   Expected after validated Limine boot: an experimental Zilla Desktop with top panel, dock and sample Files window, plus
+   `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY`, `ZILLAOS_DESKTOP_READY` in Ubuntu terminal. Keyboard: F1 Launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, Tab switch, Esc hide.
+   **Caution:** These are expected markers, not yet observed in a verified QEMU run.
    Stop with Ctrl+C or by closing the QEMU window.
    **Demo mode intentionally does not exit automatically.** It is only a
    proof-of-boot screen, not a desktop or login system.
@@ -78,7 +79,7 @@ emulation (`accel=tcg`), so no KVM or nested virtualization is required.
 | Mode | ISO | Guest behavior |
 | --- | --- | --- |
 | `test` | `dist/zillaos-0.0.2-dev-test-uefi.iso` | Print serial marker and exit QEMU with expected status 33 |
-| `demo` | `dist/zillaos-0.0.2-dev-demo-uefi.iso` | Draw framebuffer logo, print serial marker, stay running |
+| `demo` | `dist/zillaos-0.0.2-dev-demo-uefi.iso` | Draw keyboard-controlled desktop preview, stay running |
 | `fault` | `dist/zillaos-0.0.2-dev-fault-uefi.iso` | Execute UD2, report vector 6 and intentionally exit QEMU 35 |
 
 For both modes, Limine 12.9.3 is downloaded on first use and SHA-256
