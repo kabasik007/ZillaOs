@@ -37,7 +37,7 @@
 
 ## M2 — v0.0.2 Memory and CPU platform
 
-**Progress:** bounded Limine memory-map copy, a conservative bump-only 4 KiB physical frame planner and host-side Rust unit tests have been committed to `main`. These are *unverified* source changes, not a completed M2 release. Still missing: actual page-table manipulation, exception/interrupt handlers, paging safety, persistent allocator state and QEMU evidence. See [MEMORY.md](MEMORY.md).
+**Progress:** v0.0.2-dev in `main`: 256-entry Limine map copy, CPUID physical/virtual address width, conservative bump-only 4 KiB frame planner, HHDM RAM pattern/readback/zero test, canonical paging metadata, and host-side Rust/Python test suites. **None of the Rust build, unit-test, and QEMU runtime gates is yet verified** in this environment. Still missing: active page tables, GDT/IDT exception handlers, owned CR3, persistent allocation state, and recorded emulator evidence. See [MEMORY.md](MEMORY.md), [PAGING.md](PAGING.md), [CHANGELOG.md](CHANGELOG.md).
 
 **Build:** checked boot memory map, frame allocator, checked paging, kernel heap if needed, IDT/exception handling, timer tick and robust panic diagnostics.
 
