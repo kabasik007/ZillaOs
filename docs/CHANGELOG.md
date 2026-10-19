@@ -4,6 +4,16 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Experimental Zilla Desktop interface
+
+- Added a pure Rust `no_std` desktop state and keyboard-decoding module with host-side unit tests.
+- Implemented a dark/light framebuffer desktop preview: top menu bar, centered Dock, wallpaper, a sample Files/Terminal/Settings window, and an F1 launcher.
+- Added polling QEMU PS/2 translated-set-1 keyboard adapter for F1–F5, Tab and Escape.
+- `vm-demo` now enters an event loop and redraws on recognized state changes instead of halting at the boot splash.
+- GUI serial markers: `ZILLAOS_DESKTOP_READY`, `ZILLAOS_DESKTOP_INPUT_POLL`, `ZILLAOS_DESKTOP_STATE_CHANGED`.
+- **NOT VERIFIED:** Rust compile, framebuffer appearance, QEMU keyboard support. No real file operations, shell execution, mouse, or separate UI process.
+- See [DESKTOP_ROADMAP.md](DESKTOP_ROADMAP.md) and [DESKTOP_ARCHITECTURE.md](DESKTOP_ARCHITECTURE.md).
+
 ### CPU & memory bootstrap
 
 - Detect x86-64 physical/virtual address width and NX support through CPUID.
