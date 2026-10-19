@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -11,7 +10,7 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.1-uefi.iso"
+DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.1-test-uefi.iso"
 OVMF_PAIRS = [
     ("/usr/share/OVMF/OVMF_CODE_4M.fd", "/usr/share/OVMF/OVMF_VARS_4M.fd"),
     ("/usr/share/OVMF/OVMF_CODE.fd", "/usr/share/OVMF/OVMF_VARS.fd"),
@@ -20,6 +19,15 @@ OVMF_PAIRS = [
 SUCCESS_MARKER = "ZILLAOS_BOOT_OK"
 FAILURE_MARKERS = ("ZILLAOS_PANIC", "ZILLAOS_BOOT_FAIL")
 EXPECTED_EXIT = 33  # QEMU debug-exit: (0x10 << 1) | 1.
+
+
+def boot_passed(exit_code: int, output: str) -> bool:
+    """Evidence gate: BOTH correct QEMU exit status and serial marker required."""
+    return (
+        exit_code == EXPECTED_EXIT
+        and SUCCESS_MARKER in output
+        and not any(marker in output for marker in FAILURE_MARKERS)
+    )
 
 
 def main() -> int:
@@ -65,6 +73,8 @@ def main() -> int:
             "-cpu", "qemu64",
             "-m", "512M",
             "-smp", "1",
+            "-vga", "std",
+            "-net", "none",
             "-display", "none",
             "-monitor", "none",
             "-serial", "stdio",
@@ -95,12 +105,7 @@ def main() -> int:
 
         output = result.stdout
         print(output)
-        ok = (
-            result.returncode == EXPECTED_EXIT
-            and SUCCESS_MARKER in output
-            and not any(marker in output for marker in FAILURE_MARKERS)
-        )
-        if not ok:
+        if not boot_passed(result.returncode, output):
             print(
                 f"FAIL: exit={result.returncode}, marker={SUCCESS_MARKER in output}",
                 file=sys.stderr,
