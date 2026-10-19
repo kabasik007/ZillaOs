@@ -158,6 +158,7 @@ pub extern "C" fn _start() -> ! {
         serial::write("ZILLAOS_DESKTOP_INPUT_POLL\n");
         serial::write("ZILLAOS_WINDOW_MANAGER_READY\n");
         let mut first_mouse_motion_logged = false;
+        let mut first_cursor_damage_logged = false;
 
         // Poll both keyboard and mouse data from a SINGLE i8042 reader.
         // No interrupts, threads or real process messages exist yet.
@@ -211,10 +212,15 @@ pub extern "C" fn _start() -> ! {
                     // Mouse-only updates restore <= two cursor rectangles.
                     // Full redraw is reserved for actual window/theme changes
                     // or for devices beyond the 1280x800 backing capacity.
-                    if !mouse_event
-                        || scene_changed
-                        || !graphics::redraw_cursor(previous_pointer, &desktop)
-                    {
+                    let cursor_damage_applied = mouse_event
+                        && !scene_changed
+                        && graphics::redraw_cursor(previous_pointer, &desktop);
+                    if cursor_damage_applied {
+                        if !first_cursor_damage_logged {
+                            first_cursor_damage_logged = true;
+                            serial::write("ZILLAOS_GRAPHICS_CURSOR_DAMAGE_OK\n");
+                        }
+                    } else {
                         graphics::render(&desktop);
                     }
                 }
