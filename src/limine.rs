@@ -28,6 +28,12 @@ struct MemoryMapResponse {
 }
 
 #[repr(C)]
+struct HhdmResponse {
+    revision: u64,
+    offset: u64,
+}
+
+#[repr(C)]
 struct FramebufferResponse {
     revision: u64,
     framebuffer_count: u64,
@@ -101,6 +107,19 @@ static MEMORY_MAP: Request<MemoryMapResponse> = Request {
 
 #[used]
 #[unsafe(link_section = ".limine_requests")]
+static HHDM: Request<HhdmResponse> = Request {
+    id: [
+        0xc7b1dd30df4c8b88,
+        0x0a82e883a194f07b,
+        0x48dcf1cb8ad2b852,
+        0x63984e959a98244b,
+    ],
+    revision: 0,
+    response: AtomicPtr::new(ptr::null_mut()),
+};
+
+#[used]
+#[unsafe(link_section = ".limine_requests")]
 static FRAMEBUFFER: Request<FramebufferResponse> = Request {
     id: [
         0xc7b1dd30df4c8b88,
@@ -123,6 +142,27 @@ pub enum BootError {
     UnsupportedRevision,
     MissingMemoryMap,
     InvalidMemoryMap,
+    MissingHhdm,
+    InvalidHhdm,
+}
+
+
+/// Limine's mapped higher-half offset, discovered dynamically per boot.
+///
+/// The direct map covers USABLE RAM on base revision >= 3. The returned
+/// offset alone does not authorize dereferencing arbitrary physical ranges.
+pub fn hhdm_offset() -> Result<u64, BootError> {
+    let response = HHDM.response.load(Ordering::Acquire);
+    if response.is_null() {
+        return Err(BootError::MissingHhdm);
+    }
+    // SAFETY: trusted Limine response exists throughout early boot.
+    let offset = unsafe { (*response).offset };
+    // The HHDM must be a high-half mapped window, never an identity map.
+    if offset < 0xff00_0000_0000_0000 || offset & 0xfff != 0 {
+        return Err(BootError::InvalidHhdm);
+    }
+    Ok(offset)
 }
 
 pub struct BootMemoryMap {
