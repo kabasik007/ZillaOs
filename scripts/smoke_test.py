@@ -32,13 +32,18 @@ def serial_hex(output: str, key: str) -> int | None:
     return int(values[0], 16) if len(values) == 1 else None
 
 
+def has_marker(output: str, marker: str) -> bool:
+    """Marker must occupy an entire serial line, not a substring of noise."""
+    return marker in {line.strip() for line in output.splitlines()}
+
+
 def boot_passed(exit_code: int, output: str) -> bool:
     """A successful boot proves CPU, frame uniqueness, HHDM and readback."""
     required = (SUCCESS_MARKER, MEMORY_MARKER, FRAME_MARKER, CPU_MARKER)
     if (
         exit_code != EXPECTED_EXIT
-        or not all(marker in output for marker in required)
-        or any(marker in output for marker in FAILURE_MARKERS)
+        or not all(has_marker(output, marker) for marker in required)
+        or any(has_marker(output, marker) for marker in FAILURE_MARKERS)
     ):
         return False
 
@@ -140,11 +145,11 @@ def main() -> int:
         print(output)
         if not boot_passed(result.returncode, output):
             print(
-                f"FAIL: exit={result.returncode}, marker={SUCCESS_MARKER in output}",
+                f"FAIL: exit={result.returncode}; CPU/memory/HHDM/frame evidence incomplete",
                 file=sys.stderr,
             )
             return 1
-        print("PASS: ZillaOS booted, validated Limine response and exited via QEMU device")
+        print("PASS: ZillaOS booted, validated CPU/HHDM/frame probe and exited via QEMU device")
         return 0
 
 
