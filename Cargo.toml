@@ -1,6 +1,6 @@
 [package]
 name = "zillaos-kernel"
-version = "0.0.1"
+version = "0.0.2-dev"
 edition = "2024"
 authors = ["ZillaOS contributors"]
 publish = false
