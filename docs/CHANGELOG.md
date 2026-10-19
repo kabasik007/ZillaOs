@@ -15,17 +15,25 @@
 - Validate HHDM virtual addresses against the CPUID virtual-address width (48/57 bits).
 - Add host-testable page index/canonical address functions and typed non-leaf page-table entry builders.
 
+### Fatal CPU exception handling (early foundation)
+
+- Corrected invalid literal newline escapes in `src/serial.rs` inline-assembly code.
+- Added a minimal single-core x86-64 IDT for fatal #UD, #GP and #PF, with serial vector/error/RIP diagnostics and CR2 for page faults.
+- Added host-testable page-fault flag decoder, and separate `fault` ISO that runs `UD2` only with the test feature.
+- Added negative QEMU verdict (requires vector 6, error 0, IDT marker and exit 35) alongside normal exit-33 boot test.
+- Full GDT/TSS/IST, complete IDT coverage and safe recovery remain unimplemented. See [EXCEPTIONS.md](EXCEPTIONS.md).
+
 ### Testing and developer experience
 
 - QEMU smoke verifies CPU, distinct aligned frames, HHDM, readback and boot markers **plus** the debug-exit code.
 - Host Python tests cover forged/missing serial evidence and invalid VM firmware overrides.
 - Rust unit tests cover usable vs reserved overlap, address widths, frame allocation, canonical addresses and PTE metadata.
 - Manual-only GitHub Actions workflow saves a QEMU serial transcript when run.
-- Test/demo ISO output names now use `zillaos-0.0.2-dev-*.iso`.
+- Test/demo/fault ISO output names now use `zillaos-0.0.2-dev-*.iso`. Each mode gets its own matching ELF artifact.
 
 ### Deliberately not implemented
 
-- No active page table manipulation, CR3 switch, page fault handler, GDT/IDT, scheduler, ring-3 processes, persistence, device drivers, or secure native hardware boot.
+- No active page table manipulation, CR3 switch, recoverable page-fault handling, own GDT/TSS/IST, scheduler, ring-3 processes, persistence, device drivers, or secure native hardware boot.
 - The experimental RAM probe runs only within Limine's trusted early-boot mappings.
 - Passing source-consistency checks is **not** proof that Rust builds or that the guest boots.
 
@@ -35,4 +43,5 @@
 - [ ] Successful `cargo build --release --target x86_64-unknown-none`.
 - [ ] Verified Limine 12.9.3 ISO and boot under QEMU/OVMF.
 - [ ] `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK` observed with QEMU exit 33.
+- [ ] Negative UD2 handler test exits QEMU 35 with vector 6 and saved diagnostics.
 - [ ] Negative boot tests and serial logs archived.
