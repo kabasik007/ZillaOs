@@ -81,6 +81,8 @@ pub fn fill_rect(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn rectangle_fill_preserves_padding_and_outside_pixels() {
         // Physical backing has stride 6, but visible canvas is 4x3.
@@ -118,8 +120,6 @@ mod tests {
         assert!(pixels.iter().all(|px| *px == 0x112233));
     }
 
-
-    use super::*;
 
     #[test]
     fn clips_at_all_screen_edges() {
