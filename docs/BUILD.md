@@ -80,6 +80,16 @@ The test requires CPU, HHDM and frame-probe evidence, the memory/boot readiness 
 fail markers, hangs and missing image files must cause test failure.
 OVMF variable storage is copied to a new temporary directory for each run.
 
+### VMware Workstation on Windows
+
+Use `bash scripts/build_vmware.sh` from WSL Ubuntu to run host tests,
+build the `demo` ISO and inspect UEFI boot metadata. Use
+`scripts/vmware.ps1` from **Windows PowerShell** to generate and open
+a disposable 1-vCPU UEFI VMware Workstation VM with its virtual CD/DVD
+pointing to that ISO. The VM has no virtual disk or network. See
+[VMWARE.md](VMWARE.md) for exact commands, COM1 logs and troubleshooting.
+Neither VMware boot nor graphical behavior is verified yet.
+
 ### Windows
 
 For initial development use Ubuntu under **WSL2** for ISO build scripting; see [Windows + Linux VM Quickstart](VM.md).
