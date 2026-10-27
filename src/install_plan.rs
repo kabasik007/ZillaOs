@@ -67,10 +67,16 @@ impl PreviewPlan {
     pub fn fits_in(self, disk: DiskGeometry) -> bool {
         let sector = disk.logical_sector_bytes as u64;
         sector != 0
+            && (sector == 512 || sector == 4096)
             && disk.capacity_bytes % sector == 0
             && self.logical_sector_bytes == disk.logical_sector_bytes
             && disk.capacity_bytes / sector == self.total_sectors
+            && self.efi.purpose == PartitionPurpose::EfiSystem
+            && self.system.purpose == PartitionPurpose::ZillaSystem
+            && self.efi.first_lba == START_GUARD_BYTES / sector
+            && self.efi.sectors == ESP_BYTES / sector
             && self.efi.end_exclusive() == Some(self.system.first_lba)
+            && self.system.sectors >= MIN_SYSTEM_BYTES / sector
             && self.system.end_exclusive().is_some_and(|end| {
                 end <= self.total_sectors.saturating_sub(END_GUARD_BYTES / sector)
             })
@@ -186,6 +192,26 @@ mod tests {
         };
         let plan = preview_for(disk).unwrap();
         assert!(plan.fits_in(disk));
+    }
+
+    #[test]
+    fn forged_partition_roles_or_size_fail_validation() {
+        let disk = DiskGeometry {
+            capacity_bytes: 16 * GIB,
+            logical_sector_bytes: 512,
+        };
+        let mut p = preview_for(disk).unwrap();
+        p.efi.purpose = PartitionPurpose::ZillaSystem;
+        assert!(!p.fits_in(disk));
+        let mut p = preview_for(disk).unwrap();
+        p.efi.sectors -= 1;
+        assert!(!p.fits_in(disk));
+        let mut p = preview_for(disk).unwrap();
+        p.efi.first_lba = 0;
+        assert!(!p.fits_in(disk));
+        let mut p = preview_for(disk).unwrap();
+        p.system.sectors = 1;
+        assert!(!p.fits_in(disk));
     }
 
     #[test]
