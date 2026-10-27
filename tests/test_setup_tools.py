@@ -4,8 +4,9 @@ from scripts.desktop_smoke import setup_passed
 
 GOOD = "\n".join([
     "ZILLAOS_CPU_READY",
+    "ZILLAOS_STORAGE_PCI_SCAN_READY",
     "ZILLAOS_SETUP_READY",
-    *[f"ZILLAOS_SETUP_STEP=0x{i:016x}" for i in range(1, 8)],
+    *[f"ZILLAOS_SETUP_STEP=0x{i:016x}" for i in range(1, 9)],
     "ZILLAOS_SETUP_COMPLETE",
     "ZILLAOS_SETUP_LANGUAGE=uk",
     "ZILLAOS_SETUP_TIMEZONE=Europe/Kyiv",
