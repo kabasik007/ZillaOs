@@ -14,8 +14,8 @@ if (( $# > 1 )); then
     exit 2
 fi
 
-LIMINE_VERSION="12.9.3"
-LIMINE_SHA256="e02a473c6dc6df25159697f94930272397f21fd86e5d4eeee61bba72c95ec8d2"
+LIMINE_VERSION="12.9.4"
+LIMINE_SHA256="9880cc04681262214db9b824ed8a5c55296955027d8caa9f55ab52a6dd85d6a0"
 LIMINE_URL="https://github.com/limine-bootloader/limine/releases/download/v${LIMINE_VERSION}/limine-binary.tar.xz"
 DOWNLOAD_DIR="$ROOT/build/downloads"
 UNPACK_DIR="$ROOT/build/limine-${LIMINE_VERSION}"
