@@ -24,6 +24,7 @@ DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.2-dev-demo-uefi.iso"
 REQUIRED = ("ZILLAOS_DESKTOP_READY", "ZILLAOS_DESKTOP_INPUT_POLL", "ZILLAOS_WINDOW_MANAGER_READY", "ZILLAOS_MOUSE_READY")
 SETUP_READY = "ZILLAOS_SETUP_READY"
 SETUP_COMPLETE = "ZILLAOS_SETUP_COMPLETE"
+STORAGE_READY = "ZILLAOS_STORAGE_PCI_SCAN_READY"
 KEY_MARKER = "ZILLAOS_DESKTOP_STATE_CHANGED"
 FAILURE = ("ZILLAOS_BOOT_FAIL", "ZILLAOS_PANIC", "ZILLAOS_EXCEPTION_FATAL")
 
@@ -54,8 +55,9 @@ def setup_passed(log: str, profile: str = "default") -> bool:
     language, timezone, hostname, region, theme = profiles[profile]
     lines = [line.strip() for line in log.splitlines()]
     sequence = [
+        STORAGE_READY,
         SETUP_READY,
-        *[f"ZILLAOS_SETUP_STEP=0x{step:016x}" for step in range(1, 8)],
+        *[f"ZILLAOS_SETUP_STEP=0x{step:016x}" for step in range(1, 9)],
         SETUP_COMPLETE,
         f"ZILLAOS_SETUP_LANGUAGE={language}",
         f"ZILLAOS_SETUP_TIMEZONE={timezone}",
@@ -216,7 +218,8 @@ def main() -> int:
         with log.open("w") as output:
             guest = subprocess.Popen(cmd, stdout=output, stderr=subprocess.STDOUT, text=True)
             try:
-                if not wait_until(lambda: has_line(read_log(log), SETUP_READY),
+                if not wait_until(lambda: has_line(read_log(log), STORAGE_READY)
+                                  and has_line(read_log(log), SETUP_READY),
                                   guest, deadline):
                     print("FAIL: first-run Setup screen did not start", file=sys.stderr)
                     return 1
@@ -236,8 +239,8 @@ def main() -> int:
                 setup_output = args.output.with_name(args.output.stem + "-setup.ppm")
                 shutil.copyfile(setup_capture, setup_output)
 
-                # Drive Welcome -> Language -> Region -> TimeZone -> Device
-                # -> Appearance -> Review -> Finished. Settings remain RAM-only.
+                # Eight transitions: Welcome -> Language -> Region -> TimeZone -> Device
+                # -> Appearance -> Storage (read-only) -> Review -> Finished.
                 for step in range(1, 8):
                     if args.setup_profile == "custom":
                         # Once a page opens, adjust the value BEFORE Enter.
