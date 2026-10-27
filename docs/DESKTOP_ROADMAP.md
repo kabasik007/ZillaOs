@@ -46,6 +46,7 @@ The current framebuffer prototype is a **UI spike**; it is not proof that the pr
 
 | Stage | Target | Demonstration / gate |
 | --- | --- | --- |
+| **OOBE v0.1: First-run Setup** | source committed, runtime unverified | Ukrainian/English wizard, region/timezone, hostname, theme; framebuffer screenshot and Enter navigation; preferences RAM-only |
 | **D0: Desktop preview** | committed source | Native RGB32 desktop, responsive layout, topbar, Dock, mock Files/Terminal/Settings, launcher; F1–F5, Tab, Esc; Rust state tests |
 | **D0.6: PS/2 mouse preview** | source committed; integration unverified | QEMU AUX mouse, pointer, Dock clicks, title-bar dragging, RGB32 cursor, optional keyboard-only fallback |
 | **D0.5: Window manager state** | source committed; integration unverified | Three independent demo windows, focus, z-order, minimize/maximize, keyboard movement and resizing; screenshot regression |
@@ -157,3 +158,7 @@ D0.6 reference: [Mouse bootstrap and known limits](MOUSE.md).
 
 
 D1a graphics contract: [GRAPHICS.md](GRAPHICS.md).
+
+
+First-run product onboarding: [SETUP.md](SETUP.md). Disk installer,
+persistent settings and user accounts are explicitly NOT implemented.
