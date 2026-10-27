@@ -13,3 +13,4 @@ pub mod window_manager;
 pub mod mouse;
 pub mod raster;
 pub mod setup;
+pub mod install_plan;
