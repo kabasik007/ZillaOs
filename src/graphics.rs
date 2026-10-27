@@ -337,6 +337,15 @@ impl Screen {
                     self.text(label, bx + 15, top + 9, 1, muted);
                     self.text(value, bx + 15, top + 24, 1, fg);
                 }
+                // Honest onboarding: review is not a real disk installer.
+                // No storage enumeration or write operation is wired here.
+                let note_y = g.option_y + 4 * g.option_gap + 5;
+                if note_y + 44 < g.footer_y {
+                    self.round_rect(bx, note_y, g.body_width, 43, 10, soft);
+                    self.rectangle(bx + 9, note_y + 8, 4, 27, 0x1ed7b6);
+                    self.text("INSTALL PREVIEW ONLY", bx + 21, note_y + 9, 1, fg);
+                    self.text("NO DISK WRITES", bx + 21, note_y + 27, 1, muted);
+                }
             }
             Step::Finished => {}
         }
