@@ -168,6 +168,7 @@ pub struct Wizard {
     pub region: Region,
     pub timezone: TimeZone,
     pub hostname: DeviceName,
+    pub hostname_pristine: bool,
     pub dark: bool,
     pub selection: usize,
     pub pointer: SetupPointer,
@@ -183,6 +184,7 @@ impl Wizard {
             region: Region::Ukraine,
             timezone: TimeZone::Kyiv,
             hostname: DeviceName::new(),
+            hostname_pristine: true,
             dark: true,
             selection: 0,
             pointer: SetupPointer {
@@ -232,23 +234,30 @@ impl Wizard {
             return false;
         }
         let before = (self.step, self.language, self.region, self.timezone,
-                      self.hostname, self.dark, self.selection);
+                      self.hostname, self.hostname_pristine, self.dark, self.selection);
         match key {
             Key::Confirm => self.next(),
             Key::Escape => self.previous(),
             Key::NextApp | Key::Move(Move::Right) | Key::Move(Move::Down) => self.shift_choice(true),
             Key::Move(Move::Left) | Key::Move(Move::Up) => self.shift_choice(false),
             Key::Backspace if self.step == Step::Device => {
+                self.hostname_pristine = false;
                 self.hostname.pop();
             }
             Key::Text(ch) if self.step == Step::Device => {
+                if (ch.is_ascii_alphanumeric() || ch == b'-')
+                    && self.hostname_pristine
+                {
+                    self.hostname.clear();
+                    self.hostname_pristine = false;
+                }
                 self.hostname.push(ch);
             }
             _ => {}
         }
         self.apply_choice();
         let changed = before != (self.step, self.language, self.region, self.timezone,
-                                 self.hostname, self.dark, self.selection);
+                                 self.hostname, self.hostname_pristine, self.dark, self.selection);
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -480,6 +489,19 @@ mod tests {
         name.clear();
         for _ in 0..30 { name.push(b'x'); }
         assert_eq!(name.as_str().len(), DEVICE_NAME_MAX);
+    }
+
+    #[test]
+    fn typing_custom_name_replaces_initial_suggestion() {
+        let mut s = wizard();
+        for _ in 0..4 { s.handle_key(Key::Confirm); }
+        assert!(s.hostname_pristine);
+        for letter in b"workstation-1" {
+            s.handle_key(Key::Text(*letter));
+        }
+        assert_eq!(s.hostname.as_str(), "workstation-1");
+        assert!(!s.hostname_pristine);
+        assert!(s.hostname.is_valid());
     }
 
     #[test]
