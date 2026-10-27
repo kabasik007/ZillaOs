@@ -4,6 +4,15 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### VMware read-only PCI storage-controller inventory
+
+- Added `src/storage_pci.rs`: a pure `no_std` PCI mass-storage class inventory, fixed eight-controller cap, multifunction handling and unit tests for VMware AHCI/NVMe example headers.
+- Added `src/pci_io.rs`: VM-only PCI mechanism #1 config-header reader (writes only the 0xcf8 address selector, reads 0xcfc; no device config or sector writes).
+- Early-boot COM1 now records PCI storage class/vendor/device/bus/slot/function and explicit `ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE` marker.
+- Zilla Setup now has eight pages with a read-only storage-controller summary and a visible `INSTALLATION DISABLED` warning. The number of selectable disks is hard-coded to zero until a real read-only block driver exists.
+- QEMU GUI smoke captures a separate storage-step screenshot and drives eight Enter presses; CI retains both default/custom captures.
+- **Source-only:** actual Rust compilation and VMware/QEMU PCI detection not yet validated. See [STORAGE.md](STORAGE.md).
+
 ### Read-only installer geometry planning and expanded OOBE tests
 
 - Added `src/install_plan.rs`: pure `no_std` GPT/EFI + system partition preview calculator, handling 512/4096-byte logical sectors, capacity boundaries, 1-MiB front/end reserves, overflow checks and unit tests.
