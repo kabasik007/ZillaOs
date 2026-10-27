@@ -128,6 +128,18 @@ VMware menu labels vary by Workstation version. UEFI virtual hardware
 and CD-ROM boot options are documented by Broadcom. The ISO uses
 Limine's UEFI El Torito boot image.
 
+## First-launch Zilla Setup screen
+
+The `demo` ISO now displays an **interactive setup wizard before the desktop**.
+Press **Enter seven times** to accept defaults and reach Desktop, or use
+arrows/Tab to change selections, Esc to go back, and Backspace/ASCII typing
+on the device-name screen. Supported steps: Welcome, Language, Region,
+Time Zone, PC name, Theme, Review. Default: Ukrainian, Ukraine,
+Europe/Kyiv, `zilla-pc`, dark mode.
+The prototype **does not install ZillaOS to a disk**. All values are
+RAM-only and the wizard runs again after each VM reboot. For a real
+installer architecture see [SETUP.md](SETUP.md).
+
 ## D. What we should see
 
 **Potential startup sequence** (expected, not observed on VMware):
@@ -144,6 +156,10 @@ ZILLAOS_FRAME_PROBE_OK
 ZILLAOS_MEMORY_READY
 ZILLAOS_BOOT_OK
 ZILLAOS_DEMO_READY
+ZILLAOS_SETUP_READY
+# Seven interactive setup screens, then:
+ZILLAOS_SETUP_COMPLETE
+ZILLAOS_SETUP_VOLATILE_ONLY
 ZILLAOS_DESKTOP_READY
 ZILLAOS_WINDOW_MANAGER_READY
        |
