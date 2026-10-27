@@ -1,10 +1,12 @@
 """Host tests for ordered first-run setup evidence, no QEMU required."""
 import unittest
-from scripts.desktop_smoke import setup_passed
+from scripts.desktop_smoke import setup_passed, storage_scan_passed
 
 GOOD = "\n".join([
     "ZILLAOS_CPU_READY",
     "ZILLAOS_STORAGE_PCI_SCAN_READY",
+    "ZILLAOS_STORAGE_CONTROLLER_COUNT=0x0000000000000001",
+    "ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE",
     "ZILLAOS_SETUP_READY",
     *[f"ZILLAOS_SETUP_STEP=0x{i:016x}" for i in range(1, 9)],
     "ZILLAOS_SETUP_COMPLETE",
@@ -32,6 +34,18 @@ class SetupEvidenceTests(unittest.TestCase):
         self.assertTrue(setup_passed(custom, "custom"))
         self.assertFalse(setup_passed(custom, "default"))
         self.assertFalse(setup_passed(GOOD, "custom"))
+
+    def test_storage_scan_requires_count_and_no_disk_driver(self):
+        self.assertTrue(storage_scan_passed(GOOD))
+        self.assertFalse(storage_scan_passed(GOOD.replace(
+            "ZILLAOS_STORAGE_CONTROLLER_COUNT=0x0000000000000001", "")))
+        self.assertFalse(storage_scan_passed(GOOD.replace(
+            "ZILLAOS_STORAGE_CONTROLLER_COUNT=0x0000000000000001",
+            "ZILLAOS_STORAGE_CONTROLLER_COUNT=0x0000000000000009")))
+        self.assertFalse(storage_scan_passed(GOOD.replace(
+            "ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE", "")))
+        self.assertFalse(storage_scan_passed(GOOD +
+            "ZILLAOS_INSTALLATION_WRITES_ENABLED\n"))
 
     def test_unknown_test_profile_rejected(self):
         self.assertFalse(setup_passed(GOOD, "unsafe"))
