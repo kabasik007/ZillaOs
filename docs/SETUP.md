@@ -2,6 +2,8 @@
 
 **Status: code in `main`, 2026-10-28. Not yet compiled or verified in VMware/QEMU.**
 
+The VM-only boot path now begins with a passive PCI header scan of mass-storage controllers. It reports storage class codes and PCI IDs but **cannot detect logical disk identities, capacity or contents**. It never writes to a block device. The separate Storage screen explicitly disables installation; see [STORAGE.md](STORAGE.md).
+
 The first visible screen in the **`vm-demo` ISO** is now Zilla Setup, an
 interactive first-run configuration wizard with a dark navy/graphite
 background, teal accent, central translucent-looking (flat-color)
@@ -24,7 +26,8 @@ navigation buttons and a software mouse cursor.
 | 4 | Time Zone / Часовий пояс | Europe/Kyiv (default), Europe/Warsaw, America/New_York, UTC |
 | 5 | Device / Назва комп'ютера | Default `zilla-pc`; ASCII letters, numbers, dash; 3–24 characters |
 | 6 | Appearance / Оформлення | Dark (default) or light theme |
-| 7 | Review / Перевірка | Review choices; Enter launches Zilla Desktop |
+| 7 | Storage / Накопичувачі | Read-only PCI controller list; no verified disks, installation disabled |
+| 8 | Review / Перевірка | Review choices; Enter launches Zilla Desktop |
 
 **Keyboard:** Enter = next/confirm; Escape = back; Tab and arrow keys
 cycle choices; Backspace removes hostname characters; alphanumeric keys
@@ -86,7 +89,7 @@ ZILLAOS_SETUP_READY
 ZILLAOS_SETUP_INPUT_POLL
 ZILLAOS_SETUP_STEP=0x0000000000000001
 ...
-ZILLAOS_SETUP_STEP=0x0000000000000007
+ZILLAOS_SETUP_STEP=0x0000000000000008
 ZILLAOS_SETUP_COMPLETE
 ZILLAOS_SETUP_LANGUAGE=uk
 ZILLAOS_SETUP_TIMEZONE=Europe/Kyiv
@@ -118,7 +121,7 @@ python3 scripts/desktop_smoke.py --setup-profile custom --timeout 90 \\
 The updated desktop smoke test:
 1. Waits for `ZILLAOS_SETUP_READY`.
 2. Saves **`build/logs/desktop-qemu-setup.ppm`** before advancing.
-3. Sends **seven Enter presses**, asserting each exact step marker.
+3. Sends **eight Enter presses**, asserting each exact step marker.
 4. Requires `ZILLAOS_SETUP_COMPLETE` and Desktop readiness.
 5. Continues previous window, mouse, cursor and screenshot tests.
 
