@@ -60,7 +60,8 @@ class VMwareProfileTests(unittest.TestCase):
         src = PS_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("Test-Path -LiteralPath $IsoPath -PathType Leaf", src)
         self.assertIn("startConnected", src)
-        self.assertIn('PS2', 'PS2')  # name-only design; hardware verified at boot
+        self.assertIn('Start-Process -FilePath $exe', src)
+        self.assertIn('wsl.exe -d $Distro -- bash -lc', src)
 
     def test_linux_build_wrapper_generates_demo_uefi_image(self):
         src = BUILD_SCRIPT.read_text(encoding="utf-8")
