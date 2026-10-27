@@ -2,6 +2,7 @@
 //! Real processes and IPC-backed application surfaces are a later milestone.
 
 use crate::mouse::MousePacket;
+use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +100,10 @@ impl Pointer {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Desktop {
     pub windows: WindowManager,
+    pub hostname: DeviceName,
+    pub language: Language,
+    pub region: Region,
+    pub timezone: TimeZone,
     pub pointer: Pointer,
     layout: Layout,
     pub launcher: bool,
@@ -121,6 +126,10 @@ impl Desktop {
     pub fn with_layout(layout: Layout) -> Self {
         Self {
             windows: WindowManager::new(layout),
+            hostname: DeviceName::new(),
+            language: Language::Ukrainian,
+            region: Region::Ukraine,
+            timezone: TimeZone::Kyiv,
             pointer: Pointer {
                 x: layout.width / 2,
                 y: layout.height / 2,
@@ -390,6 +399,14 @@ impl ScancodeDecoder {
 mod tests {
     use super::*;
     use crate::window_manager::WindowMode;
+
+    #[test]
+    fn desktop_starts_with_valid_default_preferences() {
+        let s = Desktop::new();
+        assert_eq!(s.hostname.as_str(), "zilla-pc");
+        assert_eq!(s.language, Language::Ukrainian);
+        assert_eq!(s.timezone, TimeZone::Kyiv);
+    }
 
     #[test]
     fn translated_scan_codes_and_releases_are_stable() {
