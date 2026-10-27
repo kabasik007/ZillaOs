@@ -196,12 +196,24 @@ pub extern "C" fn _start() -> ! {
         serial::write(wizard.timezone.identifier());
         serial::write("\nZILLAOS_SETUP_HOSTNAME=");
         serial::write(wizard.hostname.as_str());
-        serial::write("\nZILLAOS_SETUP_VOLATILE_ONLY\n");
+        serial::write("\nZILLAOS_SETUP_REGION=");
+        match wizard.region {
+            zillaos_kernel::setup::Region::Ukraine => serial::write("UA\n"),
+            zillaos_kernel::setup::Region::Poland => serial::write("PL\n"),
+            zillaos_kernel::setup::Region::UnitedStates => serial::write("US\n"),
+        }
+        serial::write("ZILLAOS_SETUP_THEME=");
+        serial::write(if wizard.dark { "DARK\n" } else { "LIGHT\n" });
+        serial::write("ZILLAOS_SETUP_VOLATILE_ONLY\n");
 
         let mut desktop = Desktop::with_layout(layout.unwrap_or_else(|| {
             Layout::for_size(1024, 768).expect("static fallback viewport")
         }));
         desktop.dark = wizard.dark;
+        desktop.hostname = wizard.hostname;
+        desktop.language = wizard.language;
+        desktop.region = wizard.region;
+        desktop.timezone = wizard.timezone;
         if input.mouse_available() {
             desktop.enable_pointer();
         }
