@@ -4,6 +4,15 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Zilla Setup — First-run OOBE preview
+
+- At start of `vm-demo`, show a dedicated dark/light bilingual Ukrainian/English setup wizard before displaying the desktop.
+- Added 7 stages: Welcome, Language, Region, Time Zone, Device name, Appearance, Review; protected ASCII hostname (3–24 characters) and back navigation.
+- Added Ukrainian bitmap glyphs and native RGB32 welcome-screen cards, left progress sidebar, navigation buttons and cursor click targets.
+- First-run choices (language, region, timezone, device label, theme) stay available to the live Desktop in RAM and are logged to COM1. They are NOT persisted to disk and do not set RTC or install anything.
+- QEMU GUI regression captures a setup screenshot and drives all seven steps by synthetic Enter presses before continuing existing desktop tests.
+- **Implementation committed in source; Rust compilation, QEMU/VMware GUI boot not verified.** See [SETUP.md](SETUP.md).
+
 ### Zilla Graphics Engine — D1a
 
 - Added no_std RGB32 raster geometry, checked span-filling and cursor damage tests.
