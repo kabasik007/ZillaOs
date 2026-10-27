@@ -7,7 +7,7 @@
 - Rust via rustup; repo pins **1.90.0** with `x86_64-unknown-none` target.
 - `curl`, `sha256sum`, `tar`, `xorriso`, `python3`, `qemu-system-x86_64`, and OVMF firmware.
 - Debian/Ubuntu: `sudo apt install -y xorriso qemu-system-x86 ovmf curl` (and `rustup` installed separately).
-- Internet **only for first download** of pinned Limine 12.9.3; the kernel has no crates.io dependencies.
+- Internet **only for first download** of pinned Limine 12.9.4; the kernel has no crates.io dependencies.
 
 ### Build
 
@@ -30,7 +30,7 @@ The demo now contains source for an experimental directly rendered Zilla Desktop
 `dist/zillaos-0.0.2-dev-demo-uefi.iso`.
 
 The build script checks the downloaded Limine binary archive against SHA-256
-`e02a473c6dc6df25159697f94930272397f21fd86e5d4eeee61bba72c95ec8d2`
+`9880cc04681262214db9b824ed8a5c55296955027d8caa9f55ab52a6dd85d6a0`
 before unpacking it, compiles the bare-metal Rust kernel, and creates
 `dist/zillaos-0.0.2-dev-test-uefi.iso` (or `-demo-uefi.iso`) with Limine's UEFI CD boot image.
 
