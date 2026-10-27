@@ -1,7 +1,7 @@
 # ZillaOS Installer — read-only partition planner v0.1
 
 **Status:** pure Rust calculations committed to `main`. There is **no**
-functional installer, disk enumeration, write API, GPT writer, filesystem,
+functional installer, **individual disk enumeration**, write API, GPT writer, filesystem,
 boot-entry installer or persistent settings. Rust/QEMU/VMware behavior has
 not yet been verified.
 
@@ -20,7 +20,10 @@ Future block driver (NOT IMPLEMENTED)
    -> verify reads and recover/rollback failures (future)
 ```
 
-The source currently stops at the `preview_for` stage. No APIs that
+The source includes a **passive PCI mass-storage controller inventory**,
+which does not identify individual disks, capacities or partitions. See
+[STORAGE.md](STORAGE.md). The actual partition planner currently stops at
+the `preview_for` stage. No APIs that
 modify sectors are exposed by `src/install_plan.rs`.
 
 ### Planned partition geometry
