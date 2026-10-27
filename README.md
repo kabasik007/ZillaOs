@@ -51,6 +51,10 @@ We are intentionally **not** targeting Win32/.exe compatibility, Linux ABI, Stea
 
 Each milestone has explicit **PASS / FAIL** acceptance tests, not just screenshots. Details: [ROADMAP](docs/ROADMAP.md).
 
+## Zilla Setup — first-run configuration
+
+The `vm-demo` ISO now opens a **graphical first-run setup wizard before the desktop**: Ukrainian/English language, Ukraine/Poland/USA region, Kyiv/Warsaw/New York/UTC time zone, validated PC name and dark/light style. Keyboard and mouse navigation are implemented in source; the wizard uses native Cyrillic bitmap glyphs and a responsive progress/card layout. **This is an onboarding preview, not a disk installer.** Settings remain in RAM for the current session only and the wizard repeats after reboot; no user account, RTC change, formatting or disk writes occur. See [SETUP.md](docs/SETUP.md). Build/VMware boot remain unverified.
+
 ## Zilla Desktop — graphical desktop preview
 
 ZillaOS now contains a **source-level experimental desktop shell** for the QEMU `demo` image. It combines a macOS-inspired menu bar and dock, three overlapping Windows-style sample Files/Terminal/Settings windows with focus/z-order/minimize/maximize, and a configurable dark/light theme. The GUI renders directly to the Limine RGB32 framebuffer and accepts QEMU PS/2 keyboard input (F1 launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, F6 minimize, F7 maximize, Tab focus, arrows move, Shift+arrows resize, Esc hide, plus optional PS/2 mouse cursor and Dock/title clicks). These are demonstration views **without** a real filesystem, terminal process or compositor. **Rust build, QEMU boot and interactive keyboard behavior remain NOT VERIFIED.** Source now includes a 4 MB offscreen compositor buffer and cursor-only damage restoration (up to 1280×800), with a safe direct-render fallback.
@@ -70,6 +74,7 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 - [Zilla Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) — immediate framebuffer renderer, input, state, limitations.
 - [Zilla Desktop roadmap](docs/DESKTOP_ROADMAP.md) — from QEMU prototype to user-mode compositor and apps.
 - [PS/2 mouse bootstrap](docs/MOUSE.md) — mouse protocol, QEMU pointer interactions, tests and caveats.
+- [Zilla first-run setup (OOBE)](docs/SETUP.md) — multilingual configuration screens, device name, timezone and RAM-only limitation.
 - [Zilla Graphics Engine](docs/GRAPHICS.md) — bounded RGB32 software backbuffer, clipped drawing and cursor-only updates. — v0.0.2-dev details and release blockers.
 - [Roadmap and acceptance criteria](docs/ROADMAP.md).
 - [Architecture decisions](docs/DECISIONS.md).
