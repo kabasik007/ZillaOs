@@ -5,7 +5,7 @@
 ## Boot sequence
 
 ```text
-Limine 12.9.3 / base revision 6
+Limine 12.9.4 / base revision 6
    | memory map (max 256 copied entries), HHDM offset
    v
 CPUID: physical address width, virtual 48/57-bit width, NX feature
