@@ -65,6 +65,10 @@ jobs:
           bash scripts/build.sh demo
           python3 scripts/desktop_smoke.py --timeout 90
 
+      - name: Test nondefault first-run locale and device name
+        run: |
+          python3 scripts/desktop_smoke.py --setup-profile custom --timeout 90 --output build/logs/desktop-qemu-custom.ppm
+
       # Formatting is a strict final gate, but must not prevent collection
       # of useful compiler, QEMU boot and GUI diagnostics beforehand.
       - name: Check formatting
@@ -85,5 +89,6 @@ jobs:
             build/logs/desktop-qemu.ppm
             build/logs/desktop-qemu-cursor.ppm
             build/logs/desktop-qemu-setup.ppm
+            build/logs/desktop-qemu-custom*.ppm
           if-no-files-found: warn
           retention-days: 7
