@@ -115,7 +115,7 @@ pub extern "C" fn _start() -> ! {
     #[cfg(feature = "vm-demo")]
     {
         use zillaos_kernel::desktop::{App, Desktop, Layout};
-        use zillaos_kernel::setup::{Wizard, Step};
+        use zillaos_kernel::setup::Wizard;
 
         let layout = limine::framebuffer()
             .and_then(|fb| Layout::for_size(fb.width, fb.height));
@@ -185,11 +185,11 @@ pub extern "C" fn _start() -> ! {
         } else {
             // Serial-only fallback is intentionally noninteractive: the
             // user must have a framebuffer to complete graphical setup.
-            wizard.step = Step::Finished;
             serial::write("ZILLAOS_SETUP_SKIPPED_NO_FRAMEBUFFER\n");
         }
 
-        serial::write("ZILLAOS_SETUP_COMPLETE\n");
+        if setup_available && wizard.finished() {
+            serial::write("ZILLAOS_SETUP_COMPLETE\n");
         serial::write("ZILLAOS_SETUP_LANGUAGE=");
         serial::write(wizard.language.code());
         serial::write("\nZILLAOS_SETUP_TIMEZONE=");
@@ -205,6 +205,9 @@ pub extern "C" fn _start() -> ! {
         serial::write("ZILLAOS_SETUP_THEME=");
         serial::write(if wizard.dark { "DARK\n" } else { "LIGHT\n" });
         serial::write("ZILLAOS_SETUP_VOLATILE_ONLY\n");
+        } else {
+            serial::write("ZILLAOS_SETUP_NOT_COMPLETED\n");
+        }
 
         let mut desktop = Desktop::with_layout(layout.unwrap_or_else(|| {
             Layout::for_size(1024, 768).expect("static fallback viewport")
