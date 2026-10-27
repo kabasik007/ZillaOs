@@ -7,6 +7,7 @@ It only validates the kernel-owned early RGB32 desktop demo in QEMU.
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -44,13 +45,30 @@ def has_window_state(log: str, visible: int, focus: str) -> bool:
     return any(lines[i:i + 3] == expected for i in range(len(lines) - 2))
 
 
+def storage_scan_passed(log: str) -> bool:
+    """Prove that PCI diagnostics never masquerade as usable block drivers."""
+    lines = [line.strip() for line in log.splitlines()]
+    marker = "ZILLAOS_STORAGE_CONTROLLER_COUNT="
+    counts = [line[len(marker):] for line in lines if line.startswith(marker)]
+    if len(counts) != 1 or re.fullmatch(r"0x[0-9a-fA-F]{16}", counts[0]) is None:
+        return False
+    count = int(counts[0], 16)
+    if count > 8:
+        return False
+    return (
+        has_line(log, STORAGE_READY)
+        and has_line(log, "ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE")
+        and not has_line(log, "ZILLAOS_INSTALLATION_WRITES_ENABLED")
+    )
+
+
 def setup_passed(log: str, profile: str = "default") -> bool:
     """Require ordered setup transitions and explicit RAM-only preferences."""
     profiles = {
         "default": ("uk", "Europe/Kyiv", "zilla-pc", "UA", "DARK"),
         "custom": ("en", "Europe/Warsaw", "lab01", "PL", "LIGHT"),
     }
-    if profile not in profiles:
+    if profile not in profiles or not storage_scan_passed(log):
         return False
     language, timezone, hostname, region, theme = profiles[profile]
     lines = [line.strip() for line in log.splitlines()]
