@@ -245,8 +245,7 @@ impl Wizard {
                 self.hostname.pop();
             }
             Key::Text(ch) if self.step == Step::Device => {
-                if (ch.is_ascii_alphanumeric() || ch == b'-')
-                    && self.hostname_pristine
+                if ch.is_ascii_alphanumeric() && self.hostname_pristine
                 {
                     self.hostname.clear();
                     self.hostname_pristine = false;
