@@ -255,6 +255,21 @@ def main() -> int:
                     if not wait_until(lambda: has_line(read_log(log), marker), guest, deadline):
                         print(f"FAIL: setup did not advance to step {step}", file=sys.stderr)
                         return 1
+                    if step == 6:
+                        storage_capture = workdir / "storage.ppm"
+                        monitor_command(monitor, f"screendump {storage_capture}")
+                        if not wait_until(storage_capture.exists, guest, deadline):
+                            print("FAIL: storage inventory screen was not captured",
+                                  file=sys.stderr)
+                            return 1
+                        if screenshot_dimensions(storage_capture) is None:
+                            print("FAIL: storage screen is blank/malformed",
+                                  file=sys.stderr)
+                            return 1
+                        storage_output = args.output.with_name(
+                            args.output.stem + "-storage.ppm"
+                        )
+                        shutil.copyfile(storage_capture, storage_output)
                 if not wait_until(
                     lambda: setup_passed(read_log(log), args.setup_profile)
                     and all(has_line(read_log(log), m) for m in REQUIRED),
@@ -368,7 +383,7 @@ def main() -> int:
                     return 1
 
                 print(f"PASS: ZillaOS GUI 3 windows, focus, minimize/restore, PS/2 mouse motion+click; screenshot {dimensions[0]}x{dimensions[1]}")
-                print(f"Screens: {setup_output}, {args.output}, {cursor_output}; serial: {log}")
+                print(f"Screens: {setup_output}, {storage_output}, {args.output}, {cursor_output}; serial: {log}")
                 return 0
             finally:
                 if guest.poll() is None:
