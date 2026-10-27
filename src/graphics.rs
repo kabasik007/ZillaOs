@@ -173,8 +173,8 @@ impl Screen {
             self.text("Z", g.x + 39, g.y + 37, 3, 0x0c2130);
             self.text("ZILLA OS", g.x + 78, g.y + 40, 2, 0xeaf8ff);
             self.text("FIRST RUN", g.x + 30, g.y + 105, 2, 0x76a0b8);
-            for step in 0..7usize {
-                let top = g.y + 155 + step * 52;
+            for step in 0..8usize {
+                let top = g.y + 155 + step * 46;
                 let (name, done) = match step {
                     0 => ("START", wizard.step.index() > 0),
                     1 => ("LANGUAGE", wizard.step.index() > 1),
@@ -182,13 +182,14 @@ impl Screen {
                     3 => ("TIME ZONE", wizard.step.index() > 3),
                     4 => ("DEVICE", wizard.step.index() > 4),
                     5 => ("THEME", wizard.step.index() > 5),
-                    _ => ("FINISH", wizard.step.index() > 6),
+                    6 => ("STORAGE", wizard.step.index() > 6),
+                    _ => ("FINISH", wizard.step.index() > 7),
                 };
                 if top + 23 >= g.y + g.height - 24 { break; }
                 let active = wizard.step.index() == step;
                 self.round_rect(g.x + 26, top, 25, 25, 8,
                                 if active { accent } else if done { 0x265f67 } else { 0x294056 });
-                let digit = match step {0=>"1",1=>"2",2=>"3",3=>"4",4=>"5",5=>"6",_=>"7"};
+                let digit = match step {0=>"1",1=>"2",2=>"3",3=>"4",4=>"5",5=>"6",6=>"7",_=>"8"};
                 self.text(digit, g.x + 35, top + 8, 1, if active { 0x102032 } else { 0xb8dbe3 });
                 self.text(name, g.x + 65, top + 9, 1,
                           if active { 0xffffff } else { 0x91b0c4 });
@@ -204,7 +205,7 @@ impl Screen {
         if g.height > 300 {
             self.round_rect(bx, by + 59, g.body_width, 4, 2, soft);
             self.round_rect(bx, by + 59,
-                g.body_width * wizard.step.index().min(7) / 7, 4, 2, accent);
+                g.body_width * wizard.step.index().min(8) / 8, 4, 2, accent);
         }
         let (uk_title, en_title, uk_sub, en_sub) = match wizard.step {
             Step::Welcome => (
@@ -236,6 +237,11 @@ impl Screen {
                 "ОФОРМЛЕННЯ", "PERSONALIZE",
                 "ОБЕРІТЬ СВІТЛУ АБО ТЕМНУ ТЕМУ",
                 "CHOOSE DARK OR LIGHT APPEARANCE",
+            ),
+            Step::Storage => (
+                "НАКОПИЧУВАЧІ", "STORAGE DISCOVERY",
+                "ПОКИ ТІЛЬКИ КОНТРОЛЕРИ PCI",
+                "PCI CONTROLLERS ONLY - NO DISK ACCESS",
             ),
             Step::Review | Step::Finished => (
                 "УСЕ ГОТОВО", "READY TO START",
@@ -312,6 +318,40 @@ impl Screen {
                     self.text("3-24 A-Z 0-9 -", bx, top + 122, 1, 0xf1a58b);
                 } else if g.footer_y > top + 154 {
                     self.text("ENTER TO CONTINUE", bx, top + 125, 1, muted);
+                }
+            }
+            Step::Storage => {
+                self.round_rect(bx, g.option_y, g.body_width, 62, 11, soft);
+                self.round_rect(bx + 14, g.option_y + 15, 31, 31, 8, accent);
+                self.text("S", bx + 24, g.option_y + 25, 2, 0x103044);
+                let label = wizard.localized("ПЕРЕВІРКА PCI", "PCI DEVICE SCAN");
+                self.text(label, bx + 57, g.option_y + 22, 2, fg);
+                let count = match wizard.storage.count {
+                    0 => "0", 1 => "1", 2 => "2", 3 => "3", 4 => "4",
+                    5 => "5", 6 => "6", 7 => "7", _ => "8",
+                };
+                self.text(wizard.localized("ЗНАЙДЕНО КОНТРОЛЕРІВ", "CONTROLLERS FOUND"),
+                          bx, g.option_y + 78, 1, muted);
+                self.text(count, bx + g.body_width.saturating_sub(28),
+                          g.option_y + 77, 2, accent);
+                for (i, controller) in wizard.storage.iter().take(3).enumerate() {
+                    let y = g.option_y + 111 + i * 45;
+                    if y + 38 >= g.footer_y { break; }
+                    self.round_rect(bx, y, g.body_width, 38, 9, soft);
+                    self.text(controller.kind.label(), bx + 16, y + 13, 1, fg);
+                    if g.body_width > 350 {
+                        self.text(if controller.vendor == 0x15ad {
+                            "VMWARE PCI"
+                        } else {
+                            "PCI DEVICE"
+                        }, bx + g.body_width.saturating_sub(105), y + 13, 1, muted);
+                    }
+                }
+                let bottom = g.footer_y.saturating_sub(67);
+                if bottom > g.option_y + 115 {
+                    self.rectangle(bx, bottom, 4, 47, 0xe3a862);
+                    self.text("DISKS NOT VERIFIED", bx + 15, bottom + 5, 1, fg);
+                    self.text("INSTALLATION DISABLED", bx + 15, bottom + 26, 1, 0xe3a862);
                 }
             }
             Step::Review => {
