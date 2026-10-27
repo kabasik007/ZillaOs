@@ -4,6 +4,14 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Read-only installer geometry planning and expanded OOBE tests
+
+- Added `src/install_plan.rs`: pure `no_std` GPT/EFI + system partition preview calculator, handling 512/4096-byte logical sectors, capacity boundaries, 1-MiB front/end reserves, overflow checks and unit tests.
+- NO disk enumeration, block driver, partition writing or formatting path exists; do not confuse calculated geometry with a functioning installer.
+- Added custom automated first-run QEMU scenario with English, Poland/Warsaw, `lab01` and light theme. CI retains both screenshot sets.
+- Corrected misleading startup log: a missing graphical framebuffer now produces `ZILLAOS_SETUP_NOT_COMPLETED` rather than a false successful setup log.
+- Compilation/VMware/QEMU verification remains outstanding. See [INSTALLATION.md](INSTALLATION.md).
+
 ### Zilla Setup — First-run OOBE preview
 
 - At start of `vm-demo`, show a dedicated dark/light bilingual Ukrainian/English setup wizard before displaying the desktop.
