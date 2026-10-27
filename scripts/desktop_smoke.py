@@ -43,18 +43,25 @@ def has_window_state(log: str, visible: int, focus: str) -> bool:
     return any(lines[i:i + 3] == expected for i in range(len(lines) - 2))
 
 
-def setup_passed(log: str) -> bool:
-    """Require seven ordered Setup steps and explicit volatile defaults."""
+def setup_passed(log: str, profile: str = "default") -> bool:
+    """Require ordered setup transitions and explicit RAM-only preferences."""
+    profiles = {
+        "default": ("uk", "Europe/Kyiv", "zilla-pc", "UA", "DARK"),
+        "custom": ("en", "Europe/Warsaw", "lab01", "PL", "LIGHT"),
+    }
+    if profile not in profiles:
+        return False
+    language, timezone, hostname, region, theme = profiles[profile]
     lines = [line.strip() for line in log.splitlines()]
     sequence = [
         SETUP_READY,
         *[f"ZILLAOS_SETUP_STEP=0x{step:016x}" for step in range(1, 8)],
         SETUP_COMPLETE,
-        "ZILLAOS_SETUP_LANGUAGE=uk",
-        "ZILLAOS_SETUP_TIMEZONE=Europe/Kyiv",
-        "ZILLAOS_SETUP_HOSTNAME=zilla-pc",
-        "ZILLAOS_SETUP_REGION=UA",
-        "ZILLAOS_SETUP_THEME=DARK",
+        f"ZILLAOS_SETUP_LANGUAGE={language}",
+        f"ZILLAOS_SETUP_TIMEZONE={timezone}",
+        f"ZILLAOS_SETUP_HOSTNAME={hostname}",
+        f"ZILLAOS_SETUP_REGION={region}",
+        f"ZILLAOS_SETUP_THEME={theme}",
         "ZILLAOS_SETUP_VOLATILE_ONLY",
     ]
     cursor = 0
@@ -158,6 +165,8 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--iso", type=Path, default=DEFAULT_ISO)
     p.add_argument("--timeout", type=int, default=90)
+    p.add_argument("--setup-profile", choices=("default", "custom"), default="default",
+                   help="Keyboard-driven OOBE settings for the QEMU test")
     p.add_argument("--output", type=Path, default=ROOT / "build/logs/desktop-qemu.ppm")
     args = p.parse_args()
 
@@ -230,13 +239,21 @@ def main() -> int:
                 # Drive Welcome -> Language -> Region -> TimeZone -> Device
                 # -> Appearance -> Review -> Finished. Settings remain RAM-only.
                 for step in range(1, 8):
+                    if args.setup_profile == "custom":
+                        # Once a page opens, adjust the value BEFORE Enter.
+                        if step in (2, 3, 4, 6):
+                            monitor_command(monitor, "sendkey right")
+                        elif step == 5:
+                            # Replaces the selected `zilla-pc` suggestion.
+                            for letter in "lab01":
+                                monitor_command(monitor, f"sendkey {letter}")
                     monitor_command(monitor, "sendkey ret")
                     marker = f"ZILLAOS_SETUP_STEP=0x{step:016x}"
                     if not wait_until(lambda: has_line(read_log(log), marker), guest, deadline):
                         print(f"FAIL: setup did not advance to step {step}", file=sys.stderr)
                         return 1
                 if not wait_until(
-                    lambda: setup_passed(read_log(log))
+                    lambda: setup_passed(read_log(log), args.setup_profile)
                     and all(has_line(read_log(log), m) for m in REQUIRED),
                     guest, deadline
                 ):
