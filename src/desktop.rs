@@ -34,6 +34,9 @@ pub enum Key {
     Move(Move),
     Resize(Move),
     Escape,
+    Confirm,
+    Backspace,
+    Text(u8),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -267,6 +270,7 @@ impl Desktop {
             Key::Maximize => self.windows.toggle_maximize(),
             Key::Move(direction) => self.windows.translate_focused(direction),
             Key::Resize(direction) => self.windows.resize_focused(direction),
+            Key::Confirm | Key::Backspace | Key::Text(_) => {}
             Key::Escape => {
                 if self.launcher {
                     self.launcher = false;
@@ -350,6 +354,28 @@ impl ScancodeDecoder {
             0x41 => Some(Key::Maximize),     // F7
             0x0f => Some(Key::NextApp),      // Tab
             0x01 => Some(Key::Escape),       // Escape
+            0x1c => Some(Key::Confirm),      // Enter
+            0x0e => Some(Key::Backspace),    // Backspace
+            // BIOS/OVMF/QEMU translated US PS/2 scan-set-1 layout.
+            // Only safe ASCII hostname characters are emitted. The host
+            // layout may differ, so this is NOT a full international IME.
+            0x02..=0x0b => {
+                let digits = *b"1234567890";
+                Some(Key::Text(digits[(code - 0x02) as usize]))
+            }
+            0x0c => Some(Key::Text(b'-')),
+            0x10..=0x19 => {
+                let letters = *b"qwertyuiop";
+                Some(Key::Text(letters[(code - 0x10) as usize]))
+            }
+            0x1e..=0x26 => {
+                let letters = *b"asdfghjkl";
+                Some(Key::Text(letters[(code - 0x1e) as usize]))
+            }
+            0x2c..=0x32 => {
+                let letters = *b"zxcvbnm";
+                Some(Key::Text(letters[(code - 0x2c) as usize]))
+            }
             _ => None,
         }
     }
@@ -506,6 +532,19 @@ mod tests {
         assert!(state.handle_mouse(test_packet(0, 0, true)));
         assert_eq!(state.active(), Some(App::Settings));
         assert!(!state.launcher);
+    }
+
+    #[test]
+    fn setup_input_scancodes_decode_ascii_and_enter() {
+        let mut d = ScancodeDecoder::new();
+        assert_eq!(d.feed(0x1c), Some(Key::Confirm));
+        assert_eq!(d.feed(0x0e), Some(Key::Backspace));
+        assert_eq!(d.feed(0x10), Some(Key::Text(b'q')));
+        assert_eq!(d.feed(0x26), Some(Key::Text(b'l')));
+        assert_eq!(d.feed(0x32), Some(Key::Text(b'm')));
+        assert_eq!(d.feed(0x0c), Some(Key::Text(b'-')));
+        assert_eq!(d.feed(0x02), Some(Key::Text(b'1')));
+        assert_eq!(d.feed(0x82), None);
     }
 
     #[test]
