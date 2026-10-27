@@ -90,6 +90,12 @@ if (Test-Path -LiteralPath $vmxPath) {
         }
         return
     }
+    # VMware creates *.lck directories while this virtual machine runs.
+    # Refuse any explicit -Force edit when a lock exists.
+    $activeLocks = @(Get-ChildItem -LiteralPath $vmFolder -Filter "*.lck" -ErrorAction SilentlyContinue)
+    if ($activeLocks.Count -gt 0) {
+        throw "VMware lock found in $vmFolder. Power off the VM before using -Force."
+    }
     Write-Host "[ZillaOS] Replacing VMX configuration only; no other files are deleted." -ForegroundColor Yellow
 }
 
