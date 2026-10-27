@@ -95,7 +95,7 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 
 ## Project governance
 
-Canonical repository: [kabasik007/ZillaOs](https://github.com/kabasik007/ZillaOs). Default development branch: `main` for the architecture bootstrap; follow-on code changes should be reviewed through branches/PRs. License decision: **TBD before importing dependencies or accepting external contributions**.
+Canonical repository: [kabasik007/ZillaOs](https://github.com/kabasik007/ZillaOs). Development and reviewed changes are currently committed directly to `main` as requested. This can move to PR-based reviews when the repository workflow changes. License decision: **TBD before importing dependencies or accepting external contributions**.
 
 Methodology: [Be Ambitious Pro](https://app.notion.com/p/3fb91a1af397814782cac435379a82a7) — outcome-led engineering, independent validation, real PASS/FAIL evidence.
 
