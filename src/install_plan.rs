@@ -67,6 +67,7 @@ impl PreviewPlan {
     pub fn fits_in(self, disk: DiskGeometry) -> bool {
         let sector = disk.logical_sector_bytes as u64;
         sector != 0
+            && disk.capacity_bytes % sector == 0
             && self.logical_sector_bytes == disk.logical_sector_bytes
             && disk.capacity_bytes / sector == self.total_sectors
             && self.efi.end_exclusive() == Some(self.system.first_lba)
@@ -185,6 +186,19 @@ mod tests {
         };
         let plan = preview_for(disk).unwrap();
         assert!(plan.fits_in(disk));
+    }
+
+    #[test]
+    fn mismatched_non_aligned_capacity_cannot_reuse_plan() {
+        let disk = DiskGeometry {
+            capacity_bytes: 32 * GIB,
+            logical_sector_bytes: 512,
+        };
+        let plan = preview_for(disk).unwrap();
+        assert!(!plan.fits_in(DiskGeometry {
+            capacity_bytes: 32 * GIB + 1,
+            logical_sector_bytes: 512,
+        }));
     }
 
     #[test]
