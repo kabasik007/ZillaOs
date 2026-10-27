@@ -21,6 +21,20 @@ class SetupEvidenceTests(unittest.TestCase):
     def test_complete_default_setup_passes(self):
         self.assertTrue(setup_passed(GOOD))
 
+    def test_custom_setup_preserves_nondefault_choices(self):
+        custom = (GOOD
+            .replace("ZILLAOS_SETUP_LANGUAGE=uk", "ZILLAOS_SETUP_LANGUAGE=en")
+            .replace("ZILLAOS_SETUP_TIMEZONE=Europe/Kyiv", "ZILLAOS_SETUP_TIMEZONE=Europe/Warsaw")
+            .replace("ZILLAOS_SETUP_HOSTNAME=zilla-pc", "ZILLAOS_SETUP_HOSTNAME=lab01")
+            .replace("ZILLAOS_SETUP_REGION=UA", "ZILLAOS_SETUP_REGION=PL")
+            .replace("ZILLAOS_SETUP_THEME=DARK", "ZILLAOS_SETUP_THEME=LIGHT"))
+        self.assertTrue(setup_passed(custom, "custom"))
+        self.assertFalse(setup_passed(custom, "default"))
+        self.assertFalse(setup_passed(GOOD, "custom"))
+
+    def test_unknown_test_profile_rejected(self):
+        self.assertFalse(setup_passed(GOOD, "unsafe"))
+
     def test_missing_step_cannot_skip_welcome(self):
         self.assertFalse(setup_passed(
             GOOD.replace("ZILLAOS_SETUP_STEP=0x0000000000000004\n", "")))
