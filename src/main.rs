@@ -10,6 +10,8 @@ mod framebuffer;
 mod graphics;
 #[cfg(feature = "vm-demo")]
 mod input;
+#[cfg(feature = "vm-demo")]
+mod pci_io;
 mod interrupts;
 mod limine;
 mod memtest;
@@ -122,6 +124,34 @@ pub extern "C" fn _start() -> ! {
         let mut wizard = Wizard::new(layout.unwrap_or_else(|| {
             Layout::for_size(1024, 768).expect("static fallback viewport")
         }));
+
+        // Passive PCI config header scan only. NO AHCI/NVMe commands, sector
+        // reads, drive-capacity guesses or installation writes are performed.
+        let storage = pci_io::inventory();
+        serial::write("ZILLAOS_STORAGE_PCI_SCAN_READY\n");
+        serial::write("ZILLAOS_STORAGE_CONTROLLER_COUNT=");
+        serial::write_hex(storage.count as u64);
+        serial::write("\n");
+        if storage.truncated {
+            serial::write("ZILLAOS_STORAGE_CONTROLLER_LIST_TRUNCATED\n");
+        }
+        for controller in storage.iter() {
+            serial::write("ZILLAOS_STORAGE_CONTROLLER=");
+            serial::write(controller.kind.label());
+            serial::write(" VENDOR=");
+            serial::write_hex(controller.vendor as u64);
+            serial::write(" DEVICE=");
+            serial::write_hex(controller.device_id as u64);
+            serial::write(" BUS=");
+            serial::write_hex(controller.location.bus as u64);
+            serial::write(" SLOT=");
+            serial::write_hex(controller.location.device as u64);
+            serial::write(" FUNC=");
+            serial::write_hex(controller.location.function as u64);
+            serial::write("\n");
+        }
+        serial::write("ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE\n");
+        wizard.set_storage_inventory(storage);
 
         // The first thing a user sees is Setup, not the Desktop.
         // This is a volatile onboarding UI, NOT an installer that
