@@ -144,5 +144,8 @@ as CD-ROM; no `/dev/sd*`, raw host disk, bridged network, SSH key, or
 personal file share is added to the guest. Running untested kernels on
 physical hardware is **not** part of the pre-release M1/M2 development phase.
 
+For **VMware Workstation on Windows** rather than QEMU, use the dedicated
+[VMware UEFI setup and troubleshooting](VMWARE.md).
+
 See also: [Build](BUILD.md), [Architecture](ARCHITECTURE.md),
 [Validation](VALIDATION.md).
