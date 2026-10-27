@@ -79,6 +79,10 @@
 
 ## Zilla Setup — First-run experience (experimental)
 
+The experimental read-only [PCI storage inventory](STORAGE.md) scans
+mass-storage *controllers* in VMware/QEMU without block-device I/O or
+install target selection. Hardware identification is diagnostic only.
+
 The separate pure `no_std` [installation plan module](INSTALLATION.md)
 computes hypothetical blank-disk GPT/ESP/system geometry with checked sector
 arithmetic, but has no device access or write path. Real disk installation is
