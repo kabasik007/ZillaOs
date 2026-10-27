@@ -4,10 +4,11 @@
 
 use crate::desktop::{Key, Layout};
 use crate::mouse::MousePacket;
+use crate::storage_pci::StorageInventory;
 use crate::window_manager::Move;
 
 pub const DEVICE_NAME_MAX: usize = 24;
-pub const STEP_COUNT: usize = 7;
+pub const STEP_COUNT: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -17,6 +18,7 @@ pub enum Step {
     TimeZone,
     Device,
     Appearance,
+    Storage,
     Review,
     Finished,
 }
@@ -30,8 +32,9 @@ impl Step {
             Self::TimeZone => 3,
             Self::Device => 4,
             Self::Appearance => 5,
-            Self::Review => 6,
-            Self::Finished => 7,
+            Self::Storage => 6,
+            Self::Review => 7,
+            Self::Finished => 8,
         }
     }
 
@@ -43,7 +46,8 @@ impl Step {
             3 => Self::TimeZone,
             4 => Self::Device,
             5 => Self::Appearance,
-            6 => Self::Review,
+            6 => Self::Storage,
+            7 => Self::Review,
             _ => Self::Finished,
         }
     }
@@ -169,6 +173,7 @@ pub struct Wizard {
     pub timezone: TimeZone,
     pub hostname: DeviceName,
     pub hostname_pristine: bool,
+    pub storage: StorageInventory,
     pub dark: bool,
     pub selection: usize,
     pub pointer: SetupPointer,
@@ -185,6 +190,7 @@ impl Wizard {
             timezone: TimeZone::Kyiv,
             hostname: DeviceName::new(),
             hostname_pristine: true,
+            storage: StorageInventory::new(),
             dark: true,
             selection: 0,
             pointer: SetupPointer {
@@ -196,6 +202,12 @@ impl Wizard {
             changes: 0,
             layout,
         }
+    }
+
+    /// Hardware inventory may contain controllers, but NEVER implies a
+    /// verified selectable block device or a writable installation target.
+    pub fn set_storage_inventory(&mut self, inventory: StorageInventory) {
+        self.storage = inventory;
     }
 
     pub const fn finished(&self) -> bool {
@@ -439,6 +451,28 @@ mod tests {
         assert_eq!(s.timezone.identifier(), "Europe/Kyiv");
         assert_eq!(s.hostname.as_str(), "zilla-pc");
         assert!(s.dark);
+        assert_eq!(s.storage.selectable_disks(), 0);
+    }
+
+    #[test]
+    fn storage_step_never_makes_a_controller_selectable_as_disk() {
+        use crate::storage_pci::{PciLocation, StorageController, StorageKind};
+        let mut s = wizard();
+        let mut inventory = StorageInventory::new();
+        inventory.push(StorageController {
+            location: PciLocation { bus: 0, device: 3, function: 0 },
+            vendor: 0x15ad, device_id: 0x07e0,
+            subclass: 6, programming_interface: 1,
+            kind: StorageKind::SataAhci,
+        });
+        s.set_storage_inventory(inventory);
+        for _ in 0..6 { s.handle_key(Key::Confirm); }
+        assert_eq!(s.step, Step::Storage);
+        assert_eq!(s.storage.count, 1);
+        assert_eq!(s.storage.selectable_disks(), 0);
+        assert_eq!(s.option_count(), 0);
+        s.handle_key(Key::Confirm);
+        assert_eq!(s.step, Step::Review);
     }
 
     #[test]
