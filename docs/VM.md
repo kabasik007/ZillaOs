@@ -120,7 +120,7 @@ non-flat QEMU framebuffer screenshot.
 | `demo` | `dist/zillaos-0.0.2-dev-demo-uefi.iso` | Draw keyboard-controlled desktop preview, stay running |
 | `fault` | `dist/zillaos-0.0.2-dev-fault-uefi.iso` | Execute UD2, report vector 6 and intentionally exit QEMU 35 |
 
-For both modes, Limine 12.9.3 is downloaded on first use and SHA-256
+For both modes, Limine 12.9.4 is downloaded on first use and SHA-256
 verified against the value supplied in GitHub's official release page.
 Rust has no crates.io dependencies at M1.
 
