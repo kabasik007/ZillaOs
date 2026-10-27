@@ -8,6 +8,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::limine::{self, Framebuffer};
 use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
 use zillaos_kernel::raster::{self, Region};
+use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language, TimeZone};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
 
 // Fixed-size offscreen RGB32 surface: 1280 x 800 x 4 = 4,096,000 bytes.
@@ -120,11 +121,12 @@ impl Screen {
             return;
         }
         let mut px = x;
-        for c in text.bytes() {
+        for ch in text.chars() {
             if px.saturating_add(5 * scale) > self.fb.width {
                 break;
             }
-            let glyph = glyph(c.to_ascii_uppercase());
+            let upper = ch.to_uppercase().next().unwrap_or(ch);
+            let glyph = glyph_unicode(upper);
             for (row, bits) in glyph.iter().enumerate() {
                 for column in 0..5 {
                     if (*bits & (1u8 << (4 - column))) != 0 {
@@ -134,6 +136,232 @@ impl Screen {
                 }
             }
             px = px.saturating_add(6 * scale);
+        }
+    }
+
+
+    /// Guided first-boot experience. All labels are rendered by the kernel's
+    /// tiny Unicode bitmap alphabet, not external fonts or assets.
+    fn setup_screen(&self, wizard: &Wizard) {
+        let g = wizard.geometry();
+        let light = !wizard.dark;
+        let fg = if light { 0x192f45 } else { 0xe9f4ff };
+        let muted = if light { 0x59768b } else { 0x90acc3 };
+        let surface = if light { 0xf8fbff } else { 0x17273e };
+        let soft = if light { 0xe9f2f9 } else { 0x223850 };
+        let accent = 0x1ed7b6;
+        // Animated-free gradient keeps first boot deterministic in the VM.
+        for y in 0..self.fb.height {
+            let v = y * 96 / self.fb.height.max(1);
+            let bg = if light {
+                (0xc0 + v / 3) << 16 | (0xd6 + v / 4) << 8 | (0xe8 + v / 7)
+            } else {
+                (9 + v / 13) << 16 | (20 + v / 6) << 8 | (36 + v / 4)
+            };
+            self.rectangle(0, y, self.fb.width, 1, bg as u32);
+        }
+        // Background ribbons add layered depth without extra assets.
+        self.round_rect(self.fb.width * 3 / 5, 50, self.fb.width / 3, 5, 2, 0x167b87);
+        self.round_rect(self.fb.width / 14, self.fb.height * 4 / 5,
+                        self.fb.width / 3, 3, 1, 0x207a83);
+        self.round_rect(g.x + 9, g.y + 12, g.width, g.height, 19, 0x0c1a2b);
+        self.round_rect(g.x, g.y, g.width, g.height, 19, surface);
+        if g.sidebar > 0 {
+            self.round_rect(g.x, g.y, g.sidebar, g.height, 18, 0x10243a);
+            self.rectangle(g.x + g.sidebar - 18, g.y, 18, g.height, 0x10243a);
+            self.round_rect(g.x + 27, g.y + 27, 39, 39, 11, accent);
+            self.text("Z", g.x + 39, g.y + 37, 3, 0x0c2130);
+            self.text("ZILLA OS", g.x + 78, g.y + 40, 2, 0xeaf8ff);
+            self.text("FIRST RUN", g.x + 30, g.y + 105, 2, 0x76a0b8);
+            for step in 0..7usize {
+                let top = g.y + 155 + step * 52;
+                let (name, done) = match step {
+                    0 => ("START", wizard.step.index() > 0),
+                    1 => ("LANGUAGE", wizard.step.index() > 1),
+                    2 => ("REGION", wizard.step.index() > 2),
+                    3 => ("TIME ZONE", wizard.step.index() > 3),
+                    4 => ("DEVICE", wizard.step.index() > 4),
+                    5 => ("THEME", wizard.step.index() > 5),
+                    _ => ("FINISH", wizard.step.index() > 6),
+                };
+                if top + 23 >= g.y + g.height - 24 { break; }
+                let active = wizard.step.index() == step;
+                self.round_rect(g.x + 26, top, 25, 25, 8,
+                                if active { accent } else if done { 0x265f67 } else { 0x294056 });
+                let digit = match step {0=>"1",1=>"2",2=>"3",3=>"4",4=>"5",5=>"6",_=>"7"};
+                self.text(digit, g.x + 35, top + 8, 1, if active { 0x102032 } else { 0xb8dbe3 });
+                self.text(name, g.x + 65, top + 9, 1,
+                          if active { 0xffffff } else { 0x91b0c4 });
+            }
+            self.text("NO DISK CHANGES", g.x + 24,
+                      g.y + g.height.saturating_sub(34), 1, 0x7295a9);
+        }
+
+        // Step number, title and explanatory subtitle.
+        let bx = g.body_x;
+        let by = g.y;
+        self.text("ZILLAOS  /  SETUP", bx, by + 25, 2, muted);
+        if g.height > 300 {
+            self.round_rect(bx, by + 59, g.body_width, 4, 2, soft);
+            self.round_rect(bx, by + 59,
+                g.body_width * wizard.step.index().min(7) / 7, 4, 2, accent);
+        }
+        let (uk_title, en_title, uk_sub, en_sub) = match wizard.step {
+            Step::Welcome => (
+                "ВІТАЄМО У ZILLAOS", "WELCOME TO ZILLAOS",
+                "ВАША НОВА СИСТЕМА. ВАШІ ПРАВИЛА.",
+                "A NEW SPACE TO CREATE AND EXPLORE.",
+            ),
+            Step::Language => (
+                "МОВА СИСТЕМИ", "SYSTEM LANGUAGE",
+                "ОБЕРІТЬ МОВУ ІНТЕРФЕЙСУ",
+                "CHOOSE YOUR PREFERRED LANGUAGE",
+            ),
+            Step::Region => (
+                "РЕГІОН", "YOUR REGION",
+                "ОБЕРІТЬ КРАЇНУ",
+                "SELECT YOUR COUNTRY",
+            ),
+            Step::TimeZone => (
+                "ЧАСОВИЙ ПОЯС", "TIME ZONE",
+                "ЧАСОВИЙ ПОЯС ДЛЯ СИСТЕМИ",
+                "CHOOSE YOUR LOCAL TIME ZONE",
+            ),
+            Step::Device => (
+                "НАЗВА КОМП'ЮТЕРА", "NAME YOUR COMPUTER",
+                "ЛІТЕРИ A-Z, ЦИФРИ ТА ДЕФІС",
+                "USE A-Z, NUMBERS AND DASHES",
+            ),
+            Step::Appearance => (
+                "ОФОРМЛЕННЯ", "PERSONALIZE",
+                "ОБЕРІТЬ СВІТЛУ АБО ТЕМНУ ТЕМУ",
+                "CHOOSE DARK OR LIGHT APPEARANCE",
+            ),
+            Step::Review | Step::Finished => (
+                "УСЕ ГОТОВО", "READY TO START",
+                "ПЕРЕВІРТЕ НАЛАШТУВАННЯ",
+                "REVIEW YOUR FIRST-RUN SETTINGS",
+            ),
+        };
+        let title = wizard.localized(uk_title, en_title);
+        let subtitle = wizard.localized(uk_sub, en_sub);
+        let scale = if g.body_width >= 465 { 3 } else if g.body_width >= 260 { 2 } else { 1 };
+        self.text(title, bx, by + if g.height >= 400 { 92 } else { 67 }, scale, fg);
+        if g.height >= 460 {
+            self.text(subtitle, bx, by + 130, 1, muted);
+        }
+
+        match wizard.step {
+            Step::Welcome => {
+                let top = g.option_y.saturating_add(3);
+                self.round_rect(bx, top, g.body_width, 133.min(g.footer_y.saturating_sub(top+12)),
+                                14, soft);
+                self.round_rect(bx + 17, top + 20, 51, 51, 14, accent);
+                self.text("Z", bx + 34, top + 32, 3, 0x123246);
+                if g.body_width >= 350 {
+                    self.text("ZILLA DESKTOP", bx + 86, top + 28, 2, fg);
+                    self.text("RUST / X86-64 / UEFI", bx + 86, top + 58, 1, muted);
+                    self.text("WELCOME EXPERIENCE", bx + 23, top + 104, 1, muted);
+                }
+            }
+            Step::Language | Step::Region | Step::TimeZone | Step::Appearance => {
+                let count = wizard.option_count();
+                for i in 0..count {
+                    let top = g.option_y + i * g.option_gap;
+                    if top + g.option_height >= g.footer_y { break; }
+                    let active = wizard.selection == i;
+                    let bg = if active {
+                        if light { 0xd6f5ee } else { 0x195365 }
+                    } else { soft };
+                    self.round_rect(bx, top, g.body_width, g.option_height, 11, bg);
+                    self.round_rect(bx + 13, top + (g.option_height.saturating_sub(20))/2,
+                                    20, 20, 10, if active { accent } else { 0x59788c });
+                    if active {
+                        self.round_rect(bx + 19, top + (g.option_height.saturating_sub(8))/2,
+                                        8, 8, 4, 0x0a2834);
+                    }
+                    let option = match wizard.step {
+                        Step::Language => if i == 0 { "УКРАЇНСЬКА" } else { "ENGLISH" },
+                        Step::Region => match i {
+                            0 => wizard.localized("УКРАЇНА", "UKRAINE"),
+                            1 => wizard.localized("ПОЛЬЩА", "POLAND"),
+                            _ => wizard.localized("США", "UNITED STATES"),
+                        },
+                        Step::TimeZone => match i {
+                            0 => "EUROPE/KYIV", 1 => "EUROPE/WARSAW",
+                            2 => "AMERICA/NEW YORK", _ => "UTC",
+                        },
+                        Step::Appearance => if i == 0 {
+                            wizard.localized("ТЕМНА ТЕМА", "DARK THEME")
+                        } else {
+                            wizard.localized("СВІТЛА ТЕМА", "LIGHT THEME")
+                        },
+                        _ => "",
+                    };
+                    self.text(option, bx + 46, top + 12, if g.body_width >= 460 {2} else {1}, fg);
+                }
+            }
+            Step::Device => {
+                let top = g.option_y + 5;
+                self.text(wizard.localized("ІМ'Я ПРИСТРОЮ", "DEVICE NAME"),
+                          bx, top, 2, muted);
+                self.round_rect(bx, top + 38, g.body_width, 62, 12, soft);
+                self.round_rect(bx + 2, top + 40, 4, 58, 2, accent);
+                self.text(wizard.hostname.as_str(), bx + 21, top + 59, 2, fg);
+                if !wizard.hostname.is_valid() {
+                    self.text("3-24 A-Z 0-9 -", bx, top + 122, 1, 0xf1a58b);
+                } else if g.footer_y > top + 154 {
+                    self.text("ENTER TO CONTINUE", bx, top + 125, 1, muted);
+                }
+            }
+            Step::Review => {
+                let language = match wizard.language {
+                    Language::Ukrainian => "UKRAINIAN",
+                    Language::English => "ENGLISH",
+                };
+                let region = match wizard.region {
+                    SetupRegion::Ukraine => "UKRAINE",
+                    SetupRegion::Poland => "POLAND",
+                    SetupRegion::UnitedStates => "UNITED STATES",
+                };
+                let fields: [(&str, &str); 4] = [
+                    ("LANGUAGE", language),
+                    ("REGION", region),
+                    ("TIME", wizard.timezone.identifier()),
+                    ("DEVICE", wizard.hostname.as_str()),
+                ];
+                for (i, (label, value)) in fields.iter().enumerate() {
+                    let top = g.option_y + i * g.option_gap;
+                    if top + g.option_height >= g.footer_y { break; }
+                    self.round_rect(bx, top, g.body_width, g.option_height, 10, soft);
+                    self.text(label, bx + 15, top + 9, 1, muted);
+                    self.text(value, bx + 15, top + 24, 1, fg);
+                }
+            }
+            Step::Finished => {}
+        }
+
+        if g.height >= 190 {
+            let next_label = if wizard.step == Step::Review {
+                wizard.localized("ДО РОБОЧОГО СТОЛУ", "ENTER DESKTOP")
+            } else { wizard.localized("ДАЛІ", "CONTINUE") };
+            if wizard.step != Step::Welcome {
+                self.round_rect(bx, g.footer_y, 112, 44, 12, soft);
+                self.text(wizard.localized("НАЗАД", "BACK"), bx + 23, g.footer_y + 16, 1, fg);
+            }
+            let next_x = bx + g.body_width.saturating_sub(162);
+            self.round_rect(next_x, g.footer_y, 162, 44, 12,
+                            if wizard.step == Step::Device && !wizard.hostname.is_valid() {
+                                0x627787
+                            } else { accent });
+            self.text(next_label, next_x + 14, g.footer_y + 16,
+                      1, 0x092b36);
+        }
+        // Explicitly avoid pretending to install the OS or set system clock.
+        if g.height >= 450 {
+            self.text(wizard.localized("ПАРАМЕТРИ У RAM - БЕЗ ЗАПИСУ НА ДИСК",
+                                      "PREVIEW - SETTINGS IN MEMORY ONLY"),
+                      bx, g.y + g.height.saturating_sub(15), 1, muted);
         }
     }
 
@@ -325,9 +553,12 @@ impl Screen {
     /// A small software cursor. Always rendered LAST so no window or
     /// launcher can cover it. Rectangle clipping keeps every pixel safe.
     fn cursor(&self, state: &Desktop) {
-        if !state.pointer.visible { return; }
-        let x = state.pointer.x;
-        let y = state.pointer.y;
+        if state.pointer.visible {
+            self.draw_pointer(state.pointer.x, state.pointer.y);
+        }
+    }
+
+    fn draw_pointer(&self, x: usize, y: usize) {
         // Draw directly, AFTER committing the background buffer. The cursor
         // must never be saved into the backing pixels that will restore it.
         for row in 0..17usize {
@@ -416,6 +647,92 @@ pub fn redraw_cursor(previous: Pointer, state: &Desktop) -> bool {
     }
     screen.cursor(state);
     true
+}
+
+/// Draw setup wizard first, before Desktop. Returns false for unsupported
+/// displays so the kernel can fall back to serial-only desktop.
+pub fn render_setup(wizard: &Wizard) -> bool {
+    let Some(fb) = limine::framebuffer() else { return false };
+    if Layout::for_size(fb.width, fb.height).is_none() { return false; }
+    let buffered = raster::supports_backbuffer(fb.width, fb.height);
+    BACKBUFFER_VALID.store(false, Ordering::Release);
+    let screen = Screen { fb, buffered };
+    screen.setup_screen(wizard);
+    if buffered {
+        screen.flush_region(Region::new(0, 0, screen.fb.width, screen.fb.height));
+        BACKBUFFER_WIDTH.store(screen.fb.width, Ordering::Relaxed);
+        BACKBUFFER_HEIGHT.store(screen.fb.height, Ordering::Relaxed);
+        BACKBUFFER_VALID.store(true, Ordering::Release);
+    }
+    if wizard.pointer.visible {
+        screen.draw_pointer(wizard.pointer.x, wizard.pointer.y);
+    }
+    true
+}
+
+/// Restore cursor rectangles for the setup screen without repainting cards.
+pub fn redraw_setup_cursor(previous: SetupPointer, wizard: &Wizard) -> bool {
+    if !previous.visible || !wizard.pointer.visible || !has_backbuffer() {
+        return false;
+    }
+    let Some(fb) = limine::framebuffer() else { return false };
+    if !raster::supports_backbuffer(fb.width, fb.height)
+        || BACKBUFFER_WIDTH.load(Ordering::Relaxed) != fb.width
+        || BACKBUFFER_HEIGHT.load(Ordering::Relaxed) != fb.height
+    { return false }
+    let screen = Screen { fb, buffered: true };
+    if let Some(region) = Region::cursor_at(previous.x, previous.y,
+                                            screen.fb.width, screen.fb.height) {
+        screen.flush_region(region);
+    }
+    if let Some(region) = Region::cursor_at(wizard.pointer.x, wizard.pointer.y,
+                                            screen.fb.width, screen.fb.height) {
+        screen.flush_region(region);
+    }
+    screen.draw_pointer(wizard.pointer.x, wizard.pointer.y);
+    true
+}
+
+fn glyph_unicode(ch: char) -> [u8; 7] {
+    if ch.is_ascii() {
+        return glyph(ch as u8);
+    }
+    match ch {
+        'А' => [14,17,17,31,17,17,17],
+        'Б' => [31,16,16,30,17,17,30],
+        'В' => [30,17,17,30,17,17,30],
+        'Г' => [31,16,16,16,16,16,16],
+        'Ґ' => [3,31,16,16,16,16,16],
+        'Д' => [14,10,10,10,10,31,17],
+        'Е' | 'Є' => [31,16,16,30,16,16,31],
+        'Ж' => [21,21,14,4,14,21,21],
+        'З' => [30,1,1,14,1,1,30],
+        'И' => [17,17,19,21,25,17,17],
+        'І' => [31,4,4,4,4,4,31],
+        'Ї' => [10,0,31,4,4,4,31],
+        'Й' => [10,4,17,19,21,25,17],
+        'К' => [17,18,20,24,20,18,17],
+        'Л' => [7,9,9,9,9,9,17],
+        'М' => [17,27,21,21,17,17,17],
+        'Н' => [17,17,17,31,17,17,17],
+        'О' => [14,17,17,17,17,17,14],
+        'П' => [31,17,17,17,17,17,17],
+        'Р' => [30,17,17,30,16,16,16],
+        'С' => [15,16,16,16,16,16,15],
+        'Т' => [31,4,4,4,4,4,4],
+        'У' => [17,17,17,15,1,1,30],
+        'Ф' => [4,14,21,21,14,4,4],
+        'Х' => [17,17,10,4,10,17,17],
+        'Ц' => [17,17,17,17,17,31,1],
+        'Ч' => [17,17,17,15,1,1,1],
+        'Ш' => [21,21,21,21,21,21,31],
+        'Щ' => [21,21,21,21,21,31,1],
+        'Ь' => [16,16,16,30,17,17,30],
+        'Ю' => [18,21,21,29,21,21,18],
+        'Я' => [15,17,17,15,5,9,17],
+        ' ' => [0;7],
+        _ => [31,17,17,17,17,17,31],
+    }
 }
 
 fn glyph(c: u8) -> [u8; 7] {
