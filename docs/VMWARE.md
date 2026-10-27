@@ -136,7 +136,9 @@ arrows/Tab to change selections, Esc to go back, and Backspace/ASCII typing
 on the device-name screen. Supported steps: Welcome, Language, Region,
 Time Zone, PC name, Theme, Review. Default: Ukrainian, Ukraine,
 Europe/Kyiv, `zilla-pc`, dark mode.
-The prototype **does not install ZillaOS to a disk**. All values are
+The prototype **does not install ZillaOS to a disk**. Its
+[read-only partition planner](INSTALLATION.md) is separate and has no
+access to storage devices. All values are
 RAM-only and the wizard runs again after each VM reboot. For a real
 installer architecture see [SETUP.md](SETUP.md).
 
