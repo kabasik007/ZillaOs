@@ -46,6 +46,7 @@ The current framebuffer prototype is a **UI spike**; it is not proof that the pr
 
 | Stage | Target | Demonstration / gate |
 | --- | --- | --- |
+| **Storage inventory v0.1** | source committed; runtime unverified | passive VM-only PCI controller scan, storage onboarding page, installation disabled |
 | **Installer-plan v0.1 (read-only)** | source committed; runtime unverified | Checked GPT/ESP/system partition arithmetic for 512/4096-byte sectors; no storage writes or disk discovery |
 | **OOBE v0.1: First-run Setup** | source committed, runtime unverified | Ukrainian/English wizard, region/timezone, hostname, theme; framebuffer screenshot and Enter navigation; preferences RAM-only |
 | **D0: Desktop preview** | committed source | Native RGB32 desktop, responsive layout, topbar, Dock, mock Files/Terminal/Settings, launcher; F1–F5, Tab, Esc; Rust state tests |
@@ -168,3 +169,6 @@ persistent settings and user accounts are explicitly NOT implemented.
 Future installation planning: [INSTALLATION.md](INSTALLATION.md). Before any
 disk write, require read-only device discovery, target selection, explicit
 confirmation and verified recovery/rollback.
+
+
+Storage-controller discovery (not disks) is documented in [STORAGE.md](STORAGE.md).
