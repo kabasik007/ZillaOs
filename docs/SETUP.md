@@ -106,6 +106,15 @@ bash scripts/build.sh demo
 python3 scripts/desktop_smoke.py --timeout 90
 ```
 
+The updated desktop smoke test has two selectable profiles: default
+(Ukrainian, Ukraine, Kyiv, `zilla-pc`, dark) and custom (English, Poland,
+Warsaw, `lab01`, light). Try the custom profile with:
+
+```bash
+python3 scripts/desktop_smoke.py --setup-profile custom --timeout 90 \\
+  --output build/logs/desktop-qemu-custom.ppm
+```
+
 The updated desktop smoke test:
 1. Waits for `ZILLAOS_SETUP_READY`.
 2. Saves **`build/logs/desktop-qemu-setup.ppm`** before advancing.
@@ -113,7 +122,10 @@ The updated desktop smoke test:
 4. Requires `ZILLAOS_SETUP_COMPLETE` and Desktop readiness.
 5. Continues previous window, mouse, cursor and screenshot tests.
 
-The CI artifact includes setup, desktop, and post-cursor screenshots.
+The CI artifact includes both default and nondefault setup, desktop, and
+post-cursor screenshots. If the framebuffer is unavailable the kernel emits
+`ZILLAOS_SETUP_SKIPPED_NO_FRAMEBUFFER` and
+`ZILLAOS_SETUP_NOT_COMPLETED`, **not** a false completion marker.
 A screenshot or passing host unit test **does not prove** settings
 persist across reboot. VMware testing is a separate acceptance gate;
 see [VMWARE.md](VMWARE.md).
@@ -136,3 +148,7 @@ see [VMWARE.md](VMWARE.md).
    during preview.
 
 This OOBE is a product UX milestone, not an OS installer release.
+
+
+The separate [read-only installation planner](INSTALLATION.md) computes
+hypothetical GPT/ESP/system partition geometry without ever writing to a disk.
