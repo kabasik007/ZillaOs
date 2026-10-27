@@ -70,7 +70,7 @@
 
 - [ ] Reproducible `cargo fmt --check` and `cargo test --lib` on Rust 1.90.
 - [ ] Successful `cargo build --release --target x86_64-unknown-none`.
-- [ ] Verified Limine 12.9.3 ISO and boot under QEMU/OVMF.
+- [ ] Verified Limine 12.9.4 ISO and boot under QEMU/OVMF.
 - [ ] `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK` observed with QEMU exit 33.
 - [ ] Negative UD2 handler test exits QEMU 35 with vector 6 and saved diagnostics.
 - [ ] Negative boot tests and serial logs archived.
