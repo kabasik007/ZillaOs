@@ -392,8 +392,12 @@ impl Screen {
         self.text("Z", 22, 13, 2, 0x0b2535);
         self.text("ZILLAOS", 49, 15, 2, fg);
         if layout.width >= 720 {
-            self.text("DESKTOP   FILE   VIEW   WINDOW", 170, 18, 1, fg);
-            self.text("DEV / QEMU", layout.width - 130, 17, 1, fg);
+            self.text(if state.language == Language::Ukrainian {
+                "СТІЛ   ФАЙЛ   ВИГЛЯД   ВІКНА"
+            } else {
+                "DESKTOP   FILE   VIEW   WINDOW"
+            }, 170, 18, 1, fg);
+            self.text(state.hostname.as_str(), layout.width - 155, 17, 1, fg);
         }
     }
 
@@ -462,7 +466,16 @@ impl Screen {
         for (i, dot) in [0xfd6872, 0xffcb55, 0x45c784].iter().enumerate() {
             self.round_rect(x + 14 + i * 19, y + 13, 11, 11, 5, *dot);
         }
-        self.text(app.label(), x + 87, y + 14, 2, fg);
+        let title = if state.language == Language::Ukrainian {
+            match app {
+                App::Files => "ФАЙЛИ",
+                App::Terminal => "ТЕРМІНАЛ",
+                App::Settings => "НАЛАШТУВАННЯ",
+            }
+        } else {
+            app.label()
+        };
+        self.text(title, x + 87, y + 14, if w >= 360 { 2 } else { 1 }, fg);
         if focused && w >= 310 {
             self.text("ACTIVE", x + w.saturating_sub(70), y + 18, 1, 0x1bd5ba);
         }
@@ -515,6 +528,10 @@ impl Screen {
                     if content_h > 160 {
                         self.text("F5 TO SWITCH", cx, body + 105, 1, 0x1ed2b4);
                         self.text("DISPLAY: RGB32", cx, body + 126, 1, secondary);
+                    if content_h > 200 {
+                        self.text(state.hostname.as_str(), cx, body + 151, 1, fg);
+                        self.text(state.timezone.identifier(), cx, body + 173, 1, secondary);
+                    }
                     }
                 }
             }
