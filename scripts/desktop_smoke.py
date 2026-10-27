@@ -22,6 +22,8 @@ else:
 
 DEFAULT_ISO = ROOT / "dist" / "zillaos-0.0.2-dev-demo-uefi.iso"
 REQUIRED = ("ZILLAOS_DESKTOP_READY", "ZILLAOS_DESKTOP_INPUT_POLL", "ZILLAOS_WINDOW_MANAGER_READY", "ZILLAOS_MOUSE_READY")
+SETUP_READY = "ZILLAOS_SETUP_READY"
+SETUP_COMPLETE = "ZILLAOS_SETUP_COMPLETE"
 KEY_MARKER = "ZILLAOS_DESKTOP_STATE_CHANGED"
 FAILURE = ("ZILLAOS_BOOT_FAIL", "ZILLAOS_PANIC", "ZILLAOS_EXCEPTION_FATAL")
 
@@ -182,11 +184,41 @@ def main() -> int:
         with log.open("w") as output:
             guest = subprocess.Popen(cmd, stdout=output, stderr=subprocess.STDOUT, text=True)
             try:
+                if not wait_until(lambda: has_line(read_log(log), SETUP_READY),
+                                  guest, deadline):
+                    print("FAIL: first-run Setup screen did not start", file=sys.stderr)
+                    return 1
+                if not wait_until(monitor.exists, guest, deadline):
+                    print("FAIL: QEMU monitor unavailable", file=sys.stderr)
+                    return 1
+
+                # Capture actual first-boot setup BEFORE entering desktop.
+                setup_capture = workdir / "setup.ppm"
+                monitor_command(monitor, f"screendump {setup_capture}")
+                if not wait_until(setup_capture.exists, guest, deadline):
+                    print("FAIL: setup screen cannot be captured", file=sys.stderr)
+                    return 1
+                if screenshot_dimensions(setup_capture) is None:
+                    print("FAIL: first-run setup screen appears blank", file=sys.stderr)
+                    return 1
+                setup_output = args.output.with_name(args.output.stem + "-setup.ppm")
+                shutil.copyfile(setup_capture, setup_output)
+
+                # Drive Welcome -> Language -> Region -> TimeZone -> Device
+                # -> Appearance -> Review -> Finished. Settings remain RAM-only.
+                for step in range(1, 8):
+                    monitor_command(monitor, "sendkey ret")
+                    marker = f"ZILLAOS_SETUP_STEP=0x{step:016x}"
+                    if not wait_until(lambda: has_line(read_log(log), marker), guest, deadline):
+                        print(f"FAIL: setup did not advance to step {step}", file=sys.stderr)
+                        return 1
                 if not wait_until(
-                    lambda: all(has_line(read_log(log), m) for m in REQUIRED),
+                    lambda: has_line(read_log(log), SETUP_COMPLETE)
+                    and all(has_line(read_log(log), m) for m in REQUIRED),
                     guest, deadline
                 ):
-                    print("FAIL: desktop ready/input markers not observed", file=sys.stderr)
+                    print("FAIL: setup completed but desktop/input readiness missing",
+                          file=sys.stderr)
                     return 1
                 if any(has_line(read_log(log), m) for m in FAILURE):
                     print("FAIL: kernel failure marker", file=sys.stderr)
@@ -293,7 +325,7 @@ def main() -> int:
                     return 1
 
                 print(f"PASS: ZillaOS GUI 3 windows, focus, minimize/restore, PS/2 mouse motion+click; screenshot {dimensions[0]}x{dimensions[1]}")
-                print(f"Screens: {args.output} and {cursor_output}; serial: {log}")
+                print(f"Screens: {setup_output}, {args.output}, {cursor_output}; serial: {log}")
                 return 0
             finally:
                 if guest.poll() is None:
