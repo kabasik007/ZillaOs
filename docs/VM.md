@@ -55,7 +55,7 @@ procedure and must not be mistaken for a passing test report.
    python3 scripts/run_vm.py --display gtk
    ```
 
-   Expected after validated Limine boot: an experimental Zilla Desktop with top panel, dock and sample Files window, plus
+   Expected after validated Limine boot: an interactive Zilla Setup welcome wizard (press Enter seven times to accept defaults), followed by an experimental Zilla Desktop with top panel, dock and sample Files window, plus
    `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK`, `ZILLAOS_MEMORY_READY`, `ZILLAOS_BOOT_OK`, `ZILLAOS_DEMO_READY`, `ZILLAOS_DESKTOP_READY` in Ubuntu terminal. Keyboard: F1 Launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, F6 minimize, F7 maximize, Tab focus, arrows move, Shift+arrows resize, Esc hide.
    **Caution:** These are expected markers, not yet observed in a verified QEMU run.
    Stop with Ctrl+C or by closing the QEMU window.
@@ -73,6 +73,14 @@ python3 scripts/smoke_test.py --timeout 90
 
 This is the recommended deployment-free test. QEMU uses software CPU
 emulation (`accel=tcg`), so no KVM or nested virtualization is required.
+
+## Zilla Setup welcome experience
+
+In `vm-demo`, first boot shows Welcome, Language, Region, Time Zone,
+Device name, Appearance and Review. Use Enter, Escape, arrows/Tab and the
+optional PS/2 mouse. Preferences are held in RAM only (no OS installation or
+writing the system clock). The welcome screen reappears on every reboot.
+See [SETUP.md](SETUP.md) and [VMWARE.md](VMWARE.md).
 
 ## Interactive Zilla Desktop preview
 
@@ -103,7 +111,8 @@ python3 -m unittest discover -s tests -v
 python3 scripts/desktop_smoke.py --timeout 90
 ```
 
-Expected artifacts: `build/logs/desktop-qemu.log`,
+Expected artifacts: `build/logs/desktop-qemu-setup.ppm`,
+`build/logs/desktop-qemu.log`,
 `build/logs/desktop-qemu.ppm`, and
 `build/logs/desktop-qemu-cursor.ppm` (after pointer motion). **No successful GUI run has yet been
 observed in the current execution environment.** A passing test
