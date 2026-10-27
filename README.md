@@ -53,7 +53,7 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 
 ## Zilla Setup — first-run configuration
 
-The `vm-demo` ISO now opens a **graphical first-run setup wizard before the desktop**: Ukrainian/English language, Ukraine/Poland/USA region, Kyiv/Warsaw/New York/UTC time zone, validated PC name and dark/light style. Keyboard and mouse navigation are implemented in source; the wizard uses native Cyrillic bitmap glyphs and a responsive progress/card layout. **This is an onboarding preview, not a disk installer.** Settings remain in RAM for the current session only and the wizard repeats after reboot; no user account, RTC change, formatting or disk writes occur. See [SETUP.md](docs/SETUP.md). Build/VMware boot remain unverified.
+The `vm-demo` ISO now opens a **graphical first-run setup wizard before the desktop**: Ukrainian/English language, Ukraine/Poland/USA region, Kyiv/Warsaw/New York/UTC time zone, validated PC name, dark/light style and a read-only PCI storage-controller inventory page (no selectable disks). Keyboard and mouse navigation are implemented in source; the wizard uses native Cyrillic bitmap glyphs and a responsive progress/card layout. **This is an onboarding preview, not a disk installer.** Settings remain in RAM for the current session only and the wizard repeats after reboot; no user account, RTC change, formatting or disk writes occur. See [SETUP.md](docs/SETUP.md). Build/VMware boot remain unverified.
 
 ## Zilla Desktop — graphical desktop preview
 
