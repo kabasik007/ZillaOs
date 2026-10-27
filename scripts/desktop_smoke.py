@@ -43,6 +43,29 @@ def has_window_state(log: str, visible: int, focus: str) -> bool:
     return any(lines[i:i + 3] == expected for i in range(len(lines) - 2))
 
 
+def setup_passed(log: str) -> bool:
+    """Require seven ordered Setup steps and explicit volatile defaults."""
+    lines = [line.strip() for line in log.splitlines()]
+    sequence = [
+        SETUP_READY,
+        *[f"ZILLAOS_SETUP_STEP=0x{step:016x}" for step in range(1, 8)],
+        SETUP_COMPLETE,
+        "ZILLAOS_SETUP_LANGUAGE=uk",
+        "ZILLAOS_SETUP_TIMEZONE=Europe/Kyiv",
+        "ZILLAOS_SETUP_HOSTNAME=zilla-pc",
+        "ZILLAOS_SETUP_REGION=UA",
+        "ZILLAOS_SETUP_THEME=DARK",
+        "ZILLAOS_SETUP_VOLATILE_ONLY",
+    ]
+    cursor = 0
+    for expected in sequence:
+        try:
+            cursor = lines.index(expected, cursor) + 1
+        except ValueError:
+            return False
+    return True
+
+
 def screenshot_dimensions(path: Path) -> tuple[int, int] | None:
     """Validate complete non-flat binary PPM (P6) from QEMU screendump."""
     try:
@@ -213,11 +236,11 @@ def main() -> int:
                         print(f"FAIL: setup did not advance to step {step}", file=sys.stderr)
                         return 1
                 if not wait_until(
-                    lambda: has_line(read_log(log), SETUP_COMPLETE)
+                    lambda: setup_passed(read_log(log))
                     and all(has_line(read_log(log), m) for m in REQUIRED),
                     guest, deadline
                 ):
-                    print("FAIL: setup completed but desktop/input readiness missing",
+                    print("FAIL: setup sequence/defaults or desktop readiness incomplete",
                           file=sys.stderr)
                     return 1
                 if any(has_line(read_log(log), m) for m in FAILURE):
