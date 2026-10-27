@@ -114,14 +114,98 @@ pub extern "C" fn _start() -> ! {
 
     #[cfg(feature = "vm-demo")]
     {
-        use zillaos_kernel::desktop::{Desktop, Layout};
+        use zillaos_kernel::desktop::{App, Desktop, Layout};
+        use zillaos_kernel::setup::{Wizard, Step};
 
-        let mut desktop = match limine::framebuffer()
-            .and_then(|fb| Layout::for_size(fb.width, fb.height))
-        {
-            Some(layout) => Desktop::with_layout(layout),
-            None => Desktop::new(),
-        };
+        let layout = limine::framebuffer()
+            .and_then(|fb| Layout::for_size(fb.width, fb.height));
+        let mut wizard = Wizard::new(layout.unwrap_or_else(|| {
+            Layout::for_size(1024, 768).expect("static fallback viewport")
+        }));
+
+        // The first thing a user sees is Setup, not the Desktop.
+        // This is a volatile onboarding UI, NOT an installer that
+        // partitions a disk, creates accounts or persists config.
+        let setup_available = graphics::render_setup(&wizard);
+        serial::write("ZILLAOS_SETUP_READY\n");
+        if setup_available {
+            serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
+        } else {
+            serial::write("ZILLAOS_SETUP_NO_FRAMEBUFFER\n");
+        }
+        serial::write("ZILLAOS_BOOT_OK\n");
+        serial::write("ZILLAOS_DEMO_READY\n");
+
+        let mut input = input::Input::initialize();
+        if input.mouse_available() {
+            wizard.enable_pointer();
+            serial::write("ZILLAOS_MOUSE_READY\n");
+            if setup_available {
+                graphics::render_setup(&wizard);
+            }
+        } else {
+            serial::write("ZILLAOS_MOUSE_UNAVAILABLE\n");
+        }
+        serial::write("ZILLAOS_SETUP_INPUT_POLL\n");
+
+        if setup_available {
+            while !wizard.finished() {
+                let before = wizard;
+                let event = input.poll();
+                let was_mouse = matches!(&event, Some(input::InputEvent::Mouse(_)));
+                let changed = match event {
+                    Some(input::InputEvent::Key(key)) => wizard.handle_key(key),
+                    Some(input::InputEvent::Mouse(packet)) => wizard.handle_mouse(packet),
+                    None => false,
+                };
+                if changed {
+                    if wizard.step != before.step {
+                        serial::write("ZILLAOS_SETUP_STEP=");
+                        serial::write_hex(wizard.step.index() as u64);
+                        serial::write("\n");
+                    }
+                    if wizard.finished() {
+                        break;
+                    }
+                    let visual_change = wizard.step != before.step
+                        || wizard.language != before.language
+                        || wizard.region != before.region
+                        || wizard.timezone != before.timezone
+                        || wizard.hostname != before.hostname
+                        || wizard.dark != before.dark
+                        || wizard.selection != before.selection;
+                    if !was_mouse || visual_change
+                        || !graphics::redraw_setup_cursor(before.pointer, &wizard)
+                    {
+                        graphics::render_setup(&wizard);
+                    }
+                }
+                core::hint::spin_loop();
+            }
+        } else {
+            // Serial-only fallback is intentionally noninteractive: the
+            // user must have a framebuffer to complete graphical setup.
+            wizard.step = Step::Finished;
+            serial::write("ZILLAOS_SETUP_SKIPPED_NO_FRAMEBUFFER\n");
+        }
+
+        serial::write("ZILLAOS_SETUP_COMPLETE\n");
+        serial::write("ZILLAOS_SETUP_LANGUAGE=");
+        serial::write(wizard.language.code());
+        serial::write("\nZILLAOS_SETUP_TIMEZONE=");
+        serial::write(wizard.timezone.identifier());
+        serial::write("\nZILLAOS_SETUP_HOSTNAME=");
+        serial::write(wizard.hostname.as_str());
+        serial::write("\nZILLAOS_SETUP_VOLATILE_ONLY\n");
+
+        let mut desktop = Desktop::with_layout(layout.unwrap_or_else(|| {
+            Layout::for_size(1024, 768).expect("static fallback viewport")
+        }));
+        desktop.dark = wizard.dark;
+        if input.mouse_available() {
+            desktop.enable_pointer();
+        }
+
         let desktop_available = graphics::render(&desktop);
         if desktop_available {
             if graphics::has_backbuffer() {
@@ -129,39 +213,17 @@ pub extern "C" fn _start() -> ! {
             } else {
                 serial::write("ZILLAOS_GRAPHICS_DIRECT_FALLBACK\n");
             }
-        }
-        if desktop_available {
-            serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
-        } else {
-            serial::write("ZILLAOS_FRAMEBUFFER_UNAVAILABLE\n");
-        }
-        serial::write("ZILLAOS_BOOT_OK\n");
-        serial::write("ZILLAOS_DEMO_READY\n");
-        if desktop_available {
             serial::write("ZILLAOS_DESKTOP_READY\n");
         } else {
             serial::write("ZILLAOS_DESKTOP_NO_FRAMEBUFFER\n");
         }
 
-        // Firmware may not expose an i8042 second port. If mouse init
-        // fails the keyboard-only desktop continues to operate.
-        let mut input = input::Input::initialize();
-        if input.mouse_available() {
-            desktop.enable_pointer();
-            serial::write("ZILLAOS_MOUSE_READY\n");
-            if desktop_available {
-                graphics::render(&desktop);
-            }
-        } else {
-            serial::write("ZILLAOS_MOUSE_UNAVAILABLE\n");
-        }
         serial::write("ZILLAOS_DESKTOP_INPUT_POLL\n");
         serial::write("ZILLAOS_WINDOW_MANAGER_READY\n");
         let mut first_mouse_motion_logged = false;
         let mut first_cursor_damage_logged = false;
 
-        // Poll both keyboard and mouse data from a SINGLE i8042 reader.
-        // No interrupts, threads or real process messages exist yet.
+        // Desktop stays an early single-core test environment.
         loop {
             let previous_windows = desktop.windows;
             let previous_launcher = desktop.launcher;
@@ -189,7 +251,6 @@ pub extern "C" fn _start() -> ! {
                         serial::write("ZILLAOS_MOUSE_LEFT_UP\n");
                     }
                 }
-                // Pointer-only motion must not flood the serial log.
                 if previous_windows != desktop.windows
                     || previous_launcher != desktop.launcher
                     || previous_theme != desktop.dark
@@ -199,9 +260,9 @@ pub extern "C" fn _start() -> ! {
                     serial::write_hex(desktop.windows.visible_count() as u64);
                     serial::write("\nZILLAOS_DESKTOP_FOCUS=");
                     match desktop.active() {
-                        Some(zillaos_kernel::desktop::App::Files) => serial::write("FILES\n"),
-                        Some(zillaos_kernel::desktop::App::Terminal) => serial::write("TERMINAL\n"),
-                        Some(zillaos_kernel::desktop::App::Settings) => serial::write("SETTINGS\n"),
+                        Some(App::Files) => serial::write("FILES\n"),
+                        Some(App::Terminal) => serial::write("TERMINAL\n"),
+                        Some(App::Settings) => serial::write("SETTINGS\n"),
                         None => serial::write("NONE\n"),
                     }
                 }
@@ -209,9 +270,6 @@ pub extern "C" fn _start() -> ! {
                     let scene_changed = previous_windows != desktop.windows
                         || previous_launcher != desktop.launcher
                         || previous_theme != desktop.dark;
-                    // Mouse-only updates restore <= two cursor rectangles.
-                    // Full redraw is reserved for actual window/theme changes
-                    // or for devices beyond the 1280x800 backing capacity.
                     let cursor_damage_applied = mouse_event
                         && !scene_changed
                         && graphics::redraw_cursor(previous_pointer, &desktop);
