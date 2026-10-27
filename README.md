@@ -61,6 +61,7 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 
 - [Build and QEMU smoke test](docs/BUILD.md) — first kernel source, pinned Limine archive and reproducible test commands.
 - [Run in VM on Windows and Linux](docs/VM.md) — WSL2 setup, graphical demo, host dependency checks.
+- [VMware Workstation UEFI runbook](docs/VMWARE.md) — Windows PowerShell VMX generator, WSL ISO build and COM1 diagnostics.
 - [Architecture](docs/ARCHITECTURE.md) — security boundaries, kernel components, memory model, IPC and interface contracts.
 - [Early physical memory manager](docs/MEMORY.md) — bounded Limine map copy, CPU physical limits, frame-readback experiments.
 - [Paging design](docs/PAGING.md) — canonical addresses and typed page-table metadata.
@@ -97,6 +98,10 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 Canonical repository: [kabasik007/ZillaOs](https://github.com/kabasik007/ZillaOs). Default development branch: `main` for the architecture bootstrap; follow-on code changes should be reviewed through branches/PRs. License decision: **TBD before importing dependencies or accepting external contributions**.
 
 Methodology: [Be Ambitious Pro](https://app.notion.com/p/3fb91a1af397814782cac435379a82a7) — outcome-led engineering, independent validation, real PASS/FAIL evidence.
+
+## VMware Workstation (Windows)
+
+With VMware Workstation already installed, build the ISO in WSL Ubuntu using `bash scripts/build_vmware.sh`. Then, in **Windows PowerShell**, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\vmware.ps1 -Launch` from the repository root. The generated disposable UEFI VM has no hard disk or network and captures COM1 output to a host file. See [VMWARE.md](docs/VMWARE.md). VMware boot is **not yet verified**.
 
 ## M1 development commands
 
