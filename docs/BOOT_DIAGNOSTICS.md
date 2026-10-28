@@ -36,9 +36,10 @@ Output is a JSON object including:
 - `kernel_boot_seen`, `setup_seen`, `desktop_seen`.
 - `fatal_marker` and `event_count`.
 
-The verifier fails on panic, explicit boot failure, absent boot marker,
-absent Setup, missing PCI scan, incorrect marker order, and missing
-framebuffer. It does **not** claim that files were installed, that
+The verifier now requires **unique, correctly ordered** boot, PCI scan,
+Setup, framebuffer and Setup input-loop markers. It rejects panic,
+explicit boot failure, missing GUI proof, duplicate markers and incorrect
+startup ordering. A bare `ZILLAOS_BOOT_OK` is insufficient. It does **not** claim that files were installed, that
 settings persist or that disk drivers exist.
 
 The QEMU runner now retains earlier serial logs by using a unique new
@@ -65,6 +66,16 @@ confirmed to run to completion.
 
 Never discard a failing log to make the test green; keep the full
 `vmware.log`, the COM1 log and the latest QEMU execution report.
+
+## No-ISO graphical installer evidence
+
+`python3 scripts/desktop_smoke.py --disk <lab-raw-path> --timeout 120`
+now boots an independently verified read-only Installer Lab RAW *without*
+ISO and automatically presses Enter through all nine first-run screens.
+It captures Setup, Storage, Install Plan and Desktop images and checks
+actual keyboard-driven Desktop interaction. See
+[INSTALLER_ACCEPTANCE.md](INSTALLER_ACCEPTANCE.md). This path must still
+be run in QEMU/WSL before its success can be claimed.
 
 ## Next acceptance sequence
 
