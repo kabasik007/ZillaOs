@@ -79,6 +79,10 @@
 
 ## Zilla Setup — First-run experience (experimental)
 
+Installer [V2.1](EFI_BOOT_DISK.md) now prepares FAT32 ESP boot files
+inside exclusively new test RAW images. A strict QEMU no-ISO boot check has
+been added to CI; it has **not yet executed** and does not prove VMware boot.
+
 The new [Installer V2 lab](INSTALLER_V2.md) performs actual GPT creation
 and readback for brand-new disposable sparse RAW files using explicit
 confirmation; native in-guest disk installation is still disabled.
