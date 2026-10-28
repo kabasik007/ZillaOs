@@ -22,6 +22,14 @@ verifying *test GPT disk images*, **not yet a complete installed OS**.
    Tests create 12-GiB *sparse files* and verify their primary and
    backup GPT with the independent reader.
 
+## Installer V2.5 independent FAT32 and one-command acceptance
+
+A separate [mtools FAT32 reader and acceptance runner](INSTALLER_ACCEPTANCE.md)
+check that actual EFI files can be extracted and verified independently of
+our own writer/parser. Default preflight does not create a lab disk;
+creating and booting RAW media require explicit user consent.
+CI is updated but its real run remains unverified.
+
 ## Boot evidence and executable entry checks (V2.4)
 
 `boot_assets_audit.py` now checks mapped executable entrypoints for PE32+
