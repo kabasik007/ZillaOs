@@ -224,7 +224,7 @@ def main() -> int:
         candidate = args.disk.expanduser()
         if (candidate.is_symlink() or
             candidate.parent.resolve() != lab or
-            re.fullmatch(r"zillaos-[a-z0-9][a-z0-9-]*\\.img", candidate.name) is None or
+            re.fullmatch(r"zillaos-[a-z0-9][a-z0-9-]*\.img", candidate.name) is None or
             not candidate.is_file()):
             print("FAIL: disk must be a regular, named Installer Lab RAW (not a symlink)",
                   file=sys.stderr)
