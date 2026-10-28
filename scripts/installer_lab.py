@@ -21,6 +21,7 @@ import zlib
 from gpt_image_verify import verify_image
 from installer_fat32 import create_esp, Fat32Error
 from installer_fat32_verify import verify_fat32_image
+from boot_assets_audit import validate_assets
 
 MIB = 1024 * 1024
 GIB = 1024 * MIB
@@ -187,6 +188,9 @@ def load_uefi_assets() -> dict[str, bytes]:
     if config.count(old) != 1:
         raise UnsafeRequest('unexpected Limine kernel path in boot/limine.conf')
     result['LIMINE.CONF'] = config.replace(old,'boot():/boot/kernel.elf').encode('utf-8')
+    # Check actual PE32+ EFI executable + ELF64/x86-64 PT_LOAD and Limine path.
+    # A magic MZ/ELF prefix alone never proves a boot artifact is valid.
+    validate_assets(result)
     return result
 
 
