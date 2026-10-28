@@ -54,6 +54,8 @@ pub struct GptInfo {
     pub first_usable_lba: u64,
     pub last_usable_lba: u64,
     pub backup_header_lba: u64,
+    /// CRC verified against the primary partition-entry array.
+    pub partition_array_crc32: u32,
     pub partition_count: usize,
     pub partitions: [Option<Partition>; MAX_PARTITIONS],
 }
@@ -204,6 +206,7 @@ pub fn inspect_primary_gpt(
         first_usable_lba: first_usable,
         last_usable_lba: last_usable,
         backup_header_lba: backup,
+        partition_array_crc32: expected_table_crc,
         partition_count: 0,
         partitions: [None; MAX_PARTITIONS],
     };
@@ -277,14 +280,9 @@ pub fn inspect_complete_gpt(
     let block = sector_size as usize;
     let mut buffer = [0u8; MAX_SECTOR];
 
-    // The primary inspection has already validated its own array CRC.
-    // Re-read its header to compare that exact CRC with backup metadata.
-    read(1, &mut buffer[..block]).map_err(|_| GptError::ReadFailed)?;
-    let primary_array_crc = le32(&buffer, 88);
-    let expected_primary_array_lba = le64(&buffer, 72);
-    if expected_primary_array_lba < 2 {
-        return Err(GptError::InvalidArrayLocation);
-    }
+    // Keep the CRC from the already validated primary header. Avoid
+    // re-reading mutable media between primary and backup verification.
+    let primary_array_crc = primary.partition_array_crc32;
     let last_lba = total_sectors - 1;
     read(last_lba, &mut buffer[..block]).map_err(|_| GptError::ReadFailed)?;
     if &buffer[..8] != b"EFI PART" || le32(&buffer, 8) != 0x0001_0000 {
