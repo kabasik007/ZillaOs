@@ -22,6 +22,15 @@ verifying *test GPT disk images*, **not yet a complete installed OS**.
    Tests create 12-GiB *sparse files* and verify their primary and
    backup GPT with the independent reader.
 
+## UEFI boot artifact preflight (V2.3)
+
+`python3 scripts/check_boot_assets.py` now verifies compiled Limine
+PE32+ x86-64 EFI metadata, Rust ELF64/x86-64 kernel load segments,
+and the exact Limine config path. `--stage-uefi` cannot create an
+image from malformed or wrong-architecture boot assets. Twelve
+synthetic unit tests passed locally, but real boot verification
+remains an independent requirement.
+
 ## Installer Lab stages
 
 ```text
