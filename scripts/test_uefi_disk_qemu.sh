@@ -10,6 +10,15 @@ if [[ ! "$NAME" =~ ^zillaos-[a-z0-9][a-z0-9-]*\.img$ ]]; then
     echo "Use only a ZillaOS lab image name such as zillaos-uefi.img" >&2
     exit 2
 fi
+DISPLAY_ARGS=(-display gtk)
+if (( $# > 1 )); then
+    if [[ "$2" == "--headless" ]]; then
+        DISPLAY_ARGS=(-display none -vga std)
+    else
+        echo "Only --headless accepted as second argument" >&2
+        exit 2
+    fi
+fi
 IMAGE="$HOME/.local/share/zillaos/installer-lab/$NAME"
 if [[ ! -f "$IMAGE" || -L "$IMAGE" ]]; then
     echo "Missing or unsafe lab RAW image: $IMAGE" >&2
@@ -54,4 +63,4 @@ qemu-system-x86_64 \
     -drive if=none,format=raw,readonly=on,id=zilladisk,file="$IMAGE" \
     -device ich9-ahci,id=zillasata \
     -device ide-hd,bus=zillasata.0,drive=zilladisk,bootindex=1 \
-    -nic none -serial "file:$SERIAL" -display gtk
+    -nic none -serial "file:$SERIAL" "${DISPLAY_ARGS[@]}"
