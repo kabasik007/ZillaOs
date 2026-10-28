@@ -79,7 +79,7 @@
 
 ## Zilla Setup — First-run experience (experimental)
 
-A standalone [primary GPT validation library](GPT.md) now checks
+A standalone [primary + backup GPT validation library](GPT.md) now checks
 sector-image metadata, CRCs, partition ranges and overlaps using a
 read-only callback. It remains **unconnected** to actual hardware because
 there is no block driver.
