@@ -89,6 +89,15 @@ Workstation; you still manually select Power on.
 
 If VMware does not open, use File > Open and select the VMX above.
 
+## COM1 boot evidence verification
+
+After testing the disposable VM, use WSL to analyse its COM1 log if you
+copy the file into Ubuntu, or inspect the native Windows log text first.
+The non-writing checker `scripts/boot_evidence.py` detects panic, missing
+boot/Setup markers, and framebuffer failure; see
+[BOOT_DIAGNOSTICS.md](BOOT_DIAGNOSTICS.md). It does not prove installation
+or settings persistence.
+
 ## Diagnostics
 
 In Windows PowerShell, after boot:
