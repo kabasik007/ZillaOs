@@ -12,36 +12,66 @@ FATAL = ('ZILLAOS_PANIC', 'ZILLAOS_BOOT_FAIL')
 
 
 def analyse(lines: str, *, require_setup: bool = True) -> dict:
-    events = [x.strip() for x in lines.splitlines() if x.strip()]
+    # COM1 is an append-only diagnostic stream. A single marker from a
+    # previous boot, a duplicate marker, or setup without a framebuffer is
+    # not proof that the current guest has a usable graphical installer.
+    events = [line.strip() for line in lines.splitlines() if line.strip()]
+    counts = {marker: events.count(marker) for marker in (
+        'ZILLAOS_BOOT_OK', 'ZILLAOS_SETUP_READY',
+        'ZILLAOS_STORAGE_PCI_SCAN_READY', 'ZILLAOS_FRAMEBUFFER_READY',
+        'ZILLAOS_SETUP_INPUT_POLL',
+    )}
+
     def position(marker: str) -> int:
         try:
             return events.index(marker)
         except ValueError:
             return -1
+
     boot = position('ZILLAOS_BOOT_OK')
     setup = position('ZILLAOS_SETUP_READY')
     desktop = position('ZILLAOS_DESKTOP_READY')
-    crash = next((x for x in FATAL if position(x) >= 0), None)
+    crash = next((line for line in events if line in FATAL), None)
     error = None
     if crash:
         error = 'guest_' + crash.lower()
-    elif boot < 0:
+    elif counts['ZILLAOS_BOOT_OK'] == 0:
         error = 'kernel_boot_marker_missing'
-    elif require_setup and setup < 0:
-        error = 'setup_marker_missing'
-    elif require_setup and setup >= boot:
-        # Real vm-demo starts Setup BEFORE declaring BOOT_OK.
-        error = 'unexpected_setup_boot_marker_order'
-    elif require_setup and position('ZILLAOS_STORAGE_PCI_SCAN_READY') < 0:
-        error = 'storage_scan_marker_missing'
-    elif require_setup and position('ZILLAOS_SETUP_NO_FRAMEBUFFER') >= 0:
-        error = 'setup_framebuffer_unavailable'
-    elif require_setup and position('ZILLAOS_SETUP_SKIPPED_NO_FRAMEBUFFER') >= 0:
-        error = 'setup_skipped_no_framebuffer'
-    return dict(success=error is None, classification=error or 'boot_evidence_valid',
-                kernel_boot_seen=boot >= 0, setup_seen=setup >= 0,
-                desktop_seen=desktop >= 0, fatal_marker=crash,
-                event_count=len(events), note='Serial evidence only; not a full installed OS verification')
+    elif counts['ZILLAOS_BOOT_OK'] != 1:
+        error = 'duplicate_boot_markers'
+    elif require_setup:
+        scan = position('ZILLAOS_STORAGE_PCI_SCAN_READY')
+        framebuffer = position('ZILLAOS_FRAMEBUFFER_READY')
+        input_poll = position('ZILLAOS_SETUP_INPUT_POLL')
+        if position('ZILLAOS_SETUP_NO_FRAMEBUFFER') >= 0 or position('ZILLAOS_SETUP_SKIPPED_NO_FRAMEBUFFER') >= 0:
+            error = 'setup_framebuffer_unavailable'
+        elif counts['ZILLAOS_SETUP_READY'] == 0:
+            error = 'setup_marker_missing'
+        elif counts['ZILLAOS_SETUP_READY'] != 1:
+            error = 'duplicate_setup_markers'
+        elif counts['ZILLAOS_STORAGE_PCI_SCAN_READY'] == 0:
+            error = 'storage_scan_marker_missing'
+        elif counts['ZILLAOS_STORAGE_PCI_SCAN_READY'] != 1:
+            error = 'duplicate_storage_scan_markers'
+        elif counts['ZILLAOS_FRAMEBUFFER_READY'] == 0:
+            error = 'framebuffer_ready_marker_missing'
+        elif counts['ZILLAOS_FRAMEBUFFER_READY'] != 1:
+            error = 'duplicate_framebuffer_markers'
+        elif counts['ZILLAOS_SETUP_INPUT_POLL'] == 0:
+            error = 'setup_input_poll_missing'
+        elif counts['ZILLAOS_SETUP_INPUT_POLL'] != 1:
+            error = 'duplicate_setup_input_poll_markers'
+        elif not (scan < setup < framebuffer < boot < input_poll):
+            error = 'unexpected_boot_marker_order'
+    return dict(
+        success=error is None, classification=error or 'boot_evidence_valid',
+        kernel_boot_seen=boot >= 0, setup_seen=setup >= 0,
+        framebuffer_seen=position('ZILLAOS_FRAMEBUFFER_READY') >= 0,
+        setup_input_poll_seen=position('ZILLAOS_SETUP_INPUT_POLL') >= 0,
+        desktop_seen=desktop >= 0, fatal_marker=crash,
+        event_count=len(events),
+        note='Serial startup evidence only; not proof of an installed OS or persistent settings',
+    )
 
 
 def analyse_file(path: Path, *, require_setup: bool = True) -> dict:
