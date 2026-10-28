@@ -18,7 +18,7 @@ jobs:
       - name: Install emulator and ISO tooling
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso mtools
 
       - name: Install pinned Rust toolchain
         run: |
@@ -39,6 +39,7 @@ jobs:
           bash -n scripts/build.sh
           bash -n scripts/test_uefi_disk_qemu.sh
           bash -n scripts/export_vmware_test.sh
+          bash -n scripts/verify_esp_mtools.sh
           # PowerShell is not installed in every Linux runner image.
           # When present, verify parse syntax without running Windows actions.
           if command -v pwsh >/dev/null 2>&1; then
@@ -85,6 +86,7 @@ jobs:
           python3 scripts/check_boot_assets.py | tee build/logs/boot-assets-preflight.json
           python3 scripts/installer_lab.py --name zillaos-ci-uefi.img --size-gib 12 --stage-uefi --create --confirm CREATE-NEW-VM-IMAGE | tee build/logs/installer-uefi-stage.json
           python3 scripts/installer_fat32_verify.py "$HOME/.local/share/zillaos/installer-lab/zillaos-ci-uefi.img" --check-boot
+          bash scripts/verify_esp_mtools.sh zillaos-ci-uefi.img | tee build/logs/installer-uefi-mtools.log
           set +e
           timeout 90s bash scripts/test_uefi_disk_qemu.sh zillaos-ci-uefi.img --headless > build/logs/installer-uefi-qemu-run.log 2>&1
           rc=$?
@@ -123,6 +125,7 @@ jobs:
             build/logs/installer-lab-dry-run.json
             build/logs/boot-assets-preflight.json
             build/logs/installer-uefi-stage.json
+            build/logs/installer-uefi-mtools.log
             build/logs/installer-uefi-qemu-run.log
             build/logs/installer-uefi-disk-serial.log
             build/logs/installer-uefi-boot-evidence.json
