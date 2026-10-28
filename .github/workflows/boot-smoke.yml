@@ -82,6 +82,7 @@ jobs:
       - name: Stage new GPT FAT32 UEFI disk and verify no-ISO boot
         run: |
           set -o pipefail
+          python3 scripts/check_boot_assets.py | tee build/logs/boot-assets-preflight.json
           python3 scripts/installer_lab.py --name zillaos-ci-uefi.img --size-gib 12 --stage-uefi --create --confirm CREATE-NEW-VM-IMAGE | tee build/logs/installer-uefi-stage.json
           python3 scripts/installer_fat32_verify.py "$HOME/.local/share/zillaos/installer-lab/zillaos-ci-uefi.img" --check-boot
           set +e
@@ -120,6 +121,7 @@ jobs:
             build/logs/desktop-qemu-setup.ppm
             build/logs/desktop-qemu-storage.ppm
             build/logs/installer-lab-dry-run.json
+            build/logs/boot-assets-preflight.json
             build/logs/installer-uefi-stage.json
             build/logs/installer-uefi-qemu-run.log
             build/logs/installer-uefi-disk-serial.log
