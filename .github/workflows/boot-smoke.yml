@@ -38,6 +38,12 @@ jobs:
           python3 -c "import json; d=json.load(open('build/logs/installer-lab-dry-run.json')); assert d['mode']=='DRY_RUN' and not d['plan']['installation_enabled'] and not d['plan']['bootable']"
           bash -n scripts/build.sh
           bash -n scripts/test_uefi_disk_qemu.sh
+          bash -n scripts/export_vmware_test.sh
+          # PowerShell is not installed in every Linux runner image.
+          # When present, verify parse syntax without running Windows actions.
+          if command -v pwsh >/dev/null 2>&1; then
+            pwsh -NoProfile -Command '$parseErrors = \$null; \$null = [System.Management.Automation.Language.Parser]::ParseFile("scripts/vmware_installed.ps1", [ref]$null, [ref]$parseErrors); if ($parseErrors.Count -gt 0) { $parseErrors | Out-Host; exit 1 }'
+          fi
 
       - name: Test pure Rust memory algorithms on host
         run: cargo test --lib --target x86_64-unknown-linux-gnu --offline
