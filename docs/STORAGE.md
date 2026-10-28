@@ -121,9 +121,9 @@ before claiming PCI discovery or GUI are operational in a VM.
 
 ## Standalone GPT verifier added
 
-The source now contains a pure `no_std` primary GPT parser in
-[`src/gpt.rs`](../src/gpt.rs) with CRC32, protective-MBR, geometry,
-partition overlap and synthetic image tests. **It is not wired to any real
+The source now contains a pure `no_std` GPT parser with separate primary-only and strict primary-plus-backup modes in
+[`src/gpt.rs`](../src/gpt.rs) with CRC32, protective-MBR, geometry, partition overlap,
+backup-header/backup-array consistency and synthetic image tests. **It is not wired to any real
 block device** because there is no read-only sector driver yet. See
 [GPT.md](GPT.md). PCI controller discovery still does not enumerate disks.
 
