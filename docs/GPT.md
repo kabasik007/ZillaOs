@@ -1,7 +1,8 @@
-# ZillaOS GPT Inspector — primary GPT (read-only)
+# ZillaOS GPT Inspector — primary + backup GPT (read-only)
 
 **2026-10-28:** `src/gpt.rs` has been committed to `main` as a
-standalone `no_std` library and exported by `src/lib.rs`. The Rust
+standalone `no_std` library and exported by `src/lib.rs`.
+The optional strict API also checks the backup GPT header and table. The Rust
 unit tests are included in source but **have not been run** in this
 execution environment (no `rustc` / `cargo` / QEMU available).
 
@@ -26,6 +27,20 @@ There is **no block-device driver or real disk access** behind this API.
 It cannot enumerate or select disks, write sectors, create partitions,
 format devices, persist user settings or install a bootloader.
 
+## APIs
+
+- `inspect_primary_gpt(...)` — checks the protective MBR and primary GPT
+  header + table. This is the compatibility/diagnostic API; it does **not**
+  guarantee a valid backup GPT.
+- `inspect_complete_gpt(...)` — calls the primary checker, then verifies
+  the final-LBA backup GPT header (CRC32, disk GUID, opposite header LBAs,
+  identical usable range and table geometry) and independently reads and
+  CRC-checks the backup entry array. Both copies must report the same
+  partition-table CRC. This is the preferred inspection API for future
+  read-only disk-device integration.
+
+Both APIs receive only a read callback. Neither has a write capability.
+
 ## Validation performed by the parser
 
 - Accepts only a *trusted input geometry* of 512 or 4096 bytes per
@@ -45,14 +60,17 @@ format devices, persist user settings or install a bootloader.
 - Rejects nonzero unused entries, missing partition GUIDs, out-of-range
   partitions, overlapping spans, duplicate partition identities, and
   more than 32 populated partitions.
+- `inspect_complete_gpt` additionally rejects missing/corrupt backup
+  headers, misplaced backup arrays, CRC errors, and valid-but-inconsistent
+  backup table content.
 - Never silently repairs a corrupted GPT, reconstructs an alternate
   header, or treats a damaged primary header as safe to install over.
 
 ### Explicit limitations
 
-This stage **does not validate backup GPT header/array contents**, only
-checks their proposed reserved locations against disk geometry. It does
-not check disk filesystems, BitLocker, ext4, NTFS, EFI signatures inside
+`inspect_primary_gpt` does not validate backup contents; the new
+`inspect_complete_gpt` **does** validate backup headers and tables.
+The strict mode still does **not** detect in-use filesystems, BitLocker, ext4, NTFS, EFI signatures inside
 partitions, hidden/recovery partitions or whether the disk is empty.
 A successful primary GPT inspection **does not authorize installation**.
 
@@ -65,10 +83,13 @@ behavior is appropriate for an early-stage preview, not production.
 The module includes synthetic in-memory images for **512** and **4096**
 byte sector devices. Tests cover:
 - Valid protective MBR, GPT header CRC32 and entry-array CRC32.
-- Two valid, separate partitions.
+- Two valid, separate partitions and complete matching primary/backup tables.
 - Incorrect MBR signature, hybrid MBR or protective range.
 - Invalid GPT signature, header/padding corruption and stale CRCs.
 - Invalid partition entry bytes even when the table CRC is recalculated.
+- Absent backup header, backup CRC corruption, shifted backup array,
+  mismatched disk identity, mismatched but independently CRC-valid arrays,
+  and failure to read the backup sector.
 - Overlapping partitions and out-of-range LBAs despite valid CRCs.
 - Malicious partition count, unsupported logical sector size and
   failed read callbacks.
