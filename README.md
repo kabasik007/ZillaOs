@@ -53,7 +53,7 @@ Each milestone has explicit **PASS / FAIL** acceptance tests, not just screensho
 
 ## Zilla Setup — first-run configuration
 
-The `vm-demo` ISO now opens a **graphical first-run setup wizard before the desktop**: Ukrainian/English language, Ukraine/Poland/USA region, Kyiv/Warsaw/New York/UTC time zone, validated PC name, dark/light style and a read-only PCI storage-controller inventory page (no selectable disks). Keyboard and mouse navigation are implemented in source; the wizard uses native Cyrillic bitmap glyphs and a responsive progress/card layout. **This is an onboarding preview, not a disk installer.** Settings remain in RAM for the current session only and the wizard repeats after reboot; no user account, RTC change, formatting or disk writes occur. See [SETUP.md](docs/SETUP.md). Build/VMware boot remain unverified.
+The `vm-demo` ISO now opens a **graphical first-run setup wizard before the desktop**: Ukrainian/English language, Ukraine/Poland/USA region, Kyiv/Warsaw/New York/UTC time zone, validated PC name, dark/light style and a read-only PCI storage-controller inventory and installation-prerequisites page (no selectable disks). Keyboard and mouse navigation are implemented in source; the wizard uses native Cyrillic bitmap glyphs and a responsive progress/card layout. **This is an onboarding preview, not a disk installer.** Settings remain in RAM for the current session only and the wizard repeats after reboot; no user account, RTC change, formatting or disk writes occur. See [SETUP.md](docs/SETUP.md). Build/VMware boot remain unverified.
 
 ## Zilla Desktop — graphical desktop preview
 
@@ -74,6 +74,7 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 - [Zilla Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) — immediate framebuffer renderer, input, state, limitations.
 - [Zilla Desktop roadmap](docs/DESKTOP_ROADMAP.md) — from QEMU prototype to user-mode compositor and apps.
 - [PS/2 mouse bootstrap](docs/MOUSE.md) — mouse protocol, QEMU pointer interactions, tests and caveats.
+- [ZillaOS Installer V2](docs/INSTALLER_V2.md) — nine-step native UI and actually tested safe sparse RAW GPT image creation lab.
 - [Executable GPT image verifier](scripts/gpt_image_verify.py) — Python host-only read-only check of raw .img files; five tests have run successfully, but not the Rust kernel.
 - [Read-only GPT parser](docs/GPT.md) — CRC-checked primary and backup GPT verification with synthetic Rust tests and no disk writes.
 - [Passive PCI storage discovery](docs/STORAGE.md) — VMware/QEMU storage-controller inventory, no disk operations and read-only wizard.
