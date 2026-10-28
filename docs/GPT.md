@@ -6,6 +6,32 @@ The optional strict API also checks the backup GPT header and table. The Rust
 unit tests are included in source but **have not been run** in this
 execution environment (no `rustc` / `cargo` / QEMU available).
 
+## Host-side executable GPT inspection (Python)
+
+A separate [`scripts/gpt_image_verify.py`](../scripts/gpt_image_verify.py)
+performs strict primary+backup GPT checks on **ordinary raw image files**,
+independently of the Rust kernel. It is intentionally not a VMware VMDK
+parser or a Windows physical disk reader. It opens only regular files with
+`O_RDONLY` and `O_NOFOLLOW` (on WSL/Linux), rejects unexpected
+extensions, and never writes sectors.
+
+```bash
+# No Rust needed for this host-only regression:
+python3 -m unittest tests.test_gpt_image_verify -v
+
+# Inspect a raw test image you already own (not .vmdk):
+python3 scripts/gpt_image_verify.py /path/to/disposable-test.img --sector-size 512
+```
+
+The output is a JSON report (status, sector size, partition bounds and
+integrity status), **not permission to install or modify the image**.
+Five test cases for 512/4096-byte GPT, corrupt backup, valid-but-different
+backup array, refusal of symlinks/VMDK, and unchanged read-only image
+passed in a local Python runtime, 2026-10-28. Matching exact Git blob
+hashes were confirmed after writing both files to `main`.
+Kernel Rust/QEMU/VMware execution remains unverified. The Python tests
+are independent; they do not establish that the Rust parser compiles.
+
 ## Purpose
 
 The parser inspects the GPT of a hypothetical block device through
