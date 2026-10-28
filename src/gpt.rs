@@ -33,6 +33,10 @@ pub enum GptError {
     InvalidPartition,
     PartitionOverlap,
     TooManyPartitions,
+    InvalidBackupHeader,
+    BackupHeaderCrcMismatch,
+    BackupPartitionArrayMismatch,
+    BackupArrayCrcMismatch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -258,6 +262,88 @@ pub fn inspect_primary_gpt(
     Ok(info)
 }
 
+/// Verify **both** copies of a standard GPT without any disk writes.
+///
+/// First checks protective MBR and primary GPT through the existing verifier,
+/// then checks the backup GPT header at last LBA and its partition array.
+/// The backup header and entry-array CRCs must agree with the validated
+/// primary metadata. Any missing, stale or malformed backup is a hard error.
+pub fn inspect_complete_gpt(
+    sector_size: u32,
+    total_sectors: u64,
+    mut read: impl FnMut(u64, &mut [u8]) -> Result<(), ()>,
+) -> Result<GptInfo, GptError> {
+    let primary = inspect_primary_gpt(sector_size, total_sectors, &mut read)?;
+    let block = sector_size as usize;
+    let mut buffer = [0u8; MAX_SECTOR];
+
+    // The primary inspection has already validated its own array CRC.
+    // Re-read its header to compare that exact CRC with backup metadata.
+    read(1, &mut buffer[..block]).map_err(|_| GptError::ReadFailed)?;
+    let primary_array_crc = le32(&buffer, 88);
+    let expected_primary_array_lba = le64(&buffer, 72);
+    if expected_primary_array_lba < 2 {
+        return Err(GptError::InvalidArrayLocation);
+    }
+    let last_lba = total_sectors - 1;
+    read(last_lba, &mut buffer[..block]).map_err(|_| GptError::ReadFailed)?;
+    if &buffer[..8] != b"EFI PART" || le32(&buffer, 8) != 0x0001_0000 {
+        return Err(GptError::InvalidBackupHeader);
+    }
+    let header_size = le32(&buffer, 12) as usize;
+    if !(GPT_HEADER_MIN..=block).contains(&header_size)
+        || le32(&buffer, 20) != 0
+    {
+        return Err(GptError::InvalidBackupHeader);
+    }
+    let stored_crc = le32(&buffer, 16);
+    let mut state = !0u32;
+    state = crc32_continue(state, &buffer[..16]);
+    state = crc32_continue(state, &[0u8; 4]);
+    state = crc32_continue(state, &buffer[20..header_size]);
+    if !state != stored_crc {
+        return Err(GptError::BackupHeaderCrcMismatch);
+    }
+    if buffer[header_size..block].iter().any(|b| *b != 0)
+        || le64(&buffer, 24) != last_lba
+        || le64(&buffer, 32) != 1
+        || le64(&buffer, 40) != primary.first_usable_lba
+        || le64(&buffer, 48) != primary.last_usable_lba
+        || buffer[56..72] != primary.disk_guid
+        || le32(&buffer, 80) != MAX_ENTRIES
+        || le32(&buffer, 84) != PARTITION_ENTRY_SIZE as u32
+    {
+        return Err(GptError::InvalidBackupHeader);
+    }
+    let backup_array_lba = le64(&buffer, 72);
+    let expected_array_crc = le32(&buffer, 88);
+    if expected_array_crc != primary_array_crc {
+        return Err(GptError::BackupPartitionArrayMismatch);
+    }
+    let array_bytes = MAX_ENTRIES as usize * PARTITION_ENTRY_SIZE;
+    let sectors = array_bytes / block;
+    let expected_array_lba = last_lba
+        .checked_sub(sectors as u64)
+        .ok_or(GptError::InvalidBackupHeader)?;
+    if backup_array_lba != expected_array_lba
+        || backup_array_lba <= primary.last_usable_lba
+    {
+        return Err(GptError::InvalidBackupHeader);
+    }
+
+    // Compute CRC by reading precisely the declared backup array sectors.
+    let mut checksum = !0u32;
+    for index in 0..sectors {
+        let lba = backup_array_lba + index as u64;
+        read(lba, &mut buffer[..block]).map_err(|_| GptError::ReadFailed)?;
+        checksum = crc32_continue(checksum, &buffer[..block]);
+    }
+    if !checksum != expected_array_crc {
+        return Err(GptError::BackupArrayCrcMismatch);
+    }
+    Ok(primary)
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -322,6 +408,21 @@ mod tests {
         put32(h, 80, 128);
         put32(h, 84, 128);
         rechecksum(&mut image, block);
+        let backup_table_start = (TOTAL as usize - 1 - table_sectors) * block;
+        let primary_table_start = 2 * block;
+        image.copy_within(
+            primary_table_start..primary_table_start + 128 * 128,
+            backup_table_start,
+        );
+        let mut backup_header = image[block..block + 92].to_vec();
+        put32(&mut backup_header, 16, 0);
+        put64(&mut backup_header, 24, TOTAL - 1);
+        put64(&mut backup_header, 32, 1);
+        put64(&mut backup_header, 72, (TOTAL as usize - 1 - table_sectors) as u64);
+        let crc = crc32(&backup_header[..92]);
+        put32(&mut backup_header, 16, crc);
+        let backup_offset = (TOTAL as usize - 1) * block;
+        image[backup_offset..backup_offset + 92].copy_from_slice(&backup_header);
         image
     }
 
@@ -344,6 +445,68 @@ mod tests {
             assert!(entries[0].last_lba < entries[1].first_lba);
             assert_eq!(info.backup_header_lba, TOTAL - 1);
         }
+    }
+
+    fn inspect_full(image: &[u8], block: usize) -> Result<GptInfo, GptError> {
+        inspect_complete_gpt(block as u32, TOTAL, |lba, out| {
+            let start = lba as usize * block;
+            let source = image.get(start..start + block).ok_or(())?;
+            out.copy_from_slice(source);
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn complete_primary_and_backup_tables_pass_for_both_sector_sizes() {
+        for sector in [512, 4096] {
+            let disk = sample_gpt(sector);
+            let info = inspect_full(&disk, sector).unwrap();
+            assert_eq!(info.partition_count, 2);
+        }
+    }
+
+    #[test]
+    fn missing_backup_header_fails_while_primary_still_valid() {
+        let mut disk = sample_gpt(512);
+        disk[(TOTAL as usize - 1) * 512] = 0;
+        assert!(inspect(&disk, 512).is_ok());
+        assert_eq!(inspect_full(&disk, 512), Err(GptError::InvalidBackupHeader));
+    }
+
+    #[test]
+    fn corrupted_backup_header_crc_is_rejected() {
+        let mut disk = sample_gpt(4096);
+        disk[(TOTAL as usize - 1) * 4096 + 40] ^= 1;
+        assert_eq!(inspect_full(&disk, 4096), Err(GptError::BackupHeaderCrcMismatch));
+    }
+
+    #[test]
+    fn corrupted_backup_partition_array_is_rejected() {
+        let mut disk = sample_gpt(512);
+        disk[(TOTAL as usize - 1 - 32) * 512 + 50] ^= 1;
+        assert_eq!(inspect_full(&disk, 512), Err(GptError::BackupArrayCrcMismatch));
+    }
+
+    #[test]
+    fn backup_disk_identity_must_match_primary() {
+        let mut disk = sample_gpt(512);
+        let header = (TOTAL as usize - 1) * 512;
+        disk[header + 56] ^= 1;
+        put32(&mut disk, header + 16, 0);
+        let crc = crc32(&disk[header..header + 92]);
+        put32(&mut disk, header + 16, crc);
+        assert_eq!(inspect_full(&disk, 512), Err(GptError::InvalidBackupHeader));
+    }
+
+    #[test]
+    fn backup_sector_failure_is_not_ignored() {
+        let disk = sample_gpt(512);
+        assert_eq!(inspect_complete_gpt(512, TOTAL, |lba, out| {
+            if lba == TOTAL - 1 { return Err(()); }
+            let start = lba as usize * 512;
+            out.copy_from_slice(&disk[start..start + 512]);
+            Ok(())
+        }), Err(GptError::ReadFailed));
     }
 
     #[test]
