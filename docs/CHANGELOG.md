@@ -4,6 +4,13 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### VMware installed-disk launcher — read-only RAW to disposable VMDK
+
+- Added `scripts/export_vmware_test.sh` to verify a staged RAW image, then export it as a **new** monolithic sparse VMDK inside a fresh test VM directory. The source RAW remains untouched and existing VMDKs are never overwritten.
+- Added `scripts/vmware_installed.ps1` requiring `-ConfirmNewVM`, creating UEFI/no-Secure-Boot/1-vCPU/1GiB isolated VMware VMX with only the disposable SATA disk and COM1 logging. The VM is not powered on automatically.
+- Added host safety/syntax checks `tests/test_vmware_installed.py` and CI parse checks; no kernel, physical disk or filesystem code changed.
+- Not a verified VMware boot. Instructions and evidence workflow: [VMWARE_INSTALLED.md](VMWARE_INSTALLED.md).
+
 ### Installer V2.1 — FAT32 ESP, EFI boot staging and no-ISO boot test
 
 - Added `scripts/installer_fat32.py`: sector-bounded FAT32 writer with backup boot sector/FSInfo, mirrored FATs, directory tree and VFAT long-name entry for `limine.conf`; writes only into a new Installer Lab RAW image.
