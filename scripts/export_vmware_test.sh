@@ -33,6 +33,13 @@ if [[ -e "$DEST_DIR" || -L "$DEST_DIR" ]]; then
     echo "VMware test directory already exists; refusing overwrite: $DEST_DIR" >&2
     exit 2
 fi
+# Only the safe parent is created recursively. The VM's own directory is
+# reserved exclusively and is never reused or overwritten.
+if [[ -L "$ROOT/build/vmware-installed" ]]; then
+    echo "Refusing symlinked VMware output directory" >&2
+    exit 2
+fi
+mkdir -p -- "$ROOT/build/vmware-installed"
 mkdir -m 700 -- "$DEST_DIR"
 trap 'echo "VMware export incomplete; inspect test directory before retrying." >&2' ERR
 
