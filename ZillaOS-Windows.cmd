@@ -23,16 +23,18 @@ echo.
 
 choice /C 123456780 /N /M "Choose (1-8, 0): "
 set "pick=%errorlevel%"
+set "args="
 if "%pick%"=="9" goto done
-if "%pick%"=="1" set "args=-Action Doctor" & goto run
-if "%pick%"=="2" set "args=-Action Setup" & goto run
-if "%pick%"=="3" set "args=-Action Build" & goto run
-if "%pick%"=="4" set "args=-Action BuildRun" & goto run
-if "%pick%"=="5" set "args=-Action Run" & goto run
-if "%pick%"=="6" set "args=-Action OpenISO" & goto run
-if "%pick%"=="7" set "args=-Action Smoke" & goto run
-if "%pick%"=="8" set "args=-Action Setup -WithQemu" & goto run
-goto menu
+if "%pick%"=="1" set "args=-Action Doctor"
+if "%pick%"=="2" set "args=-Action Setup"
+if "%pick%"=="3" set "args=-Action Build"
+if "%pick%"=="4" set "args=-Action BuildRun"
+if "%pick%"=="5" set "args=-Action Run"
+if "%pick%"=="6" set "args=-Action OpenISO"
+if "%pick%"=="7" set "args=-Action Smoke"
+if "%pick%"=="8" set "args=-Action Setup -WithQemu"
+if not defined args goto menu
+goto run
 
 :run
 echo.
