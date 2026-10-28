@@ -16,6 +16,10 @@ navigation buttons and a software mouse cursor.
 > choices live in RAM and reset on reboot. It launches the desktop *in
 > the same already-booted kernel*, without creating an OS installation.
 
+Now **nine** steps: a read-only Install Plan prerequisites page follows
+Storage and precedes Review. The installer remains disabled. See
+[INSTALLER_V2.md](INSTALLER_V2.md).
+
 ## User flow
 
 | Step | Screen | Choice / behavior |
@@ -27,7 +31,8 @@ navigation buttons and a software mouse cursor.
 | 5 | Device / Назва комп'ютера | Default `zilla-pc`; ASCII letters, numbers, dash; 3–24 characters |
 | 6 | Appearance / Оформлення | Dark (default) or light theme |
 | 7 | Storage / Накопичувачі | Read-only PCI controller list; no verified disks, installation disabled |
-| 8 | Review / Перевірка | Review choices; Enter launches Zilla Desktop |
+| 8 | Install Plan / План встановлення | Readiness cards for storage identification, GPT/filesystem and EFI boot (installation locked) |
+| 9 | Review / Перевірка | Review choices; Enter launches Zilla Desktop |
 
 **Keyboard:** Enter = next/confirm; Escape = back; Tab and arrow keys
 cycle choices; Backspace removes hostname characters; alphanumeric keys
@@ -121,7 +126,7 @@ python3 scripts/desktop_smoke.py --setup-profile custom --timeout 90 \\
 The updated desktop smoke test:
 1. Waits for `ZILLAOS_SETUP_READY`.
 2. Saves **`build/logs/desktop-qemu-setup.ppm`** before advancing.
-3. Sends **eight Enter presses**, asserting each exact step marker.
+3. Sends **nine Enter presses**, asserting each exact step marker.
 4. Requires `ZILLAOS_SETUP_COMPLETE` and Desktop readiness.
 5. Continues previous window, mouse, cursor and screenshot tests.
 
