@@ -77,6 +77,14 @@ only execute arithmetic.
 7. Explicitly verify that a Windows host disk/shared host filesystem
    is **never exposed** to the development VM.
 
+### Installer V2.1 — FAT32 and UEFI staging
+
+A [new-only EFI disk builder](EFI_BOOT_DISK.md) now formats a 512-MiB FAT32
+ESP, stages compiled Limine/ELF boot files and independently verifies
+GPT, FAT32 and file contents. The ZillaOS root filesystem and in-guest
+installer are **not** implemented. Boot from that image without ISO
+is a **new strict CI gate**, not a verified release.
+
 ### Executable Installer V2 lab
 
 The [Installer V2 lab](INSTALLER_V2.md) can now create an *exclusive new*
