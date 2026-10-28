@@ -4,6 +4,12 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Installer V2.3 — strict UEFI boot artifact validation
+
+- Added `scripts/boot_assets_audit.py` validating that staged `BOOTX64.EFI` is PE32+ x86-64 EFI Application with bounded headers, kernel is valid x86-64 ELF64 with bounded PT_LOAD ranges, and Limine configuration points to the staged kernel.
+- Integrated preflight into `load_uefi_assets` before new-image staging, added `scripts/check_boot_assets.py`, and made the manual GitHub Actions no-ISO boot step fail fast and save a JSON report.
+- Added 12 synthetic unit tests; ran them locally and all passed. Full repo Rust compilation, VMware boot and CI results still require an actual run.
+
 ### VMware installed-disk launcher — read-only RAW to disposable VMDK
 
 - Added `scripts/export_vmware_test.sh` to verify a staged RAW image, then export it as a **new** monolithic sparse VMDK inside a fresh test VM directory. The source RAW remains untouched and existing VMDKs are never overwritten.
