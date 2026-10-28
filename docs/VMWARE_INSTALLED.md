@@ -20,6 +20,13 @@ The source RAW image is never modified by the converter. The exported
 VMware clone is disposable and can be modified by the VM after startup;
 do not attach a host physical disk, existing VM disk or shared folder.
 
+## One-command readiness test
+
+See [Installer Acceptance V2.5](INSTALLER_ACCEPTANCE.md). Use its
+`--preflight` mode first; opt-in `--create` or `--boot` modes create
+**new** test RAW images and independently validate their FAT32 with mtools.
+A passing no-ISO QEMU serial result should precede VMware VMDK testing.
+
 ## Step 1: prepare and verify RAW in WSL Ubuntu
 
 ~~~bash
