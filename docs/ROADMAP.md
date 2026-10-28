@@ -79,6 +79,10 @@
 
 ## Zilla Setup — First-run experience (experimental)
 
+The [VMware VMDK launcher](VMWARE_INSTALLED.md) now converts a validated
+RAW test image into a new isolated VMDK and VMX without ISO; real boot
+still requires VMware/QEMU evidence.
+
 Installer [V2.1](EFI_BOOT_DISK.md) now prepares FAT32 ESP boot files
 inside exclusively new test RAW images. A strict QEMU no-ISO boot check has
 been added to CI; it has **not yet executed** and does not prove VMware boot.
