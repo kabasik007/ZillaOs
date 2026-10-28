@@ -1,6 +1,6 @@
 """Host tests for ordered first-run setup evidence, no QEMU required."""
 import unittest
-from scripts.desktop_smoke import setup_passed, storage_scan_passed, setup_transition_steps
+from scripts.desktop_smoke import setup_passed, storage_scan_passed, setup_transition_steps, qemu_boot_media_args
 
 GOOD = "\n".join([
     "ZILLAOS_CPU_READY",
@@ -24,6 +24,27 @@ class SetupEvidenceTests(unittest.TestCase):
     def test_qemu_keyboard_driver_covers_all_nine_setup_transitions(self):
         self.assertEqual(list(setup_transition_steps()), list(range(1, 10)))
         self.assertEqual(len(list(setup_transition_steps())), 9)
+
+    def test_disk_smoke_uses_read_only_ahci_without_any_cdrom(self):
+        from pathlib import Path
+        path = Path("/home/test/.local/share/zillaos/installer-lab/zillaos-test.img")
+        args = qemu_boot_media_args(None, path)
+        self.assertIn("-device", args)
+        self.assertIn("ich9-ahci,id=zillasata", args)
+        self.assertIn("readonly=on", " ".join(args))
+        self.assertIn("bootindex=1", " ".join(args))
+        self.assertNotIn("-cdrom", args)
+        self.assertNotIn("order=d", " ".join(args))
+        with self.assertRaises(ValueError):
+            qemu_boot_media_args(path, path)
+        with self.assertRaises(ValueError):
+            qemu_boot_media_args(None, None)
+
+    def test_live_iso_smoke_remains_available(self):
+        from pathlib import Path
+        iso = Path("/tmp/test.iso")
+        args = qemu_boot_media_args(iso, None)
+        self.assertEqual(args, ["-cdrom", str(iso), "-boot", "order=d"])
 
     def test_complete_default_setup_passes(self):
         self.assertTrue(setup_passed(GOOD))
