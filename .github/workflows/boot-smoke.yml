@@ -33,6 +33,9 @@ jobs:
         run: |
           python3 -m compileall -q scripts tests
           python3 -m unittest discover -s tests -v
+          mkdir -p build/logs
+          python3 scripts/installer_lab.py > build/logs/installer-lab-dry-run.json
+          python3 -c "import json; d=json.load(open('build/logs/installer-lab-dry-run.json')); assert d['mode']=='DRY_RUN' and not d['plan']['installation_enabled'] and not d['plan']['bootable']"
           bash -n scripts/build.sh
 
       - name: Test pure Rust memory algorithms on host
@@ -90,6 +93,7 @@ jobs:
             build/logs/desktop-qemu-cursor.ppm
             build/logs/desktop-qemu-setup.ppm
             build/logs/desktop-qemu-storage.ppm
+            build/logs/installer-lab-dry-run.json
             build/logs/desktop-qemu-install-plan.ppm
             build/logs/desktop-qemu-custom-install-plan.ppm
             build/logs/desktop-qemu-custom-storage.ppm
