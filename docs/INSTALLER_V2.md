@@ -44,10 +44,10 @@ verifying *test GPT disk images*, **not yet a complete installed OS**.
        report GUID, boundaries, success
 ```
 
-**Current lab result has correct GPT partition metadata, but does NOT
-contain filesystems or any kernel/bootloader files**. It is **NOT a
-bootable installation** and cannot yet be attached to VMware as a
-functioning system disk. A simulator is not the real guest installer.
+**Installer V2.1:** FAT32 ESP formatting and staging real Limine EFI/
+kernel/config build artifacts are now implemented for a *new* raw image.
+The experimental ZillaOS root partition remains unformatted and the actual
+UEFI no-ISO boot is still **unverified**. See [EFI_BOOT_DISK.md](EFI_BOOT_DISK.md). A simulator is not the real guest installer.
 
 ### Default partition proposal (12 GiB, 512-byte sectors)
 
@@ -132,8 +132,8 @@ ordinary files.
 | Rust kernel and setup UI build | Unverified | Rust compile, host tests and UEFI boot |
 | VMware disk model/capacity detection | Missing | AHCI/SCSI/NVMe read-only identification |
 | Read existing virtual disk GPT safely | Missing | Guest block driver + strict GPT verifier |
-| Format ESP FAT32 in fresh test image | Missing | Filesystem readback and no out-of-bounds writes |
-| Install EFI loader + kernel to ESP | Missing | UEFI boot from virtual disk without ISO |
+| Format ESP FAT32 in fresh test image | Python code + tests passed | Independent FSInfo/FAT/boot sector read-back |
+| Stage EFI loader + kernel to ESP | Python code + tests passed | Byte-for-byte readback, actual QEMU boot pending |
 | Root filesystem + settings persistence | Missing | Reboot retaining locale, hostname, timezone |
 | In-guest disk confirmation UI | Missing | Explicit disk identity typed confirmation |
 | Real installer transactions and recovery | Missing | Fail injection, rollback, fresh VM image only |
