@@ -4,6 +4,14 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Installer V2 — new-only GPT image lab and graphical prerequisite page
+
+- Added `scripts/installer_lab.py`: opt-in, Linux/WSL-only GPT creator for a **new** sparse regular RAW test image (12–64 GiB), with protective MBR, 512-MiB EFI partition, experimental ZillaOS system partition, primary+backup GPT, checksums, GUIDs and independent read-back verification.
+- Uses exclusive creation, restricted file names, symlink/path safeguards, a controlled `~/.local/share/zillaos/installer-lab` destination and an exact typed confirmation. Existing files, VMDK and physical disks are never changed.
+- Added `tests/test_installer_lab.py`: 7 tests, locally **12/12 passed** with the five existing GPT image verifier tests; verified exact Git blob SHAs.
+- Expanded Zilla Setup to 9 pages, including a bilingual Install Plan readiness screen with explicit DISABLED installation state; QEMU smoke and CI captures updated.
+- Still no formatted EFI FAT32, bootable installed OS, guest block driver, on-disk settings or in-guest partition writes. See [INSTALLER_V2.md](INSTALLER_V2.md).
+
 ### Executable host-side GPT image verifier
 
 - Added `scripts/gpt_image_verify.py`: strictly read-only Python inspector for regular raw image files, dual GPT headers/tables, CRC, bounds, matching entries and collision/overlap checks; rejects VMDK, symlinks (WSL/Linux) and nonregular paths.
