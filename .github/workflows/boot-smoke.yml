@@ -102,6 +102,16 @@ jobs:
           grep -qx 'ZILLAOS_SETUP_READY' build/logs/installer-uefi-disk-serial.log
           echo "PASS: kernel booted from staged GPT+FAT32 disk without ISO"
 
+      - name: Boot installed FAT32 disk and complete nine-step GUI without ISO
+        run: |
+          python3 scripts/desktop_smoke.py --disk "$HOME/.local/share/zillaos/installer-lab/zillaos-ci-uefi.img" --timeout 120 --output build/logs/desktop-installed-qemu.ppm
+          test -s build/logs/desktop-installed-qemu-setup.ppm
+          test -s build/logs/desktop-installed-qemu-storage.ppm
+          test -s build/logs/desktop-installed-qemu-install-plan.ppm
+          test -s build/logs/desktop-installed-qemu.ppm
+          grep -qx 'ZILLAOS_SETUP_COMPLETE' build/logs/desktop-installed-qemu.log
+          grep -qx 'ZILLAOS_DESKTOP_READY' build/logs/desktop-installed-qemu.log
+
       # Formatting is a strict final gate, but must not prevent collection
       # of useful compiler, QEMU boot and GUI diagnostics beforehand.
       - name: Check formatting
@@ -134,5 +144,6 @@ jobs:
             build/logs/desktop-qemu-custom-install-plan.ppm
             build/logs/desktop-qemu-custom-storage.ppm
             build/logs/desktop-qemu-custom*.ppm
+            build/logs/desktop-installed-qemu*
           if-no-files-found: warn
           retention-days: 7
