@@ -39,9 +39,10 @@ class InstallerAcceptanceTests(unittest.TestCase):
         self.assertLess(s.index('python3 scripts/installer_fat32_verify.py "$IMAGE"'),
                         s.index('bash scripts/verify_esp_mtools.sh'))
         self.assertLess(s.index('bash scripts/verify_esp_mtools.sh'),
-                        s.index('timeout 100s bash scripts/test_uefi_disk_qemu.sh'))
-        self.assertIn("sed -n 's/^Serial log: //p'", s)
-        self.assertIn('installer-uefi-disk-serial*.log', s)
+                        s.index('python3 scripts/desktop_smoke.py --disk "$IMAGE"'))
+        self.assertIn('SERIAL="${OUTPUT%.ppm}.log"', s)
+        self.assertIn('--timeout 120 --output "$OUTPUT"', s)
+        self.assertIn('installer-acceptance-$TOKEN-desktop.ppm', s)
         self.assertIn('python3 scripts/boot_evidence.py "$SERIAL"', s)
         self.assertNotIn('mount /dev/', s)
         self.assertNotIn('parted ', s)
