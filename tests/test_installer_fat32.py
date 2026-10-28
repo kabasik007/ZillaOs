@@ -104,6 +104,30 @@ class InstallerFat32Tests(unittest.TestCase):
             self.assertTrue(assets['BOOT/KERNEL.ELF'].startswith(b'\x7fELF'))
             self.assertIn(b'/boot/kernel.elf',assets['LIMINE.CONF'])
 
+    def test_loader_uses_built_efi_elf_and_rewrites_kernel_path(self):
+        import installer_lab
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root/'scripts').mkdir()
+            (root/'build/iso-root/EFI/BOOT').mkdir(parents=True)
+            (root/'dist').mkdir()
+            (root/'boot').mkdir()
+            (root/'build/iso-root/EFI/BOOT/BOOTX64.EFI').write_bytes(b'MZ'+b'BOOT')
+            (root/'dist/zillaos-0.0.2-dev-demo-kernel.elf').write_bytes(b'\x7fELF'+b'KERNEL')
+            (root/'boot/limine.conf').write_text(
+                'timeout: 0\n/ZillaOS\n    protocol: limine\n    path: boot():/boot/zillaos-kernel\n')
+            before = installer_lab.__file__
+            try:
+                installer_lab.__file__ = str(root/'scripts/installer_lab.py')
+                files = installer_lab.load_uefi_assets()
+            finally:
+                installer_lab.__file__ = before
+            self.assertIn(b'boot():/boot/kernel.elf', files['LIMINE.CONF'])
+            self.assertNotIn(b'boot():/boot/zillaos-kernel', files['LIMINE.CONF'])
+            image = root/'zillaos-assets.img'
+            create_lab_image(root,image.name,confirmation=CONFIRM,format_esp=True,boot_files=files)
+            self.assertTrue(verify_fat32_image(image,512,files)['fat32_valid'])
+
     def test_fat32_cluster_geometry_inside_esp(self):
         for sector in (512,4096):
             g = geometry(sector,1024*1024//sector,512*1024*1024//sector)
