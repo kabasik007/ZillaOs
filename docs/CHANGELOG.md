@@ -4,6 +4,12 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Executable host-side GPT image verifier
+
+- Added `scripts/gpt_image_verify.py`: strictly read-only Python inspector for regular raw image files, dual GPT headers/tables, CRC, bounds, matching entries and collision/overlap checks; rejects VMDK, symlinks (WSL/Linux) and nonregular paths.
+- Added `tests/test_gpt_image_verify.py`; **5/5 tests actually executed and passed** against synthetic images in local Python, with exact resulting Git blob hashes verified.
+- The utility does not access VMware VMDKs or hardware, nor prove the Rust kernel builds; installing to a disk remains disabled.
+
 ### GPT primary + backup cross-verification
 
 - Added `inspect_complete_gpt()` to the read-only Rust GPT library. It checks final-LBA backup header CRC/identity/LBA geometry and independently validates the backup partition-array CRC against the already validated primary array.
