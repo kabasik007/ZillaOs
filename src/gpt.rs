@@ -488,6 +488,33 @@ mod tests {
     }
 
     #[test]
+    fn individually_valid_but_different_backup_table_is_rejected() {
+        let mut disk = sample_gpt(512);
+        let backup_table = (TOTAL as usize - 1 - 32) * 512;
+        disk[backup_table + 22] ^= 1;
+        let new_crc = crc32(&disk[backup_table..backup_table + 128 * 128]);
+        let header = (TOTAL as usize - 1) * 512;
+        put32(&mut disk, header + 88, new_crc);
+        put32(&mut disk, header + 16, 0);
+        let backup_crc = crc32(&disk[header..header + 92]);
+        put32(&mut disk, header + 16, backup_crc);
+        assert_eq!(inspect_full(&disk, 512),
+                   Err(GptError::BackupPartitionArrayMismatch));
+    }
+
+    #[test]
+    fn relocated_backup_table_is_rejected_even_with_valid_header_crc() {
+        let mut disk = sample_gpt(512);
+        let header = (TOTAL as usize - 1) * 512;
+        put64(&mut disk, header + 72, TOTAL - 2);
+        put32(&mut disk, header + 16, 0);
+        let header_crc = crc32(&disk[header..header + 92]);
+        put32(&mut disk, header + 16, header_crc);
+        assert_eq!(inspect_full(&disk, 512),
+                   Err(GptError::InvalidBackupHeader));
+    }
+
+    #[test]
     fn backup_disk_identity_must_match_primary() {
         let mut disk = sample_gpt(512);
         let header = (TOTAL as usize - 1) * 512;
