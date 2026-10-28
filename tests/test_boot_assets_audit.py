@@ -20,6 +20,9 @@ def valid_pe() -> bytes:
     struct.pack_into('<I', data, opt + 16, 0x1000)
     struct.pack_into('<I', data, opt + 56, 0x2000)
     struct.pack_into('<H', data, opt + 68, 10)
+    section = opt + 240
+    struct.pack_into('<IIII', data, section + 8, 0x200, 0x1000, 0x200, 0x200)
+    struct.pack_into('<I', data, section + 36, 0x60000020)  # CODE | EXECUTE | READ
     return bytes(data)
 
 
@@ -28,10 +31,10 @@ def valid_elf() -> bytes:
     data[:4] = b'\x7fELF'
     data[4:7] = b'\x02\x01\x01'
     struct.pack_into('<HHI', data, 16, 2, 62, 1)
-    struct.pack_into('<QQ', data, 24, 0xffffffff80000080, 64)
+    struct.pack_into('<QQ', data, 24, 0xffffffff80000040, 64)
     struct.pack_into('<HHH', data, 52, 64, 56, 1)
     struct.pack_into('<IIQQQQQQ', data, 64, 1, 5, 512, 0xffffffff80000000,
-                     0, 64, 128, 4096)
+                     0, 64, 128, 512)
     return bytes(data)
 
 
@@ -75,6 +78,38 @@ class AuditTests(unittest.TestCase):
     def test_reject_missing_elf_load(self):
         b=bytearray(valid_elf()); struct.pack_into('<I',b,64,4)
         with self.assertRaisesRegex(BootAssetError,'no loadable'): validate_elf64_x64(bytes(b))
+
+    def test_reject_efi_entry_not_executable(self):
+        b=bytearray(valid_pe())
+        section=128+24+240
+        struct.pack_into('<I',b,section+36,0x40000040)  # READ-only DATA
+        with self.assertRaisesRegex(BootAssetError,'not in executable'):
+            validate_pe_uefi_x64(bytes(b))
+
+    def test_reject_efi_section_out_of_file(self):
+        b=bytearray(valid_pe())
+        section=128+24+240
+        struct.pack_into('<I',b,section+20,0xfffffff0)
+        with self.assertRaisesRegex(BootAssetError,'raw bytes'):
+            validate_pe_uefi_x64(bytes(b))
+
+    def test_reject_elf_entry_not_executable(self):
+        b=bytearray(valid_elf())
+        struct.pack_into('<Q',b,24,0xffffffff80001000)
+        with self.assertRaisesRegex(BootAssetError,'not in executable'):
+            validate_elf64_x64(bytes(b))
+
+    def test_reject_elf_non_executable_load(self):
+        b=bytearray(valid_elf())
+        struct.pack_into('<I',b,68,4)  # PF_R without PF_X
+        with self.assertRaisesRegex(BootAssetError,'not in executable'):
+            validate_elf64_x64(bytes(b))
+
+    def test_reject_elf_bad_alignment(self):
+        b=bytearray(valid_elf())
+        struct.pack_into('<Q',b,64+48,4096)
+        with self.assertRaisesRegex(BootAssetError,'alignment'):
+            validate_elf64_x64(bytes(b))
 
     def test_reject_wrong_limine_path(self):
         with self.assertRaisesRegex(BootAssetError,'path mismatch'):
