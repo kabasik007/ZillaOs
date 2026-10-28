@@ -74,6 +74,7 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 - [Zilla Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) — immediate framebuffer renderer, input, state, limitations.
 - [Zilla Desktop roadmap](docs/DESKTOP_ROADMAP.md) — from QEMU prototype to user-mode compositor and apps.
 - [PS/2 mouse bootstrap](docs/MOUSE.md) — mouse protocol, QEMU pointer interactions, tests and caveats.
+- [VMware installed-disk launcher](docs/VMWARE_INSTALLED.md) — WSL RAW → isolated disposable VMDK and no-ISO UEFI VMX, with explicit confirmation.
 - [Installer V2.1: GPT + FAT32 UEFI boot disk](docs/EFI_BOOT_DISK.md) — staged Limine/kernel files, independent read-back and no-ISO boot test.
 - [ZillaOS Installer V2](docs/INSTALLER_V2.md) — nine-step native UI and actually tested safe sparse RAW GPT image creation lab.
 - [Executable GPT image verifier](scripts/gpt_image_verify.py) — Python host-only read-only check of raw .img files; five tests have run successfully, but not the Rust kernel.
