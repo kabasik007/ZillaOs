@@ -62,6 +62,13 @@ Each partition receives a unique GUID. The ESP uses the standard UEFI
 partition type GUID; the experimental ZillaOS system partition uses
 a ZillaOS-specific type GUID. Neither partition is formatted.
 
+## Isolated VMware boot from installed VMDK
+
+A [new Windows PowerShell launcher](VMWARE_INSTALLED.md) is now available.
+It invokes a read-only RAW verifier in WSL, exports a **new** disposable
+VMDK and generates a safe UEFI VMware VMX with no ISO. This closes the
+manual VM-preparation workflow, but **not** the guest boot proof gate.
+
 ## How to use safely on your Windows + WSL2 setup
 
 In **Ubuntu/WSL**:
