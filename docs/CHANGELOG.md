@@ -4,13 +4,22 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Installer V2.1 — FAT32 ESP, EFI boot staging and no-ISO boot test
+
+- Added `scripts/installer_fat32.py`: sector-bounded FAT32 writer with backup boot sector/FSInfo, mirrored FATs, directory tree and VFAT long-name entry for `limine.conf`; writes only into a new Installer Lab RAW image.
+- Added independent read-only `scripts/installer_fat32_verify.py`: validates FAT32 metadata, mirror, clusters, VFAT filename checksum and byte-exact staged EFI/ELF/config contents.
+- `scripts/installer_lab.py --fat32` formats a new ESP; `--stage-uefi` also copies *real* Limine + kernel build artifacts and adapts the config path to `/boot/kernel.elf`.
+- Added FAT32/GPT tests; locally 22 Python tests passed, including 512/4096-byte sectors, EFI staging, and corruption/overwrite rejection.
+- Added read-only `scripts/test_uefi_disk_qemu.sh` plus a strict (not yet run) GitHub Actions step requiring a successful boot without ISO from the staged disk and archiving COM1 logs. Kernel compile/guest boot remain unverified.
+- The root volume remains unformatted, with no in-guest disk writer or settings persistence. See [EFI_BOOT_DISK.md](EFI_BOOT_DISK.md).
+
 ### Installer V2 — new-only GPT image lab and graphical prerequisite page
 
 - Added `scripts/installer_lab.py`: opt-in, Linux/WSL-only GPT creator for a **new** sparse regular RAW test image (12–64 GiB), with protective MBR, 512-MiB EFI partition, experimental ZillaOS system partition, primary+backup GPT, checksums, GUIDs and independent read-back verification.
 - Uses exclusive creation, restricted file names, symlink/path safeguards, a controlled `~/.local/share/zillaos/installer-lab` destination and an exact typed confirmation. Existing files, VMDK and physical disks are never changed.
 - Added `tests/test_installer_lab.py`: 7 tests, locally **12/12 passed** with the five existing GPT image verifier tests; verified exact Git blob SHAs.
 - Expanded Zilla Setup to 9 pages, including a bilingual Install Plan readiness screen with explicit DISABLED installation state; QEMU smoke and CI captures updated.
-- Still no formatted EFI FAT32, bootable installed OS, guest block driver, on-disk settings or in-guest partition writes. See [INSTALLER_V2.md](INSTALLER_V2.md).
+- In V2 proper, still no EFI FAT32; that milestone is now separately introduced by V2.1. Still no confirmed bootable installed OS, guest block driver, on-disk settings or in-guest partition writes. See [INSTALLER_V2.md](INSTALLER_V2.md).
 
 ### Executable host-side GPT image verifier
 
