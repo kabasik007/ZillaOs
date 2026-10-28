@@ -8,6 +8,7 @@ from installer_lab import CONFIRM, create_lab_image, UnsafeRequest, load_uefi_as
 from installer_fat32 import Fat32Error, geometry
 from installer_fat32_verify import verify_fat32_image, Fat32Invalid
 from gpt_image_verify import verify_image
+from test_boot_assets_audit import valid_pe, valid_elf
 
 BOOT_FILES = {
     'EFI/BOOT/BOOTX64.EFI': b'MZ' + bytes(range(256))*27,
@@ -112,8 +113,8 @@ class InstallerFat32Tests(unittest.TestCase):
             (root/'build/iso-root/EFI/BOOT').mkdir(parents=True)
             (root/'dist').mkdir()
             (root/'boot').mkdir()
-            (root/'build/iso-root/EFI/BOOT/BOOTX64.EFI').write_bytes(b'MZ'+b'BOOT')
-            (root/'dist/zillaos-0.0.2-dev-demo-kernel.elf').write_bytes(b'\x7fELF'+b'KERNEL')
+            (root/'build/iso-root/EFI/BOOT/BOOTX64.EFI').write_bytes(valid_pe())
+            (root/'dist/zillaos-0.0.2-dev-demo-kernel.elf').write_bytes(valid_elf())
             (root/'boot/limine.conf').write_text(
                 'timeout: 0\n/ZillaOS\n    protocol: limine\n    path: boot():/boot/zillaos-kernel\n')
             before = installer_lab.__file__
