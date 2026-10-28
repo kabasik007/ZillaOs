@@ -4,6 +4,14 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Installer V2.6 — fixed nine-step QEMU wizard and no-ISO GUI disk boot
+
+- Fixed a **real regression**: `desktop_smoke.py` had `range(1, 8)` despite the nine-step wizard and nine-step completion assertion. Now a single `setup_transition_steps()` function covers all nine transitions; host regression test locks the count.
+- Added `desktop_smoke.py --disk <lab-image>`: independently verifies a prebuilt Installer Lab GPT/FAT32 image and Limine/kernel byte contents before starting QEMU **read-only without ISO**; exercises the full Setup UI, keyboard, window manager and screenshots.
+- Tightened `boot_evidence.py`: requires unique and ordered PCI scan / Setup / framebuffer / kernel boot / Setup input-loop COM1 markers. Six negative regression scenarios added; 31 local targeted Python tests passed including EFI/ELF audit tests.
+- Manual GitHub Actions now runs a **second** no-ISO GUI proof, requires Setup complete/Desktop markers and archives setup/storage/install-plan/desktop screenshots. The acceptance `--boot` command now uses GUI proof instead of only early boot markers.
+- Actual Rust compilation, QEMU no-ISO GUI runtime and VMware boot remain **unverified** in this execution environment; no physical disks are accessed.
+
 ### Installer V2.5 — independent FAT32 compatibility and acceptance command
 
 - Added `scripts/verify_esp_mtools.sh`, which reads GPT/FAT32 files from an exclusively named Installer Lab RAW image using an independent FAT32 implementation (`mtools`) and compares extracted `BOOTX64.EFI`, `KERNEL.ELF`, and `LIMINE.CONF` against real compiled artifacts. No RAW image writes, mounting or physical devices.
