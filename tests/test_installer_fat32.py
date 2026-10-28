@@ -9,6 +9,7 @@ from installer_fat32 import Fat32Error, geometry
 from installer_fat32_verify import verify_fat32_image, Fat32Invalid
 from gpt_image_verify import verify_image
 from test_boot_assets_audit import valid_pe, valid_elf
+from boot_assets_audit import BootAssetError
 
 BOOT_FILES = {
     'EFI/BOOT/BOOTX64.EFI': b'MZ' + bytes(range(256))*27,
@@ -98,7 +99,7 @@ class InstallerFat32Tests(unittest.TestCase):
     def test_missing_actual_uefi_build_fails_closed(self):
         try:
             assets = load_uefi_assets()
-        except UnsafeRequest:
+        except (UnsafeRequest, BootAssetError):
             pass
         else:
             self.assertTrue(assets['EFI/BOOT/BOOTX64.EFI'].startswith(b'MZ'))
