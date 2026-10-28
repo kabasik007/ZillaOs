@@ -10,7 +10,7 @@ permissions:
 jobs:
   qemu-uefi:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,6 +37,7 @@ jobs:
           python3 scripts/installer_lab.py > build/logs/installer-lab-dry-run.json
           python3 -c "import json; d=json.load(open('build/logs/installer-lab-dry-run.json')); assert d['mode']=='DRY_RUN' and not d['plan']['installation_enabled'] and not d['plan']['bootable']"
           bash -n scripts/build.sh
+          bash -n scripts/test_uefi_disk_qemu.sh
 
       - name: Test pure Rust memory algorithms on host
         run: cargo test --lib --target x86_64-unknown-linux-gnu --offline
@@ -72,6 +73,25 @@ jobs:
         run: |
           python3 scripts/desktop_smoke.py --setup-profile custom --timeout 90 --output build/logs/desktop-qemu-custom.ppm
 
+      - name: Stage new GPT FAT32 UEFI disk and verify no-ISO boot
+        run: |
+          set -o pipefail
+          python3 scripts/installer_lab.py --name zillaos-ci-uefi.img --size-gib 12 --stage-uefi --create --confirm CREATE-NEW-VM-IMAGE | tee build/logs/installer-uefi-stage.json
+          python3 scripts/installer_fat32_verify.py "$HOME/.local/share/zillaos/installer-lab/zillaos-ci-uefi.img" --check-boot
+          set +e
+          timeout 90s bash scripts/test_uefi_disk_qemu.sh zillaos-ci-uefi.img --headless > build/logs/installer-uefi-qemu-run.log 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ]; then
+            echo "Unexpected QEMU exit: $rc"
+            cat build/logs/installer-uefi-qemu-run.log
+            exit 1
+          fi
+          test -s build/logs/installer-uefi-disk-serial.log
+          grep -qx 'ZILLAOS_BOOT_OK' build/logs/installer-uefi-disk-serial.log
+          grep -qx 'ZILLAOS_SETUP_READY' build/logs/installer-uefi-disk-serial.log
+          echo "PASS: kernel booted from staged GPT+FAT32 disk without ISO"
+
       # Formatting is a strict final gate, but must not prevent collection
       # of useful compiler, QEMU boot and GUI diagnostics beforehand.
       - name: Check formatting
@@ -94,6 +114,9 @@ jobs:
             build/logs/desktop-qemu-setup.ppm
             build/logs/desktop-qemu-storage.ppm
             build/logs/installer-lab-dry-run.json
+            build/logs/installer-uefi-stage.json
+            build/logs/installer-uefi-qemu-run.log
+            build/logs/installer-uefi-disk-serial.log
             build/logs/desktop-qemu-install-plan.ppm
             build/logs/desktop-qemu-custom-install-plan.ppm
             build/logs/desktop-qemu-custom-storage.ppm
