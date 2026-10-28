@@ -45,6 +45,11 @@ def has_window_state(log: str, visible: int, focus: str) -> bool:
     return any(lines[i:i + 3] == expected for i in range(len(lines) - 2))
 
 
+def setup_transition_steps() -> range:
+    """Match the nine transitions of Step::Welcome -> Step::Finished."""
+    return range(1, 10)
+
+
 def storage_scan_passed(log: str) -> bool:
     """Prove that PCI diagnostics never masquerade as usable block drivers."""
     lines = [line.strip() for line in log.splitlines()]
@@ -257,9 +262,9 @@ def main() -> int:
                 setup_output = args.output.with_name(args.output.stem + "-setup.ppm")
                 shutil.copyfile(setup_capture, setup_output)
 
-                # Nine transitions: Welcome -> Language -> Region -> TimeZone -> Device
-                # -> Appearance -> Storage (read-only) -> Review -> Finished.
-                for step in range(1, 8):
+                # Nine transitions: Welcome -> Language -> Region -> TimeZone
+                # -> Device -> Appearance -> Storage -> Install Plan -> Review -> Finished.
+                for step in setup_transition_steps():
                     if args.setup_profile == "custom":
                         # Once a page opens, adjust the value BEFORE Enter.
                         if step in (2, 3, 4, 6):
