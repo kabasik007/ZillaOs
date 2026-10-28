@@ -95,7 +95,7 @@ jobs:
             exit 1
           fi
           test -s build/logs/installer-uefi-disk-serial.log
-          grep -qx 'ZILLAOS_BOOT_OK' build/logs/installer-uefi-disk-serial.log
+          python3 scripts/boot_evidence.py build/logs/installer-uefi-disk-serial.log > build/logs/installer-uefi-boot-evidence.json
           grep -qx 'ZILLAOS_SETUP_READY' build/logs/installer-uefi-disk-serial.log
           echo "PASS: kernel booted from staged GPT+FAT32 disk without ISO"
 
@@ -125,6 +125,7 @@ jobs:
             build/logs/installer-uefi-stage.json
             build/logs/installer-uefi-qemu-run.log
             build/logs/installer-uefi-disk-serial.log
+            build/logs/installer-uefi-boot-evidence.json
             build/logs/desktop-qemu-install-plan.ppm
             build/logs/desktop-qemu-custom-install-plan.ppm
             build/logs/desktop-qemu-custom-storage.ppm
