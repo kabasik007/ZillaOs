@@ -115,6 +115,25 @@ Canonical repository: [kabasik007/ZillaOs](https://github.com/kabasik007/ZillaOs
 
 Methodology: [Be Ambitious Pro](https://app.notion.com/p/3fb91a1af397814782cac435379a82a7) — outcome-led engineering, independent validation, real PASS/FAIL evidence.
 
+## Windows one-click UEFI ISO builder (WSL2 + VMware)
+
+**Windows entry point:** double-click [`ZillaOS-Windows.cmd`](ZillaOS-Windows.cmd).
+The menu installs Ubuntu build prerequisites **only on explicit Setup**, builds
+the Rust/UEFI demo using pinned Limine and `xorriso`, verifies the output's
+SHA-256 and can open an isolated, diskless VMware Workstation VM.
+
+PowerShell shortcut from the repository root:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action Setup
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action BuildRun
+```
+
+Output: `dist\ZillaOS-Desktop-UEFI.iso` (plus the original pinned-name ISO).
+This is a **desktop / graphical onboarding preview ISO**, not a working
+installer to physical disks. See [Windows ISO quickstart](docs/WINDOWS_ISO.md).
+Windows and VMware runtime verification is still pending.
+
 ## VMware Workstation (Windows)
 
 With VMware Workstation already installed, build the ISO in WSL Ubuntu using `bash scripts/build_vmware.sh`. Then, in **Windows PowerShell**, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\vmware.ps1 -Launch` from the repository root. The generated disposable UEFI VM has no hard disk or network and captures COM1 output to a host file. See [VMWARE.md](docs/VMWARE.md). VMware boot is **not yet verified**.
