@@ -77,6 +77,14 @@ only execute arithmetic.
 7. Explicitly verify that a Windows host disk/shared host filesystem
    is **never exposed** to the development VM.
 
+### Executable Installer V2 lab
+
+The [Installer V2 lab](INSTALLER_V2.md) can now create an *exclusive new*
+sparse 12–64 GiB RAW image in WSL home, write protective MBR and both GPT
+copies, and independently verify their integrity. This is a **GPT-only test
+image**, not a bootable OS installation. Host files and disks are not touched.
+Creation requires `--create --confirm CREATE-NEW-VM-IMAGE`.
+
 ### Independently inspect a raw disposable disk image
 
 ```bash
