@@ -8,7 +8,7 @@ use crate::storage_pci::StorageInventory;
 use crate::window_manager::Move;
 
 pub const DEVICE_NAME_MAX: usize = 24;
-pub const STEP_COUNT: usize = 8;
+pub const STEP_COUNT: usize = 9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {
@@ -19,6 +19,7 @@ pub enum Step {
     Device,
     Appearance,
     Storage,
+    InstallPlan,
     Review,
     Finished,
 }
@@ -33,8 +34,9 @@ impl Step {
             Self::Device => 4,
             Self::Appearance => 5,
             Self::Storage => 6,
-            Self::Review => 7,
-            Self::Finished => 8,
+            Self::InstallPlan => 7,
+            Self::Review => 8,
+            Self::Finished => 9,
         }
     }
 
@@ -47,7 +49,8 @@ impl Step {
             4 => Self::Device,
             5 => Self::Appearance,
             6 => Self::Storage,
-            7 => Self::Review,
+            7 => Self::InstallPlan,
+            8 => Self::Review,
             _ => Self::Finished,
         }
     }
@@ -472,7 +475,26 @@ mod tests {
         assert_eq!(s.storage.selectable_disks(), 0);
         assert_eq!(s.option_count(), 0);
         s.handle_key(Key::Confirm);
+        assert_eq!(s.step, Step::InstallPlan);
+        // This is a prerequisite report; there is no disk selection
+        // and pressing Enter merely advances to the final Review page.
+        s.handle_key(Key::Confirm);
         assert_eq!(s.step, Step::Review);
+    }
+
+    #[test]
+    fn installer_plan_screen_is_navigation_only_not_a_disk_operation() {
+        let mut wizard = wizard();
+        for _ in 0..7 { wizard.handle_key(Key::Confirm); }
+        assert_eq!(wizard.step, Step::InstallPlan);
+        assert_eq!(wizard.storage.selectable_disks(), 0);
+        assert_eq!(wizard.option_count(), 0);
+        wizard.handle_key(Key::Escape);
+        assert_eq!(wizard.step, Step::Storage);
+        wizard.handle_key(Key::Confirm);
+        assert_eq!(wizard.step, Step::InstallPlan);
+        wizard.handle_key(Key::Confirm);
+        assert_eq!(wizard.step, Step::Review);
     }
 
     #[test]
