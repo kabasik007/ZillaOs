@@ -185,6 +185,17 @@ VMware boot has **not** been verified; if it fails, check VMware
 GPT was not written; the kernel itself still needs cross-compilation
 and validation. See [VMWARE.md](VMWARE.md).
 
+## Boot-evidence diagnostics (V2.4)
+
+The tightened PE32+ and ELF64 preflight checks require the EFI/ELF entry
+point to lie inside an executable mapped region, and validate segment
+alignment/bounds before any test disk is staged. After QEMU boots, inspect
+COM1 with `python3 scripts/boot_evidence.py <serial-log-path>`; a panic,
+missing Setup or unavailable framebuffer yields a failing JSON verdict.
+Repeat QEMU runs preserve prior logs under unique names. See
+[BOOT_DIAGNOSTICS.md](BOOT_DIAGNOSTICS.md). Actual VM runtime remains
+unverified.
+
 ## Next milestones
 
 1. Run `cargo fmt`, `cargo test`, the ISO build and QEMU boot in
