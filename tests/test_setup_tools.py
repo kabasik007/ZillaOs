@@ -1,6 +1,6 @@
 """Host tests for ordered first-run setup evidence, no QEMU required."""
 import unittest
-from scripts.desktop_smoke import setup_passed, storage_scan_passed
+from scripts.desktop_smoke import setup_passed, storage_scan_passed, setup_transition_steps
 
 GOOD = "\n".join([
     "ZILLAOS_CPU_READY",
@@ -21,6 +21,10 @@ GOOD = "\n".join([
 
 
 class SetupEvidenceTests(unittest.TestCase):
+    def test_qemu_keyboard_driver_covers_all_nine_setup_transitions(self):
+        self.assertEqual(list(setup_transition_steps()), list(range(1, 10)))
+        self.assertEqual(len(list(setup_transition_steps())), 9)
+
     def test_complete_default_setup_passes(self):
         self.assertTrue(setup_passed(GOOD))
 
