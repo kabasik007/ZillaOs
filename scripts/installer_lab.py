@@ -85,9 +85,11 @@ def create_lab_image(root: Path, name: str, *, size_gib: int = 12,
     if not NAME.fullmatch(name):
         raise UnsafeRequest('name must match zillaos-<simple-lowercase-name>.img')
     plan = plan_image(size_gib, sector)
+    if os.name != 'posix' or not hasattr(os, 'pwrite'):
+        raise UnsafeRequest('run only in Linux / WSL Ubuntu')
     root = Path(root)
-    if root.is_symlink() or root.parent.is_symlink():
-        raise UnsafeRequest('symlinked lab directory is forbidden')
+    if any(parent.is_symlink() for parent in (root, *root.parents)):
+        raise UnsafeRequest('symlinked lab directory or ancestor is forbidden')
     root.mkdir(parents=True, exist_ok=True)
     if not root.is_dir() or root.is_symlink():
         raise UnsafeRequest('lab directory must be real directory')
