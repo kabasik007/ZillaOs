@@ -79,6 +79,11 @@
 
 ## Zilla Setup — First-run experience (experimental)
 
+The new [Installer V2 lab](INSTALLER_V2.md) performs actual GPT creation
+and readback for brand-new disposable sparse RAW files using explicit
+confirmation; native in-guest disk installation is still disabled.
+The GUI now includes a ninth install-prerequisites page.
+
 A standalone [primary + backup GPT validation library](GPT.md) now checks
 sector-image metadata, CRCs, partition ranges and overlaps using a
 read-only callback. It remains **unconnected** to actual hardware because
