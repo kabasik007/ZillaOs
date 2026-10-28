@@ -65,31 +65,19 @@ if [[ "$MODE" == "--create" ]]; then
     exit 0
 fi
 
-echo "[5/5] No-ISO UEFI QEMU boot: ONLY read-only RAW, no network or host disks"
-RUN_LOG="build/logs/installer-acceptance-qemu.log"
-set +e
-timeout 100s bash scripts/test_uefi_disk_qemu.sh "$IMAGE_NAME" --headless \
-    > "$RUN_LOG" 2>&1
-RC=$?
-set -e
-if (( RC != 0 && RC != 124 )); then
-    cat "$RUN_LOG"
-    echo "FAIL: QEMU exited with code $RC" >&2
-    exit 1
-fi
-cat "$RUN_LOG"
-SERIAL="$(sed -n 's/^Serial log: //p' "$RUN_LOG" | tail -n 1)"
-# Only analyze a regular COM1 file under our known build/logs directory.
-case "$SERIAL" in
-    "$PWD"/build/logs/installer-uefi-disk-serial*.log) ;;
-    *) echo "FAIL: no trusted COM1 log path from current QEMU run" >&2; exit 1 ;;
-esac
-if [[ ! -f "$SERIAL" || -L "$SERIAL" ]]; then
-    echo "FAIL: no COM1 log from this boot" >&2
+echo "[5/5] No-ISO UEFI graphical Setup + Desktop (read-only test RAW)"
+# Each acceptance run uses unique screenshot and COM1 output names.
+OUTPUT="build/logs/installer-acceptance-$TOKEN-desktop.ppm"
+SERIAL="${OUTPUT%.ppm}.log"
+python3 scripts/desktop_smoke.py --disk "$IMAGE" --timeout 120 --output "$OUTPUT" \
+    | tee build/logs/installer-acceptance-qemu.log
+if [[ ! -s "$SERIAL" || ! -s "$OUTPUT" ]]; then
+    echo "FAIL: no serial/Desktop screenshot evidence from current QEMU run" >&2
     exit 1
 fi
 python3 scripts/boot_evidence.py "$SERIAL" \
     | tee build/logs/installer-acceptance-boot-evidence.json
-echo "PASS: QEMU UEFI boot evidence recorded for $IMAGE_NAME"
+echo "PASS: nine-step Setup and Desktop booted from new GPT+FAT32 disk without ISO"
 echo "Disposable RAW: $IMAGE"
+echo "Desktop screenshot: $OUTPUT"
 echo "Serial log: $SERIAL"
