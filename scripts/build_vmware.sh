@@ -31,6 +31,9 @@ cargo test --lib --target x86_64-unknown-linux-gnu --offline
 echo '[3/3] Building UEFI demo image (Limine)'
 bash scripts/build.sh demo
 
+echo '[3b/3] Checking x86-64 EFI loader, ELF kernel and Limine configuration'
+python3 scripts/check_boot_assets.py
+
 ISO="$ROOT/dist/zillaos-0.0.2-dev-demo-uefi.iso"
 if [[ ! -s "$ISO" ]]; then
     echo "Missing expected ISO: $ISO" >&2
