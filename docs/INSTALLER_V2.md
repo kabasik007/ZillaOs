@@ -1,0 +1,146 @@
+# ZillaOS Installer V2 — ambitious, safe implementation track
+
+**Date:** 2026-10-28. **Status:** partially implemented in `main`.
+This is a real developer laboratory for creating and independently
+verifying *test GPT disk images*, **not yet a complete installed OS**.
+
+## What is genuinely functional
+
+1. **Native first-run GUI**: 9 pages, including the read-only Storage
+   controller inventory, the new **Install Plan** prerequisites screen
+   and final Review. Installation writes remain disabled.
+2. **Kernel partition planner**: pure `no_std` arithmetic for EFI and
+   system partition sizes, disk boundaries and 512/4096-byte sectors.
+3. **Kernel GPT verifier**: primary + backup headers and arrays,
+   CRCs, geometric boundaries and overlap checks; still host-test
+   source only, because a guest block driver is absent.
+4. **Host RAW GPT verifier**: `scripts/gpt_image_verify.py`, used
+   independently after test-image creation.
+5. **Installer Lab**: `scripts/installer_lab.py`, an actual GPT
+   writer **exclusively into a newly created regular test image**,
+   never to an existing file, device, VMDK or Windows host disk.
+   Tests create 12-GiB *sparse files* and verify their primary and
+   backup GPT with the independent reader.
+
+## Installer Lab stages
+
+```text
+                 DRY-RUN [default]
+                       |
+     proposed 12-GiB layout, JSON report
+                       |
+     --create + typed confirmation only
+                       |
+   new O_EXCL raw file in WSL home sandbox
+                       |
+   sparse resize / protective MBR / GPT
+                       |
+   EFI partition (512 MiB) + ZillaOS system
+                       |
+   backup entries + GPT backup header
+                       |
+   fsync -> close -> independent GPT verifier
+                       |
+       report GUID, boundaries, success
+```
+
+**Current lab result has correct GPT partition metadata, but does NOT
+contain filesystems or any kernel/bootloader files**. It is **NOT a
+bootable installation** and cannot yet be attached to VMware as a
+functioning system disk. A simulator is not the real guest installer.
+
+### Default partition proposal (12 GiB, 512-byte sectors)
+
+| Area | Geometry |
+| --- | --- |
+| Protective MBR and primary GPT reserve | first 1 MiB |
+| EFI System Partition | 512 MiB, starts at LBA 2048 |
+| ZillaOS System Partition | remaining bytes until final 1-MiB guard |
+| Backup GPT table and header | last sectors of the disk |
+
+Each partition receives a unique GUID. The ESP uses the standard UEFI
+partition type GUID; the experimental ZillaOS system partition uses
+a ZillaOS-specific type GUID. Neither partition is formatted.
+
+## How to use safely on your Windows + WSL2 setup
+
+In **Ubuntu/WSL**:
+
+```bash
+cd /mnt/m/projects/ZillaOs
+git pull origin main
+
+# 1. No changes to any file; prints the planned disk layout:
+python3 scripts/installer_lab.py --size-gib 12 --sector-size 512
+
+# 2. Run all Python regression tests (including safe image creation):
+python3 -m unittest discover -s tests -v
+
+# 3. Optional: explicitly create ONE new sparse lab file in Ubuntu HOME.
+#    This does NOT happen during the dry run or automated builds:
+python3 scripts/installer_lab.py --name zillaos-lab.img \
+  --size-gib 12 --create --confirm CREATE-NEW-VM-IMAGE
+
+# 4. Independently inspect the image without modifications:
+python3 scripts/gpt_image_verify.py \
+  "$HOME/.local/share/zillaos/installer-lab/zillaos-lab.img" \
+  --sector-size 512
+```
+
+Expected created file:
+`~/.local/share/zillaos/installer-lab/zillaos-lab.img`.
+
+**It is intentionally NOT created in `M:\projects`**, to avoid
+the uncertain sparse-file allocation behavior of Windows-mounted
+DrvFs/NTFS volumes. Even on WSL ext4, a 12-GiB sparse file can grow to
+12 GiB if another tool fills it, so check disk capacity first.
+
+`installer_lab.py` refuses existing paths (O_EXCL), unsafe
+filenames, unsupported disk sizes, missing typed confirmation,
+symlinked lab directories/ancestors and non-POSIX execution. It uses
+only a controlled output directory below your HOME and never opens
+system block devices. It never deletes an existing image.
+
+### Run the kernel tests separately
+
+```bash
+source "$HOME/.cargo/env"
+cargo test --lib --target x86_64-unknown-linux-gnu --offline
+bash scripts/build_vmware.sh
+```
+
+The Rust compiler and actual VMware emulator are **not available in
+the assistant runtime**. Do not treat Python host tests as proof of
+Rust compilation or VM boot.
+
+## Verification evidence
+
+The GPT image lab code and seven test cases were run locally in Python
+on 2026-10-28 (together with the five existing GPT image verification
+tests): **12/12 tests passed**. The exact Git blob SHAs of the committed
+lab code and test file were checked against the local copies.
+This validates only the Python host-path operations on temporary
+ordinary files.
+
+## Release gates: toward a genuinely bootable installed ZillaOS
+
+| Milestone | Status | Required proof |
+| --- | --- | --- |
+| Host read-only disk integrity | Implemented | 12 Python unit tests |
+| Create clean dual-GPT raw image | Implemented | Independent primary+backup GPT readback |
+| Native graphical install plan | Source committed | QEMU/VMware screenshot pending |
+| Rust kernel and setup UI build | Unverified | Rust compile, host tests and UEFI boot |
+| VMware disk model/capacity detection | Missing | AHCI/SCSI/NVMe read-only identification |
+| Read existing virtual disk GPT safely | Missing | Guest block driver + strict GPT verifier |
+| Format ESP FAT32 in fresh test image | Missing | Filesystem readback and no out-of-bounds writes |
+| Install EFI loader + kernel to ESP | Missing | UEFI boot from virtual disk without ISO |
+| Root filesystem + settings persistence | Missing | Reboot retaining locale, hostname, timezone |
+| In-guest disk confirmation UI | Missing | Explicit disk identity typed confirmation |
+| Real installer transactions and recovery | Missing | Fail injection, rollback, fresh VM image only |
+
+**Never install directly to a physical Windows or Linux disk at this
+phase. Never auto-select the first disk.** On initial VMware tests,
+keep no disk attached; the test lab raw file isn't a valid OS disk yet.
+
+Related: [SETUP.md](SETUP.md), [STORAGE.md](STORAGE.md),
+[GPT.md](GPT.md), [VMWARE.md](VMWARE.md), [INSTALLATION.md](INSTALLATION.md).
