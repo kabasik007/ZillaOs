@@ -128,6 +128,14 @@ VMware menu labels vary by Workstation version. UEFI virtual hardware
 and CD-ROM boot options are documented by Broadcom. The ISO uses
 Limine's UEFI El Torito boot image.
 
+## Dedicated EFI disk proof of concept
+
+See [Installer V2.1](EFI_BOOT_DISK.md) for staging a brand-new RAW test
+disk with FAT32 + Limine/ELF boot files, running a read-only QEMU UEFI
+no-ISO check, and converting a **new** RAW test disk to a disposable
+VMware VMDK. This is NOT verified as bootable and must never overwrite
+or replace a physical host disk.
+
 ## First-launch Zilla Setup screen
 
 The `demo` ISO now displays an **interactive setup wizard before the desktop**.
