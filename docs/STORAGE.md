@@ -18,7 +18,7 @@ mass-storage *controllers* in a fixed `no_std` inventory.
   writes to PCI device configuration registers.
 - `src/main.rs` — early scan, serial class/vendor/device/BDF diagnostics,
   inventory passed to the first-boot Setup wizard.
-- `src/setup.rs` — eight-stage wizard including a new **Storage**
+- `src/setup.rs` — nine-stage wizard including a new **Storage**
   information page; `selectable_disks()` remains strictly zero.
 - `src/graphics.rs` — read-only controller summary and explicit
   **DISKS NOT VERIFIED / INSTALLATION DISABLED** warning.
@@ -79,9 +79,10 @@ eight controllers are discovered.
 5. PC name
 6. Theme
 7. **Storage** — read-only controller list; disk selection disabled
-8. Review — proceed into the RAM-only Zilla Desktop, not disk installation
+8. Install Plan — shows missing installation prerequisites, with writes disabled
+9. Review — proceed into the RAM-only Zilla Desktop, not disk installation
 
-Eight Enter presses accept default settings.
+Nine Enter presses accept default settings.
 
 ## Verify on WSL2 + VMware / QEMU
 
