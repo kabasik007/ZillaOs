@@ -205,6 +205,17 @@ Repeat QEMU runs preserve prior logs under unique names. See
 [BOOT_DIAGNOSTICS.md](BOOT_DIAGNOSTICS.md). Actual VM runtime remains
 unverified.
 
+## Installer V2.6: full graphical boot from staged RAW
+
+The QEMU GUI smoke program supports `--disk` as an alternative to ISO,
+restricted to a previously validated read-only Installer Lab RAW image.
+Its keyboard automation now **advances through all nine** Setup steps
+(the former seven-step loop was a genuine bug) and checks screenshots
+for the wizard, storage page, installation plan and Desktop. The
+[one-command acceptance runner](INSTALLER_ACCEPTANCE.md) now uses this
+stronger GUI proof in its `--boot` mode, and the manual CI runs the
+same no-ISO GUI test. Runtime execution is still pending.
+
 ## Next milestones
 
 1. Run `cargo fmt`, `cargo test`, the ISO build and QEMU boot in
