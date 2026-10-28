@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ZillaOS installer acceptance gate. Only disposable new RAW images.
-# --preflight (default): compile + validate boot assets; NO test disk creation.
+# --preflight (default): compile + validate boot assets; NO persistent lab image.
+# Unit tests may create temporary disposable image files and clean them up.
 # --create/--boot: requires an exact second argument as explicit consent.
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
@@ -36,7 +37,7 @@ echo "[1/5] Rust + Python tests, ISO build, EFI/ELF/Limine validation"
 bash scripts/build_vmware.sh 2>&1 | tee build/logs/installer-acceptance-build.log
 python3 scripts/check_boot_assets.py > build/logs/installer-acceptance-boot-assets.json
 if [[ "$MODE" == "--preflight" ]]; then
-    echo "PASS: source/ISO preflight finished. No lab disk image created."
+    echo "PASS: source/ISO preflight finished. No persistent Installer Lab disk created."
     exit 0
 fi
 
