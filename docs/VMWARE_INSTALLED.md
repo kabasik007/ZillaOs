@@ -32,6 +32,7 @@ source "$HOME/.cargo/env"
 python3 -m unittest discover -s tests -v
 cargo test --lib --target x86_64-unknown-linux-gnu --offline
 bash scripts/build_vmware.sh
+python3 scripts/check_boot_assets.py
 
 # Must use a name that does not exist already.
 python3 scripts/installer_lab.py \
