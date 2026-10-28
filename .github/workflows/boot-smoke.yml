@@ -42,7 +42,7 @@ jobs:
           # PowerShell is not installed in every Linux runner image.
           # When present, verify parse syntax without running Windows actions.
           if command -v pwsh >/dev/null 2>&1; then
-            pwsh -NoProfile -Command '$parseErrors = \$null; \$null = [System.Management.Automation.Language.Parser]::ParseFile("scripts/vmware_installed.ps1", [ref]$null, [ref]$parseErrors); if ($parseErrors.Count -gt 0) { $parseErrors | Out-Host; exit 1 }'
+            pwsh -NoProfile -Command '$parseErrors = $null; $null = [System.Management.Automation.Language.Parser]::ParseFile("scripts/vmware_installed.ps1", [ref]$null, [ref]$parseErrors); if ($parseErrors.Count -gt 0) { $parseErrors | Out-Host; exit 1 }'
           fi
 
       - name: Test pure Rust memory algorithms on host
