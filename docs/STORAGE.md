@@ -119,6 +119,14 @@ The custom test also captures `desktop-qemu-custom-storage.ppm`.
 **Gate:** actual Rust compilation, serial log and screenshot are required
 before claiming PCI discovery or GUI are operational in a VM.
 
+## Standalone GPT verifier added
+
+The source now contains a pure `no_std` primary GPT parser in
+[`src/gpt.rs`](../src/gpt.rs) with CRC32, protective-MBR, geometry,
+partition overlap and synthetic image tests. **It is not wired to any real
+block device** because there is no read-only sector driver yet. See
+[GPT.md](GPT.md). PCI controller discovery still does not enumerate disks.
+
 ## Next technical milestone — not yet implemented
 
 - Enumerate *individual* AHCI, NVMe or SCSI devices via a typed,
@@ -126,8 +134,9 @@ before claiming PCI discovery or GUI are operational in a VM.
   most common VMware emulated controller.
 - Read stable disk identity and logical-sector capacity safely;
   distinguish disks, CD-ROMs and unsupported devices.
-- Parse GPT *read-only* with protective-MBR, CRC, bounds and overlaps
-  verified; detect existing data before offering any target selection.
+- Integrate the existing **primary GPT verifier** with an isolated
+  read-only sector reader; independently validate backup GPT and existing
+  filesystem signatures before offering any target selection.
 - Only after device identity and reliable read-only probing: an
   explicitly chosen **disposable virtual disk**, detailed impact
   confirmation and an isolated storage write service.
