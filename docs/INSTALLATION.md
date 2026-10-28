@@ -77,6 +77,18 @@ only execute arithmetic.
 7. Explicitly verify that a Windows host disk/shared host filesystem
    is **never exposed** to the development VM.
 
+### Independently inspect a raw disposable disk image
+
+```bash
+python3 -m unittest discover -s tests -v
+python3 scripts/gpt_image_verify.py /path/to/disposable.img --sector-size 512
+```
+
+This Python utility reads only a regular raw disk **file**, not a
+VMware VMDK or host physical device. A valid GPT image is NOT a safe
+installation target until a real driver, filesystem signature checks,
+explicit selection and separate confirmations exist. See [GPT.md](GPT.md).
+
 ### Test the planner without touching a disk
 
 On Ubuntu WSL, after installing Rust:
