@@ -158,3 +158,28 @@ def verify_fat32_image(path: Path, sector_size: int = 512,
                 'fat_copies_match': True, 'staged_files': present}
     finally:
         os.close(fd)
+
+def main() -> int:
+    import argparse
+    import json
+    import sys
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('image', type=Path)
+    parser.add_argument('--sector-size', type=int, choices=(512,4096), default=512)
+    parser.add_argument('--check-boot', action='store_true',
+                        help='compare EFI files with current built ZillaOS assets')
+    args = parser.parse_args()
+    try:
+        files = None
+        if args.check_boot:
+            from installer_lab import load_uefi_assets
+            files = load_uefi_assets()
+        print(json.dumps(verify_fat32_image(args.image, args.sector_size, files), indent=2))
+        return 0
+    except (Fat32Invalid, OSError, ValueError) as exc:
+        print('FAT32 INVALID:', str(exc), file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
