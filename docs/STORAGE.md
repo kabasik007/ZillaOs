@@ -119,6 +119,13 @@ The custom test also captures `desktop-qemu-custom-storage.ppm`.
 **Gate:** actual Rust compilation, serial log and screenshot are required
 before claiming PCI discovery or GUI are operational in a VM.
 
+## Executable host image verification
+
+`scripts/gpt_image_verify.py` now verifies **raw file** GPT integrity
+and partition ranges on WSL/Linux without a Rust compiler. It rejects
+`.vmdk` and never opens disks for writing. Five tests were run locally;
+see [GPT.md](GPT.md). This is not a VMware guest disk driver.
+
 ## Standalone GPT verifier added
 
 The source now contains a pure `no_std` GPT parser with separate primary-only and strict primary-plus-backup modes in
