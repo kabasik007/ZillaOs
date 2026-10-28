@@ -75,7 +75,7 @@ def setup_passed(log: str, profile: str = "default") -> bool:
     sequence = [
         STORAGE_READY,
         SETUP_READY,
-        *[f"ZILLAOS_SETUP_STEP=0x{step:016x}" for step in range(1, 9)],
+        *[f"ZILLAOS_SETUP_STEP=0x{step:016x}" for step in range(1, 10)],
         SETUP_COMPLETE,
         f"ZILLAOS_SETUP_LANGUAGE={language}",
         f"ZILLAOS_SETUP_TIMEZONE={timezone}",
@@ -257,7 +257,7 @@ def main() -> int:
                 setup_output = args.output.with_name(args.output.stem + "-setup.ppm")
                 shutil.copyfile(setup_capture, setup_output)
 
-                # Eight transitions: Welcome -> Language -> Region -> TimeZone -> Device
+                # Nine transitions: Welcome -> Language -> Region -> TimeZone -> Device
                 # -> Appearance -> Storage (read-only) -> Review -> Finished.
                 for step in range(1, 8):
                     if args.setup_profile == "custom":
@@ -288,6 +288,19 @@ def main() -> int:
                             args.output.stem + "-storage.ppm"
                         )
                         shutil.copyfile(storage_capture, storage_output)
+                    if step == 7:
+                        plan_capture = workdir / "installer-plan.ppm"
+                        monitor_command(monitor, f"screendump {plan_capture}")
+                        if not wait_until(plan_capture.exists, guest, deadline):
+                            print("FAIL: installer plan screen not captured", file=sys.stderr)
+                            return 1
+                        if screenshot_dimensions(plan_capture) is None:
+                            print("FAIL: installer plan screenshot invalid", file=sys.stderr)
+                            return 1
+                        plan_output = args.output.with_name(
+                            args.output.stem + "-install-plan.ppm"
+                        )
+                        shutil.copyfile(plan_capture, plan_output)
                 if not wait_until(
                     lambda: setup_passed(read_log(log), args.setup_profile)
                     and all(has_line(read_log(log), m) for m in REQUIRED),
@@ -401,7 +414,7 @@ def main() -> int:
                     return 1
 
                 print(f"PASS: ZillaOS GUI 3 windows, focus, minimize/restore, PS/2 mouse motion+click; screenshot {dimensions[0]}x{dimensions[1]}")
-                print(f"Screens: {setup_output}, {storage_output}, {args.output}, {cursor_output}; serial: {log}")
+                print(f"Screens: {setup_output}, {storage_output}, {plan_output}, {args.output}, {cursor_output}; serial: {log}")
                 return 0
             finally:
                 if guest.poll() is None:
