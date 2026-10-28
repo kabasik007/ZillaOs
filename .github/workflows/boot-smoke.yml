@@ -90,6 +90,8 @@ jobs:
             build/logs/desktop-qemu-cursor.ppm
             build/logs/desktop-qemu-setup.ppm
             build/logs/desktop-qemu-storage.ppm
+            build/logs/desktop-qemu-install-plan.ppm
+            build/logs/desktop-qemu-custom-install-plan.ppm
             build/logs/desktop-qemu-custom-storage.ppm
             build/logs/desktop-qemu-custom*.ppm
           if-no-files-found: warn
