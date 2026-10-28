@@ -46,6 +46,10 @@ trap 'echo "VMware export incomplete; inspect test directory before retrying." >
 qemu-img convert -p -f raw -O vmdk -o subformat=monolithicSparse -S 4k \
     "$SOURCE" "$DEST"
 test -s "$DEST"
+# Compare the complete logical contents after conversion, not just VMDK
+# metadata. Without -s, sparse allocation differences are not failures.
+# This reads both files only; it does not alter source or destination.
+qemu-img compare -f raw -F vmdk "$SOURCE" "$DEST" > "$DEST_DIR/disk-compare.log"
 qemu-img info --output=json -f vmdk "$DEST" > "$DEST_DIR/disk-info.json"
 python3 - "$DEST_DIR/disk-info.json" <<'PY'
 import json, sys
@@ -55,6 +59,7 @@ assert data["format"] == "vmdk", data
 assert data["virtual-size"] >= 12 * 1024 ** 3, data
 print("VMDK validated:", data["format"], data["virtual-size"], "bytes virtual")
 PY
+echo "VMDK_CONTENTS_MATCH_SOURCE=TRUE"
 echo "VMDK_CREATED=$DEST"
 echo "Original RAW preserved: $SOURCE"
 echo "No VMware VM was powered on by this script."
