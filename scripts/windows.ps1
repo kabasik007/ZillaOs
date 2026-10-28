@@ -115,7 +115,10 @@ function Open-Vmware {
     }
 }
 
-Assert-Wsl
+# Existing ISO launch and Windows Explorer do not require a running Ubuntu VM.
+if ($Action -notin @("Run", "OpenISO")) {
+    Assert-Wsl
+}
 switch ($Action) {
     "Doctor" {
         $linuxRepo = Get-LinuxRepo
