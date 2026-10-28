@@ -4,6 +4,12 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Read-only primary GPT validation library
+
+- Added `src/gpt.rs`, a fixed-memory `no_std` verifier for protective MBR, GPT primary header (including CRC32), GPT partition-array CRC, 512/4096-byte logical sectors and bounded nonoverlapping partition geometry.
+- Added synthetic Rust unit tests for valid images, CRC corruption, hybrid MBR, overlap, unsupported entry metadata, and read failures. No disk access or write API is included; no backup GPT or filesystem inspection yet.
+- Source committed directly to `main`; actual compilation and Rust unit execution remain unverified here. See [GPT.md](GPT.md).
+
 ### VMware read-only PCI storage-controller inventory
 
 - Added `src/storage_pci.rs`: a pure `no_std` PCI mass-storage class inventory, fixed eight-controller cap, multifunction handling and unit tests for VMware AHCI/NVMe example headers.
