@@ -69,15 +69,16 @@ disk or an existing VMware VM.
 bash scripts/installer_acceptance.sh --boot CREATE-NEW-VM-IMAGE
 ```
 
-After the other checks, the runner attaches the new RAW disk as
-**read-only**, with no ISO or network and with temporary OVMF NVRAM.
-It runs for at most 100 seconds, then parses the **serial log path
-printed by the current QEMU invocation** to avoid accidentally
-accepting an earlier successful boot. The read-only
-`scripts/boot_evidence.py` rejects a missing kernel marker, a missing
-Setup/PCI scan, panic, explicit boot failure or framebuffer failure.
+After the other checks, the runner starts the **headless graphical QEMU
+smoke test directly from the staged RAW disk** (read-only, no ISO/network,
+temporary OVMF). It drives all **nine Setup steps**, checks the Desktop,
+window manager, keyboard and screenshots, and then parses the **COM1 file
+written by that exact run**. Logs and PPM screenshots use unique per-run
+names. `scripts/boot_evidence.py` additionally rejects panic, wrong event
+order, duplicate boot markers, missing framebuffer and missing Setup input
+loop.
 
-The command only succeeds if real COM1 boot evidence passes. An
+The command only succeeds if the GUI, screenshots and COM1 startup evidence pass. An
 expiration/timeout is not by itself treated as proof of success.
 
 ## Individual independent FAT32 check
