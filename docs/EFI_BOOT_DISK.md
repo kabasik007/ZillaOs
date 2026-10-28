@@ -49,6 +49,15 @@ storage driver. No real disks are enumerated or selected by the guest.
 - Boot testing uses a **read-only** disk attachment, no network, no
   physical disk passthrough and a temporary OVMF variable store.
 
+## Independent FAT32 proof (Installer V2.5)
+
+Use [Installer Acceptance](INSTALLER_ACCEPTANCE.md) for a single command
+that compiles/tests Rust, creates a **new** test RAW on explicit approval,
+validates GPT+FAT32, reads the ESP with independent `mtools` and optionally
+requires actual no-ISO QEMU boot evidence. Manual CI also runs `mtools`
+before starting QEMU. None of these new checks has yet been observed
+passing on actual boot media in the assistant environment.
+
 ## In Ubuntu / WSL2
 
 Start by synchronizing with GitHub:
