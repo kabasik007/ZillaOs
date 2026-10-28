@@ -120,6 +120,13 @@ The custom test also captures `desktop-qemu-custom-storage.ppm`.
 **Gate:** actual Rust compilation, serial log and screenshot are required
 before claiming PCI discovery or GUI are operational in a VM.
 
+## FAT32 EFI disk staging in Installer V2.1
+
+The host [EFI disk builder](EFI_BOOT_DISK.md) can now format a FAT32 ESP in an
+**exclusively new sparse RAW file**, stage the actual kernel and Limine files,
+and independently check their bytes. This does **not** grant guest access to
+disk sectors or enable any installation action in ZillaOS.
+
 ## Executable host image verification
 
 `scripts/gpt_image_verify.py` now verifies **raw file** GPT integrity
