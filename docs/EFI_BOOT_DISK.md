@@ -82,6 +82,24 @@ python3 scripts/installer_fat32_verify.py \
 
 This image has GPT+FAT32 but is **not bootable** (empty ESP).
 
+### Boot artifact preflight (Installer V2.3)
+
+Before formatting or staging the EFI test disk, validate the **real**
+Limine and kernel build outputs:
+
+```bash
+python3 scripts/check_boot_assets.py
+```
+
+This read-only command checks PE32+ x86-64 EFI application headers,
+ELF64/x86-64 program headers and load segment bounds, and the exact
+Limine kernel path. It rejects fake MZ/ELF files, wrong architectures
+and malformed configuration. It does not imply that the kernel actually
+boots in VMware; real VM runtime logs are still required. The same
+audit is called by `--stage-uefi` and in GitHub Actions. Twelve new
+synthetic Python tests passed locally; the full Rust/UEFI build is
+still unverified.
+
 ### C. Staged UEFI disk with actual ZillaOS boot files
 
 First, the **real Rust cross-build and UEFI ISO build must pass**:
