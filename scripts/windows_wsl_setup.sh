@@ -6,8 +6,8 @@
 set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 
-MODE="\${1:---check}"
-shift || true
+MODE="${1:---check}"
+if (( $# > 0 )); then shift; fi
 INSTALL_RUST=0
 WITH_QEMU=0
 case "$MODE" in --check|--install) ;; *)
@@ -31,8 +31,8 @@ if [[ ! -r /etc/os-release ]]; then
 fi
 # Never assume we're on Ubuntu based solely on the Windows distribution name.
 . /etc/os-release
-if [[ "\${ID:-}" != "ubuntu" && "\${ID_LIKE:-}" != *ubuntu* ]]; then
-    echo "This bootstrap was designed for Ubuntu; detected: \${ID:-unknown}" >&2
+if [[ "${ID:-}" != "ubuntu" && "${ID_LIKE:-}" != *ubuntu* ]]; then
+    echo "This bootstrap was designed for Ubuntu; detected: ${ID:-unknown}" >&2
     exit 2
 fi
 
@@ -47,7 +47,7 @@ if [[ "$MODE" == "--install" ]]; then
     if [[ "$WITH_QEMU" -eq 1 ]]; then
         packages+=(qemu-system-x86 qemu-system-gui ovmf mtools qemu-utils)
     fi
-    sudo apt-get install -y --no-install-recommends "\${packages[@]}"
+    sudo apt-get install -y --no-install-recommends "${packages[@]}"
 fi
 
 # rustup's normal Ubuntu installation places cargo into ~/.cargo/bin,
