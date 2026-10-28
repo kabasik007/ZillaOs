@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Headless QEMU GUI smoke: prove framebuffer boot, keyboard event, screenshot.
 
+Can boot from either a live ISO or a previously verified Installer Lab
+RAW disk with no ISO. RAW is attached read-only with temporary OVMF state.
+
 This does NOT assert that Files or Terminal are functional applications.
 It only validates the kernel-owned early RGB32 desktop demo in QEMU.
 """
@@ -186,19 +189,53 @@ def monitor_command(path: Path, command: str) -> str:
             return ""
 
 
+def qemu_boot_media_args(iso: Path | None, disk: Path | None) -> list[str]:
+    """Either boot from the live ISO or a read-only, previously verified RAW."""
+    if (iso is None) == (disk is None):
+        raise ValueError("exactly one of ISO or disk is required")
+    if disk is not None:
+        return [
+            "-drive", f"if=none,format=raw,readonly=on,id=zilladisk,file={disk}",
+            "-device", "ich9-ahci,id=zillasata",
+            "-device", "ide-hd,bus=zillasata.0,drive=zilladisk,bootindex=1",
+        ]
+    return ["-cdrom", str(iso), "-boot", "order=d"]
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--iso", type=Path, default=DEFAULT_ISO)
+    boot = p.add_mutually_exclusive_group()
+    boot.add_argument("--iso", type=Path, default=DEFAULT_ISO)
+    boot.add_argument("--disk", type=Path, help="read-only verified Installer Lab RAW instead of ISO")
     p.add_argument("--timeout", type=int, default=90)
     p.add_argument("--setup-profile", choices=("default", "custom"), default="default",
                    help="Keyboard-driven OOBE settings for the QEMU test")
     p.add_argument("--output", type=Path, default=ROOT / "build/logs/desktop-qemu.ppm")
     args = p.parse_args()
 
-    iso = args.iso.resolve()
+    iso = None if args.disk is not None else args.iso.resolve()
+    disk = None
     if args.timeout < 10:
         p.error("--timeout must be >= 10 seconds")
-    if not iso.is_file() or not iso.stat().st_size:
+    if args.disk is not None:
+        from installer_lab import load_uefi_assets
+        from installer_fat32_verify import verify_fat32_image
+        lab = (Path.home() / ".local/share/zillaos/installer-lab").resolve()
+        candidate = args.disk.expanduser()
+        if (candidate.is_symlink() or
+            candidate.parent.resolve() != lab or
+            re.fullmatch(r"zillaos-[a-z0-9][a-z0-9-]*\\.img", candidate.name) is None or
+            not candidate.is_file()):
+            print("FAIL: disk must be a regular, named Installer Lab RAW (not a symlink)",
+                  file=sys.stderr)
+            return 2
+        disk = candidate.resolve()
+        try:
+            verify_fat32_image(disk, 512, load_uefi_assets())
+        except (ValueError, OSError) as exc:
+            print(f"FAIL: disk GPT/FAT32/boot asset verification: {exc}", file=sys.stderr)
+            return 2
+    elif iso is None or not iso.is_file() or not iso.stat().st_size:
         print(f"FAIL: missing demo ISO {iso}", file=sys.stderr)
         return 2
     if shutil.which("qemu-system-x86_64") is None:
@@ -218,7 +255,7 @@ def main() -> int:
         firmware = workdir / "OVMF_VARS.fd"
         shutil.copyfile(pair[1], firmware)
         monitor = workdir / "monitor.sock"
-        log = args.output.parent / "desktop-qemu.log"
+        log = args.output.with_suffix(".log")
         cmd = [
             "qemu-system-x86_64",
             "-machine", "q35,accel=tcg",
@@ -234,8 +271,7 @@ def main() -> int:
             "-no-shutdown",
             "-drive", f"if=pflash,format=raw,unit=0,readonly=on,file={pair[0]}",
             "-drive", f"if=pflash,format=raw,unit=1,file={firmware}",
-            "-cdrom", str(iso),
-            "-boot", "order=d",
+            *qemu_boot_media_args(iso, disk),
         ]
         deadline = time.monotonic() + args.timeout
         with log.open("w") as output:
