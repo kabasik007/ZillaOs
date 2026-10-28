@@ -33,6 +33,7 @@ class VmwareInstalledTests(unittest.TestCase):
         self.assertIn('mkdir -m 700 -- "$DEST_DIR"', text)
         self.assertIn('qemu-img convert -p -f raw -O vmdk', text)
         self.assertIn('subformat=monolithicSparse', text)
+        self.assertIn('qemu-img compare -f raw -F vmdk "$SOURCE" "$DEST"', text)
         self.assertNotIn('--force', text)
         self.assertNotIn('rm -rf', text)
 
