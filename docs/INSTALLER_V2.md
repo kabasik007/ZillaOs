@@ -22,6 +22,13 @@ verifying *test GPT disk images*, **not yet a complete installed OS**.
    Tests create 12-GiB *sparse files* and verify their primary and
    backup GPT with the independent reader.
 
+## Boot evidence and executable entry checks (V2.4)
+
+`boot_assets_audit.py` now checks mapped executable entrypoints for PE32+
+and ELF64, while `boot_evidence.py` validates actual COM1 markers from
+one QEMU/VMware boot log. See [BOOT_DIAGNOSTICS.md](BOOT_DIAGNOSTICS.md).
+This improves detection; it does not establish that ZillaOS already boots.
+
 ## UEFI boot artifact preflight (V2.3)
 
 `python3 scripts/check_boot_assets.py` now verifies compiled Limine
