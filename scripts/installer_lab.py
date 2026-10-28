@@ -2,7 +2,7 @@
 """ZillaOS Installer Lab: GPT-only disposable sparse RAW images.
 
 No host disk is opened. No existing file is changed. Creates new file only
-in build/installer-lab, and only on explicit --create + typed confirmation.
+in an isolated WSL/Linux HOME folder, only on explicit --create + typed confirmation.
 This is NOT a bootable OS install; ESP and root remain unformatted.
 """
 from __future__ import annotations
@@ -156,7 +156,7 @@ def main() -> int:
         if not args.create:
             print(json.dumps({'mode': 'DRY_RUN', 'plan': plan}, indent=2))
         else:
-            root = Path(__file__).resolve().parent.parent / 'build' / 'installer-lab'
+            root = Path.home() / '.local' / 'share' / 'zillaos' / 'installer-lab'
             print(json.dumps(create_lab_image(root, args.name,
                 size_gib=args.size_gib, sector=args.sector_size,
                 confirmation=args.confirm), indent=2))
