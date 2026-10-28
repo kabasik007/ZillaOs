@@ -4,6 +4,14 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Installer V2.4 — executable entrypoint safety and QEMU COM1 evidence
+
+- Tightened PE32+ loader verification: entry RVA must be inside an executable mapped section and raw section bytes must be inside the file.
+- Tightened ELF64 kernel verification: executable PT_LOAD must contain the entry address, virtual segment must not overflow, and file offsets and alignment must be valid.
+- Added five new negative Python cases and eight boot-evidence tests. 25/25 local Python tests passed for these components, but Rust, QEMU and VMware runtime remain unverified.
+- Added `scripts/boot_evidence.py` classifying COM1 results, early guest panic, setup and framebuffer failures; manual CI saves JSON proof with the UEFI disk's serial log.
+- QEMU runner now preserves prior serial logs and avoids using them for a subsequent attempt. See [BOOT_DIAGNOSTICS.md](BOOT_DIAGNOSTICS.md).
+
 ### Installer V2.3 — strict UEFI boot artifact validation
 
 - Added `scripts/boot_assets_audit.py` validating that staged `BOOTX64.EFI` is PE32+ x86-64 EFI Application with bounded headers, kernel is valid x86-64 ELF64 with bounded PT_LOAD ranges, and Limine configuration points to the staged kernel.
