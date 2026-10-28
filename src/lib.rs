@@ -15,3 +15,4 @@ pub mod raster;
 pub mod setup;
 pub mod install_plan;
 pub mod storage_pci;
+pub mod gpt;
