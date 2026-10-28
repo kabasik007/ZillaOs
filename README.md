@@ -74,6 +74,7 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 - [Zilla Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) — immediate framebuffer renderer, input, state, limitations.
 - [Zilla Desktop roadmap](docs/DESKTOP_ROADMAP.md) — from QEMU prototype to user-mode compositor and apps.
 - [PS/2 mouse bootstrap](docs/MOUSE.md) — mouse protocol, QEMU pointer interactions, tests and caveats.
+- [Installer V2.5 acceptance](docs/INSTALLER_ACCEPTANCE.md) — independent FAT32 mtools readback and opt-in end-to-end QEMU test.
 - [Boot diagnostics and evidence](docs/BOOT_DIAGNOSTICS.md) — executable PE/ELF entry validation and serial COM1 JSON boot verification.
 - [UEFI boot artifact preflight](scripts/check_boot_assets.py) — strict PE32+/ELF64/Limine inspection before EFI disk creation; testable without VMware.
 - [VMware installed-disk launcher](docs/VMWARE_INSTALLED.md) — WSL RAW → isolated disposable VMDK and no-ISO UEFI VMX, with explicit confirmation.
