@@ -22,8 +22,10 @@ Future block driver (NOT IMPLEMENTED)
 
 The source includes a **passive PCI mass-storage controller inventory**,
 which does not identify individual disks, capacities or partitions. See
-[STORAGE.md](STORAGE.md). The actual partition planner currently stops at
-the `preview_for` stage. No APIs that
+[STORAGE.md](STORAGE.md). The arithmetic-only partition planner currently stops at
+`preview_for`. A separate [primary GPT verifier](GPT.md) now parses
+synthetic sector data via a read-only callback, but no driver can supply
+real disk sectors yet. No APIs that
 modify sectors are exposed by `src/install_plan.rs`.
 
 ### Planned partition geometry
