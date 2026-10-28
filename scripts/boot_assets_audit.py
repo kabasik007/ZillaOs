@@ -41,8 +41,25 @@ def validate_pe_uefi_x64(data: bytes) -> dict[str, int | str]:
     _require(magic == 0x20b, 'EFI loader must be PE32+')
     _require(subsystem == 10, 'PE subsystem is not EFI application')
     _require(0 < entry_point < image_size, 'EFI entry point/image geometry invalid')
-    _require(optional + optional_size + section_count * 40 <= len(data),
+    section_start = optional + optional_size
+    _require(section_start + section_count * 40 <= len(data),
              'EFI section headers truncated')
+    executable_entry = False
+    for index in range(section_count):
+        sh = section_start + index * 40
+        virtual_size, virtual_address, raw_size, raw_pointer = struct.unpack_from('<IIII', data, sh + 8)
+        (characteristics,) = struct.unpack_from('<I', data, sh + 36)
+        mapped_size = max(virtual_size, raw_size)
+        _require(mapped_size > 0 and virtual_address < image_size and
+                 mapped_size <= image_size - virtual_address,
+                 'EFI section mapping outside image')
+        _require(raw_size == 0 or
+                 (raw_pointer <= len(data) and raw_size <= len(data) - raw_pointer),
+                 'EFI section raw bytes outside file')
+        if (characteristics & 0x20000000 and
+            virtual_address <= entry_point < virtual_address + mapped_size):
+            executable_entry = True
+    _require(executable_entry, 'EFI entry point not in executable section')
     return {'format': 'PE32+', 'architecture': 'x86-64', 'subsystem': 'EFI application',
             'entry_rva': entry_point, 'sections': section_count, 'size_bytes': len(data)}
 
@@ -63,18 +80,28 @@ def validate_elf64_x64(data: bytes) -> dict[str, int | str]:
     _require(64 <= phoff <= len(data) and phnum * phent_size <= len(data) - phoff,
              'Kernel ELF program header table outside file')
     loads = 0
+    executable_entry = False
     for i in range(phnum):
         off = phoff + i * phent_size
         (p_type,) = struct.unpack_from('<I', data, off)
         if p_type != 1:
             continue
         loads += 1
-        (p_offset,) = struct.unpack_from('<Q', data, off + 8)
-        (p_filesz, p_memsz) = struct.unpack_from('<QQ', data, off + 32)
-        _require(p_filesz <= p_memsz and p_offset <= len(data) and
+        (p_flags,) = struct.unpack_from('<I', data, off + 4)
+        (p_offset, p_vaddr) = struct.unpack_from('<QQ', data, off + 8)
+        (p_filesz, p_memsz, p_align) = struct.unpack_from('<QQQ', data, off + 32)
+        _require(p_memsz > 0 and p_filesz <= p_memsz and p_offset <= len(data) and
                  p_filesz <= len(data) - p_offset,
                  'Kernel ELF loadable segment has invalid file bounds')
+        _require(p_memsz <= (1 << 64) - 1 - p_vaddr,
+                 'Kernel ELF segment virtual range overflows')
+        _require(p_align in (0, 1) or
+                 (p_align & (p_align - 1) == 0 and p_vaddr % p_align == p_offset % p_align),
+                 'Kernel ELF segment alignment invalid')
+        if p_flags & 1 and p_vaddr <= entry < p_vaddr + p_memsz:
+            executable_entry = True
     _require(loads > 0, 'Kernel ELF contains no loadable program segment')
+    _require(executable_entry, 'Kernel ELF entry point not in executable PT_LOAD')
     return {'format': 'ELF64', 'architecture': 'x86-64', 'entry_point': entry,
             'load_segments': loads, 'size_bytes': len(data)}
 
