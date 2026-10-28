@@ -41,10 +41,11 @@ jobs:
           bash -n scripts/export_vmware_test.sh
           bash -n scripts/installer_acceptance.sh
           bash -n scripts/verify_esp_mtools.sh
+          bash -n scripts/windows_wsl_setup.sh
           # PowerShell is not installed in every Linux runner image.
           # When present, verify parse syntax without running Windows actions.
           if command -v pwsh >/dev/null 2>&1; then
-            pwsh -NoProfile -Command '$tokens = $null; $parseErrors = $null; $ast = [System.Management.Automation.Language.Parser]::ParseFile("scripts/vmware_installed.ps1", [ref]$tokens, [ref]$parseErrors); if ($parseErrors.Count -gt 0) { $parseErrors | Out-Host; exit 1 }'
+            pwsh -NoProfile -Command '$files = @("scripts/vmware_installed.ps1", "scripts/windows.ps1"); foreach ($file in $files) { $tokens = $null; $parseErrors = $null; $ast = [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$parseErrors); if ($parseErrors.Count -gt 0) { $parseErrors | Out-Host; exit 1 } }'
           fi
 
       - name: Test pure Rust memory algorithms on host
