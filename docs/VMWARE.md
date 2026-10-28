@@ -128,6 +128,13 @@ VMware menu labels vary by Workstation version. UEFI virtual hardware
 and CD-ROM boot options are documented by Broadcom. The ISO uses
 Limine's UEFI El Torito boot image.
 
+## Dedicated installer test VM with VMDK
+
+The [installed-disk VMware launcher](VMWARE_INSTALLED.md) exports a
+verified test RAW image into a fresh VMDK and generates an isolated
+UEFI VMX. This path boots without any live ISO, unlike the ordinary
+development VM here. Real VMware success remains unverified.
+
 ## Dedicated EFI disk proof of concept
 
 See [Installer V2.1](EFI_BOOT_DISK.md) for staging a brand-new RAW test
