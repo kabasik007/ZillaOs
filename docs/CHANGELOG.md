@@ -4,6 +4,13 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Installer V2.5 — independent FAT32 compatibility and acceptance command
+
+- Added `scripts/verify_esp_mtools.sh`, which reads GPT/FAT32 files from an exclusively named Installer Lab RAW image using an independent FAT32 implementation (`mtools`) and compares extracted `BOOTX64.EFI`, `KERNEL.ELF`, and `LIMINE.CONF` against real compiled artifacts. No RAW image writes, mounting or physical devices.
+- Added `scripts/installer_acceptance.sh` with `--preflight` (build/test only), `--create CREATE-NEW-VM-IMAGE` (new GPT+FAT32 RAW, independent readback), and `--boot CREATE-NEW-VM-IMAGE` (plus no-ISO QEMU serial evidence).
+- Added `tests/test_esp_mtools_contract.py` and `tests/test_installer_acceptance.py` for safety requirements and Bash syntax/invalid argument checks.
+- Manual CI installs mtools, validates staged EFI with an independent FAT reader and archives its report before no-ISO boot. These new full-path checks have **not** been run here; they are acceptance gates pending WSL/CI execution. See [INSTALLER_ACCEPTANCE.md](INSTALLER_ACCEPTANCE.md).
+
 ### Installer V2.4 — executable entrypoint safety and QEMU COM1 evidence
 
 - Tightened PE32+ loader verification: entry RVA must be inside an executable mapped section and raw section bytes must be inside the file.
