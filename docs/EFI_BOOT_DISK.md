@@ -132,6 +132,14 @@ operation). Preserve `build/logs/installer-uefi-disk-serial.log`.
 screen capture are available. UEFI implementation behavior, firmware
 drivers and Rust boot semantics require runtime confirmation.
 
+## Automated VMware Workstation path (preferred)
+
+Use the new [VMware installed-disk launcher](VMWARE_INSTALLED.md). It
+independently verifies the staged RAW disk and then creates a **fresh**
+VMDK plus isolated UEFI VMware VMX with no CD, network, USB or shared
+folders. Unlike a manual conversion, it refuses an existing destination.
+Boot is not yet verified: retain COM1 evidence from the actual VM.
+
 ## VMware Workstation path
 
 VMware Workstation generally requires a **VMDK**, not our RAW file.
