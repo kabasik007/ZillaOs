@@ -11,7 +11,7 @@ installer. Root filesystem and settings persistence are still missing.
 Ubuntu Installer Lab new-only RAW (in WSL HOME)
   -> independent GPT + FAT32 + staged EFI-file validation
   -> qemu-img exports a NEW sparse VMDK
-  -> qemu-img validates generated VMDK geometry
+  -> qemu-img compares all logical RAW/VMDK contents, checks geometry
   -> Windows PowerShell generates a NEW isolated VMware .vmx
   -> VMware Workstation UEFI loads from VMDK, without ISO
 ~~~
@@ -67,13 +67,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\vmware_install
 ~~~
 
 The script calls the WSL exporter after independent image validation.
-It refuses to overwrite the VM folder or existing VMDK. It builds:
+It refuses to overwrite the VM folder or existing VMDK. After
+conversion, qemu-img compare must confirm the complete logical content
+of the new VMDK is identical to the RAW source; allocation/sparseness
+may differ, but sector contents cannot. It builds:
 
 ~~~
 M:\projects\ZillaOs\build\vmware-installed\ZillaOS-Installed-Test\
     zillaos-installed.vmdk
     ZillaOS-Installed-Test.vmx
     disk-info.json
+    disk-compare.log
     zillaos-installed-com1.log       (appears when guest writes serial)
 ~~~
 
