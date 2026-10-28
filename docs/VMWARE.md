@@ -131,13 +131,13 @@ Limine's UEFI El Torito boot image.
 ## First-launch Zilla Setup screen
 
 The `demo` ISO now displays an **interactive setup wizard before the desktop**.
-Press **Enter eight times** to accept defaults and reach Desktop, or use
+Press **Enter nine times** to accept defaults and reach Desktop, or use
 arrows/Tab to change selections, Esc to go back, and Backspace/ASCII typing
 on the device-name screen. Supported steps: Welcome, Language, Region,
 Time Zone, PC name, Theme, Review. Default: Ukrainian, Ukraine,
 Europe/Kyiv, `zilla-pc`, dark mode.
-The prototype now displays **eight Setup steps**, including a read-only
-Storage inventory which may list the virtual SATA/AHCI controller backing
+The prototype now displays **nine Setup steps**, including a read-only
+Storage inventory and an installation prerequisite overview; inventory may list the virtual SATA/AHCI controller backing
 the boot CD-ROM. This is NOT a detected installation disk. Installation
 is disabled; there is no block driver. See [STORAGE.md](STORAGE.md).
 
@@ -164,7 +164,7 @@ ZILLAOS_MEMORY_READY
 ZILLAOS_BOOT_OK
 ZILLAOS_DEMO_READY
 ZILLAOS_SETUP_READY
-# Eight interactive setup screens, then:
+# Nine interactive setup screens, then:
 ZILLAOS_SETUP_COMPLETE
 ZILLAOS_SETUP_VOLATILE_ONLY
 ZILLAOS_DESKTOP_READY
