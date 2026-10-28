@@ -111,15 +111,22 @@ pub fn inspect_primary_gpt(
         return Err(GptError::InvalidProtectiveMbr);
     }
     let mut protective = 0usize;
+    let protected_sectors = if total_sectors - 1 > u32::MAX as u64 {
+        u32::MAX
+    } else {
+        (total_sectors - 1) as u32
+    };
     for slot in 0..4 {
         let base = 446 + slot * 16;
         let kind = buffer[base + 4];
         if kind == 0xee {
-            if le32(&buffer, base + 8) != 1 {
+            if le32(&buffer, base + 8) != 1 ||
+                le32(&buffer, base + 12) != protected_sectors
+            {
                 return Err(GptError::InvalidProtectiveMbr);
             }
             protective += 1;
-        } else if kind != 0 {
+        } else if kind != 0 || buffer[base..base + 16].iter().any(|b| *b != 0) {
             return Err(GptError::HybridMbr);
         }
     }
@@ -136,7 +143,8 @@ pub fn inspect_primary_gpt(
     }
     let header_size = le32(&buffer, 12) as usize;
     if header_size < GPT_HEADER_MIN || header_size > block ||
-        le32(&buffer, 20) != 0
+        le32(&buffer, 20) != 0 ||
+        buffer[header_size..block].iter().any(|b| *b != 0)
     {
         return Err(GptError::BadHeaderSize);
     }
@@ -166,8 +174,7 @@ pub fn inspect_primary_gpt(
     let entry_count = le32(&buffer, 80);
     let entry_size = le32(&buffer, 84) as usize;
     let expected_table_crc = le32(&buffer, 88);
-    if entry_count == 0 || entry_count > MAX_ENTRIES ||
-        entry_size != PARTITION_ENTRY_SIZE
+    if entry_count != MAX_ENTRIES || entry_size != PARTITION_ENTRY_SIZE
     {
         return Err(GptError::UnsupportedEntryLayout);
     }
@@ -211,6 +218,9 @@ pub fn inspect_primary_gpt(
         for offset in (0..take).step_by(PARTITION_ENTRY_SIZE) {
             let entry = &buffer[offset..offset + PARTITION_ENTRY_SIZE];
             if entry[..16] == [0u8; 16] {
+                if entry.iter().any(|b| *b != 0) {
+                    return Err(GptError::InvalidPartition);
+                }
                 continue;
             }
             let first = le64(entry, 32);
@@ -347,6 +357,27 @@ mod tests {
         image = sample_gpt(512);
         image[512] = b'X';
         assert_eq!(inspect(&image, 512), Err(GptError::BadSignature));
+    }
+
+    #[test]
+    fn protective_mbr_must_cover_the_disk_and_reject_stale_slots() {
+        let mut image = sample_gpt(512);
+        put32(&mut image, 446 + 12, 7);
+        assert_eq!(inspect(&image, 512), Err(GptError::InvalidProtectiveMbr));
+        image = sample_gpt(512);
+        image[462 + 1] = 1;
+        assert_eq!(inspect(&image, 512), Err(GptError::HybridMbr));
+    }
+
+    #[test]
+    fn nonzero_unused_entry_and_header_padding_are_rejected() {
+        let mut image = sample_gpt(512);
+        image[1024 + 2 * 128 + 20] = 1;
+        rechecksum(&mut image, 512);
+        assert_eq!(inspect(&image, 512), Err(GptError::InvalidPartition));
+        image = sample_gpt(512);
+        image[512 + 93] = 1;
+        assert_eq!(inspect(&image, 512), Err(GptError::BadHeaderSize));
     }
 
     #[test]
