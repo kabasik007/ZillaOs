@@ -4,6 +4,14 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### Windows ISO Builder — one-click WSL2 + VMware development workflow
+
+- Added `ZillaOS-Windows.cmd`: double-clickable Windows menu for Doctor, explicit Setup, Build ISO, Build+Run VMware, Run existing ISO, output-folder and QEMU smoke.
+- Added `scripts/windows.ps1`: WSL Ubuntu orchestrator for existing `build_vmware.sh` + pinned Rust, Limine/xorriso ISO output; copies verified artifact to `dist/ZillaOS-Desktop-UEFI.iso` with SHA-256 readback, and launches existing ISO-only VMware VM.
+- Added `scripts/windows_wsl_setup.sh` with read-only `--check` or explicitly authorized apt/rustup install (Rust 1.90.0 and x86_64-unknown-none), optional QEMU/OVMF/mtools.
+- Added `tests/test_windows_entrypoint.py` for Bash syntax, invalid-argument refusals, Windows menu routing, build artifact hash and Limine/EFI ISO invariants; manual CI optionally parses PowerShell AST if `pwsh` is installed.
+- Windows/WSL/VMware runtime **not verified**. See [WINDOWS_ISO.md](WINDOWS_ISO.md). The ISO is only a graphical preview, not a physical-disk installer.
+
 ### Installer V2.6 — fixed nine-step QEMU wizard and no-ISO GUI disk boot
 
 - Fixed a **real regression**: `desktop_smoke.py` had `range(1, 8)` despite the nine-step wizard and nine-step completion assertion. Now a single `setup_transition_steps()` function covers all nine transitions; host regression test locks the count.
