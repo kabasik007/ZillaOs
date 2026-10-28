@@ -173,8 +173,8 @@ impl Screen {
             self.text("Z", g.x + 39, g.y + 37, 3, 0x0c2130);
             self.text("ZILLA OS", g.x + 78, g.y + 40, 2, 0xeaf8ff);
             self.text("FIRST RUN", g.x + 30, g.y + 105, 2, 0x76a0b8);
-            for step in 0..8usize {
-                let top = g.y + 155 + step * 46;
+            for step in 0..9usize {
+                let top = g.y + 155 + step * 43;
                 let (name, done) = match step {
                     0 => ("START", wizard.step.index() > 0),
                     1 => ("LANGUAGE", wizard.step.index() > 1),
@@ -183,13 +183,14 @@ impl Screen {
                     4 => ("DEVICE", wizard.step.index() > 4),
                     5 => ("THEME", wizard.step.index() > 5),
                     6 => ("STORAGE", wizard.step.index() > 6),
-                    _ => ("FINISH", wizard.step.index() > 7),
+                    7 => ("INSTALL", wizard.step.index() > 7),
+                    _ => ("FINISH", wizard.step.index() > 8),
                 };
                 if top + 23 >= g.y + g.height - 24 { break; }
                 let active = wizard.step.index() == step;
                 self.round_rect(g.x + 26, top, 25, 25, 8,
                                 if active { accent } else if done { 0x265f67 } else { 0x294056 });
-                let digit = match step {0=>"1",1=>"2",2=>"3",3=>"4",4=>"5",5=>"6",6=>"7",_=>"8"};
+                let digit = match step {0=>"1",1=>"2",2=>"3",3=>"4",4=>"5",5=>"6",6=>"7",7=>"8",_=>"9"};
                 self.text(digit, g.x + 35, top + 8, 1, if active { 0x102032 } else { 0xb8dbe3 });
                 self.text(name, g.x + 65, top + 9, 1,
                           if active { 0xffffff } else { 0x91b0c4 });
@@ -205,7 +206,7 @@ impl Screen {
         if g.height > 300 {
             self.round_rect(bx, by + 59, g.body_width, 4, 2, soft);
             self.round_rect(bx, by + 59,
-                g.body_width * wizard.step.index().min(8) / 8, 4, 2, accent);
+                g.body_width * wizard.step.index().min(9) / 9, 4, 2, accent);
         }
         let (uk_title, en_title, uk_sub, en_sub) = match wizard.step {
             Step::Welcome => (
@@ -242,6 +243,11 @@ impl Screen {
                 "НАКОПИЧУВАЧІ", "STORAGE DISCOVERY",
                 "ПОКИ ТІЛЬКИ КОНТРОЛЕРИ PCI",
                 "PCI CONTROLLERS ONLY - NO DISK ACCESS",
+            ),
+            Step::InstallPlan => (
+                "ПЛАН ВСТАНОВЛЕННЯ", "INSTALLATION PLAN",
+                "БЕЗПЕЧНИЙ ОГЛЯД - ЗАПИС ВИМКНЕНО",
+                "READ ONLY PREVIEW - WRITES DISABLED",
             ),
             Step::Review | Step::Finished => (
                 "УСЕ ГОТОВО", "READY TO START",
@@ -352,6 +358,36 @@ impl Screen {
                     self.rectangle(bx, bottom, 4, 47, 0xe3a862);
                     self.text("DISKS NOT VERIFIED", bx + 15, bottom + 5, 1, fg);
                     self.text("INSTALLATION DISABLED", bx + 15, bottom + 26, 1, 0xe3a862);
+                }
+            }
+            Step::InstallPlan => {
+                // The guest has no disk driver. This page visualizes missing
+                // prerequisites; it NEVER suggests a real target was selected.
+                let stages = [
+                    ("01  PCI CONTROLLERS", "SCANNED"),
+                    ("02  DISK IDENTIFICATION", "LOCKED"),
+                    ("03  GPT AND FILESYSTEM", "LOCKED"),
+                    ("04  EFI BOOT INSTALL", "LOCKED"),
+                ];
+                for (i, (title, status)) in stages.iter().enumerate() {
+                    let y = g.option_y + i * g.option_gap;
+                    if y + g.option_height >= g.footer_y { break; }
+                    self.round_rect(bx, y, g.body_width, g.option_height, 11, soft);
+                    self.round_rect(bx + 12, y + 12, 22, 22, 8,
+                                    if i == 0 { 0x18746b } else { 0x5b5364 });
+                    self.text(if i == 0 { "+" } else { "X" },
+                              bx + 20, y + 20, 1, fg);
+                    self.text(title, bx + 43, y + 13, 1, fg);
+                    if g.body_width >= 430 {
+                        self.text(status, bx + g.body_width.saturating_sub(69),
+                                  y + 28, 1, if i == 0 { accent } else { 0xea9f7a });
+                    }
+                }
+                let bottom = g.footer_y.saturating_sub(54);
+                if bottom > g.option_y + 112 {
+                    self.rectangle(bx, bottom, 4, 38, 0xe3a862);
+                    self.text("NO VERIFIED DISK", bx + 15, bottom + 4, 1, fg);
+                    self.text("INSTALL ACTION DISABLED", bx + 15, bottom + 23, 1, 0xe3a862);
                 }
             }
             Step::Review => {
