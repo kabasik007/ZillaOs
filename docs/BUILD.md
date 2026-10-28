@@ -92,6 +92,19 @@ pointing to that ISO. The VM has no virtual disk or network. See
 [VMWARE.md](VMWARE.md) for exact commands, COM1 logs and troubleshooting.
 Neither VMware boot nor graphical behavior is verified yet.
 
+### Windows — new one-click build
+
+From the Windows repository root, double-click
+[`ZillaOS-Windows.cmd`](../ZillaOS-Windows.cmd). Choose **2** for
+Ubuntu/WSL dependency + pinned Rust installation (explicit opt-in),
+**3** to compile the kernel and generate an ISO with `xorriso`,
+or **4** to build and open VMware. No ISO can be created without a
+successful Rust/Limine build. A verified, user-friendly copy is
+`dist/ZillaOS-Desktop-UEFI.iso`; the original
+`dist/zillaos-0.0.2-dev-demo-uefi.iso` is retained.
+See [WINDOWS_ISO.md](WINDOWS_ISO.md). The wrapper has not been
+executed in an actual Windows workstation in this environment.
+
 ### Windows
 
 For initial development use Ubuntu under **WSL2** for ISO build scripting; see [Windows + Linux VM Quickstart](VM.md).
