@@ -74,7 +74,7 @@ ZillaOS now contains a **source-level experimental desktop shell** for the QEMU 
 - [Zilla Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) — immediate framebuffer renderer, input, state, limitations.
 - [Zilla Desktop roadmap](docs/DESKTOP_ROADMAP.md) — from QEMU prototype to user-mode compositor and apps.
 - [PS/2 mouse bootstrap](docs/MOUSE.md) — mouse protocol, QEMU pointer interactions, tests and caveats.
-- [Read-only GPT parser](docs/GPT.md) — CRC-checked primary partition-table verification with synthetic Rust tests and no disk writes.
+- [Read-only GPT parser](docs/GPT.md) — CRC-checked primary and backup GPT verification with synthetic Rust tests and no disk writes.
 - [Passive PCI storage discovery](docs/STORAGE.md) — VMware/QEMU storage-controller inventory, no disk operations and read-only wizard.
 - [Read-only installer plan](docs/INSTALLATION.md) — future GPT/EFI partition proposal with no disk access or writes.
 - [Zilla first-run setup (OOBE)](docs/SETUP.md) — multilingual configuration screens, device name, timezone and RAM-only limitation.
