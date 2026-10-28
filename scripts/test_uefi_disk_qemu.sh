@@ -53,6 +53,11 @@ TMP="$(mktemp -d)"
 trap 'rm -rf -- "$TMP"' EXIT
 cp -- "$VARS" "$TMP/OVMF_VARS.fd"
 SERIAL="$ROOT/build/logs/installer-uefi-disk-serial.log"
+# Never let a prior successful boot log masquerade as the current run.
+# Preserve historical logs by giving each subsequent boot a unique name.
+if [[ -e "$SERIAL" || -L "$SERIAL" ]]; then
+    SERIAL="$ROOT/build/logs/installer-uefi-disk-serial-$(date +%s%N).log"
+fi
 echo "Launching READ-ONLY UEFI disk: $IMAGE"
 echo "Serial log: $SERIAL"
 echo "No ISO. No host disk passthrough. OVMF variable changes are temporary."
