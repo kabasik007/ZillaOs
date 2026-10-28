@@ -4,6 +4,12 @@
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
 
+### GPT primary + backup cross-verification
+
+- Added `inspect_complete_gpt()` to the read-only Rust GPT library. It checks final-LBA backup header CRC/identity/LBA geometry and independently validates the backup partition-array CRC against the already validated primary array.
+- Added synthetic test cases for missing and corrupted backup headers, damaged backup sectors, relocated arrays and alternate but independently CRC-valid backup table content.
+- No disk driver, installation writes or real device access introduced. Rust compilation and QEMU/VMware integration remain unverified.
+
 ### Read-only primary GPT validation library
 
 - Added `src/gpt.rs`, a fixed-memory `no_std` verifier for protective MBR, GPT primary header (including CRC32), GPT partition-array CRC, 512/4096-byte logical sectors and bounded nonoverlapping partition geometry.
