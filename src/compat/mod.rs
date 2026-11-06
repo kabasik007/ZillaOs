@@ -1,10 +1,11 @@
-pub mod windows_pe;
 //! Future multi-platform executable routing for ZillaOS.
 //!
 //! This module parses only minimal file signatures. It never executes code,
 //! loads libraries, mounts archives, or claims binary compatibility.
 //! Native processes, Linux ABI, Win32, Android and console emulation require
 //! separate isolated backends. A header alone cannot identify the guest ABI.
+
+pub mod windows_pe;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutableFormat {
