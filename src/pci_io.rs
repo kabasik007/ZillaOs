@@ -42,5 +42,59 @@ pub fn inventory() -> StorageInventory {
 /// Read-only PCI video identification; does not enable the SVGA FIFO,
 /// map GPU BARs, change a mode or issue any accelerated commands.
 pub fn video_adapter() -> zillaos_kernel::video::VideoAdapter {
-    zillaos_kernel::video::probe_pci_video(read_config)
+    use zillaos_kernel::video::gpu::vmware_svga;
+
+    let adapter = zillaos_kernel::video::probe_pci_video(read_config);
+    // One read-only probe per desktop boot; failure does not touch GOP.
+    match vmware_svga::probe(read_config, read_svga_register) {
+        Ok(Some(info)) => {
+            serial_probe_hex("ZILLAOS_SVGA_ID_HEX=", info.registers.interface_id as u64);
+            serial_probe_hex("ZILLAOS_SVGA_MAX_WIDTH_HEX=", info.registers.max_width as u64);
+            serial_probe_hex("ZILLAOS_SVGA_MAX_HEIGHT_HEX=", info.registers.max_height as u64);
+            serial_probe_hex("ZILLAOS_SVGA_VRAM_BYTES_HEX=", info.registers.vram_bytes as u64);
+            serial_probe_hex("ZILLAOS_SVGA_FB_BYTES_HEX=", info.registers.framebuffer_bytes as u64);
+            if let Some(bytes) = info.registers.fifo_bytes {
+                serial_probe_hex("ZILLAOS_SVGA_FIFO_BYTES_HEX=", bytes as u64);
+            }
+            if let Some(caps) = info.registers.capability_bits {
+                serial_probe_hex("ZILLAOS_SVGA_CAPABILITIES_HEX=", caps as u64);
+            }
+            crate::serial::write("ZILLAOS_SVGA_PROBE=READ_ONLY_OK\n");
+        }
+        Ok(None) => crate::serial::write("ZILLAOS_SVGA_PROBE=NO_DEVICE\n"),
+        Err(error) => {
+            crate::serial::write("ZILLAOS_SVGA_PROBE=FALLBACK_");
+            crate::serial::write(error.label());
+            crate::serial::write("\n");
+        }
+    }
+    adapter
+}
+fn serial_probe_hex(name: &str, number: u64) {
+    crate::serial::write(name);
+    crate::serial::write_hex(number);
+    crate::serial::write("\n");
+}
+/// Only SVGA INDEX I/O selector is written, SVGA VALUE is read-only.
+/// SAFETY: probe validates PCI BAR0 type, port range, decoder enable and
+/// device identity before this routine is called. Single-core VM boot owns
+/// access to both ports; no concurrency or reentrant SVGA access exists.
+/// No PCI config or SVGA register value writes, MMIO, DMA or FIFO commands.
+fn read_svga_register(base: u16, index: u32) -> u32 {
+    let result: u32;
+    unsafe {
+        asm!(
+            "out dx, eax",
+            in("dx") base,
+            in("eax") index,
+            options(nomem, nostack, preserves_flags)
+        );
+        asm!(
+            "in eax, dx",
+            in("dx") (base + 1),
+            out("eax") result,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
+    result
 }

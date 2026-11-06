@@ -3,6 +3,10 @@
 //! The framebuffer remains the Limine/UEFI mode; accelerated draw and
 //! runtime resolution changes are NOT implemented.
 use crate::storage_pci::PciLocation;
+ 
+// Hardware-specific code is separate from raster, Desktop and WindowManager.
+#[path = "../drivers/gpu/mod.rs"]
+pub mod gpu;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VideoAdapter {
