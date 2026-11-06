@@ -16,6 +16,7 @@ pub mod setup;
 pub mod locale;
 pub mod fs;
 pub mod shell;
+pub mod apps;
 pub mod install_plan;
 pub mod storage_pci;
 pub mod gpt;
