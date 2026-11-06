@@ -49,6 +49,23 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result['uefi_loader']['subsystem'],'EFI application')
         self.assertEqual(result['kernel']['load_segments'],1)
 
+    def test_boot_menu_validates_real_video_modes_and_all_paths(self):
+        root = Path(__file__).resolve().parents[1]
+        source = (root / 'boot/limine.conf').read_text(encoding='utf-8')
+        config = source.replace('boot():/boot/zillaos-kernel',
+                                'boot():/boot/kernel.elf').encode('utf-8')
+        assert source.count('boot():/boot/zillaos-kernel') == 4
+        info = validate_limine_config(config)
+        self.assertEqual(info['protocol'], 'limine')
+        for mode in ('800x600x32', '1024x768x32', '1280x800x32'):
+            self.assertIn(mode, source)
+        with self.assertRaisesRegex(BootAssetError, 'resolution'):
+            validate_limine_config(config.replace(b'1280x800x32',
+                                                   b'1920x1080x32'))
+        with self.assertRaisesRegex(BootAssetError, 'path mismatch'):
+            validate_limine_config(config.replace(
+                b'boot():/boot/kernel.elf', b'boot():/boot/wrong.elf', 1))
+
     def test_reject_bare_mz(self):
         with self.assertRaises(BootAssetError): validate_pe_uefi_x64(b'MZBOOT')
 
