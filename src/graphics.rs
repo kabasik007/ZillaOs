@@ -836,7 +836,7 @@ impl Screen {
     fn key_legend(&self, state: &Desktop, layout: &Layout) {
         if layout.width < 730 || layout.height < 460 { return; }
         let fg = if state.dark { 0xa5c7d8 } else { 0x244d64 };
-        self.text("F1 MENU  F2 FILES  F3 TERM  F4 SETTINGS  F5 THEME  F8 LANG  F9 DESKTOP",
+        self.text("F1 START F2 FILES F3 TERM F4 SETTINGS F5 THEME F8 LANG F9 DESKTOP F10 APPS",
                   22, layout.height.saturating_sub(12), 1, fg);
         if layout.height >= 600 && layout.width >= 820 {
             self.text("ARROWS MOVE  SHIFT ARROWS RESIZE",
