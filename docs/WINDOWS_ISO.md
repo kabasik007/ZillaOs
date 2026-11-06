@@ -1,10 +1,11 @@
 # ZillaOS — Windows: ISO за декілька кліків
 
-**Стан: 6 листопада 2026 року.** Усі Windows-скрипти зберігаються в
-репозиторії, але збірка Windows/WSL/VMware **ще не була повторно фактично запущена після виправлення WSL-шляхів**
-в середовищі асистента. Після першої збірки треба перевірити результат
-і COM1-журнал. Це експериментальна система з графічним Setup і Desktop,
-**не готовий інсталятор на фізичний диск**.
+**Стан: 6 листопада 2026 року.** Користувацький лог Windows/WSL підтвердив
+успішне виконання 120 Python-тестів і 95 Rust-тестів, генерацію UEFI ISO
+(~8,04 МБ), перевірку Limine/ELF/EFI та SHA-256. Конфігурація VMware VMX
+також згенерована; **фактичне завантаження у VMware залишається неперевіреним**.
+ZillaOS поки що є експериментальною системою з графічним Setup і Desktop,
+**не готовим інсталятором на фізичний диск**.
 
 ## Чим створюємо ISO?
 
@@ -72,6 +73,26 @@ M:\projects\ZillaOs\
 
 **Setup — явна дія:** пункти збірки й запуску не встановлюють
 залежностей приховано.
+
+### VMware не запустився автоматично, але ISO вже готовий
+
+Якщо BuildRun завершується повідомленням `VMware executable not located`,
+це означає, що ISO і `ZillaOS.vmx` могли бути успішно створені, проте
+Windows-скрипт не знайшов VMware Workstation. Після оновлення `main`
+скрипт шукає `vmware.exe` також у `Program Files (x86)` і `bin`.
+
+Повторно компілювати Rust чи генерувати ISO **не потрібно**:
+
+```powershell
+cd M:\projects\ZillaOs
+git pull origin main
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action Run
+```
+
+Якщо VMware установлений в нестандартну папку, відкрий у VMware Workstation
+`M:\projects\ZillaOs\build\vmware\ZillaOS\ZillaOS.vmx` через
+`File → Open`, а потім `Power on`. Це тестова UEFI VM лише з ISO;
+фізичні диски не підключаються.
 
 ## 3. Один рядок без меню (Windows PowerShell)
 
