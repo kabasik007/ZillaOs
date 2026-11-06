@@ -58,6 +58,20 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn('ISO copy verification failed', source)
         self.assertIn('"vmware.ps1"', source)
 
+    def test_crlf_checkout_is_detected_and_repaired_without_mutating_source(self):
+        attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+        self.assertIn("*.sh text eol=lf", attributes)
+        self.assertIn("boot/limine.conf text eol=lf", attributes)
+        helper = (ROOT / "scripts/windows_line_endings.ps1").read_text(encoding="utf-8")
+        self.assertIn("function Get-ZillaCrFiles", helper)
+        self.assertIn("function Repair-ZillaStagedText", helper)
+        self.assertIn('[IO.File]::WriteAllText($path, $normalized', helper)
+        source = PS.read_text(encoding="utf-8")
+        self.assertIn('"windows_line_endings.ps1"', source)
+        self.assertIn("Get-ZillaCrFiles $RepoRoot", source)
+        self.assertIn("Repair-ZillaStagedText $stage", source)
+        self.assertIn('New-StagedWorkspace -Reason "Linux scripts need LF line endings"', source)
+
     def test_vmware_optional_build_uses_same_wsl_entrypoint(self):
         source = (ROOT / "scripts/vmware.ps1").read_text(encoding="utf-8")
         self.assertIn('"windows.ps1") -Action Build', source)
