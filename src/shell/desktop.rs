@@ -2,7 +2,10 @@
 //! Real processes and IPC-backed application surfaces are a later milestone.
 
 use crate::mouse::MousePacket;
-use crate::fs::Browser;
+use crate::fs::{self, Browser};
+use crate::fs::ramfs::{RamFs, DOCUMENTS_DIR};
+use crate::apps::notepad::Notepad;
+use crate::apps::notepad_ui::{editor_action, EditorAction};
 use crate::shell::clock::ClockTime;
 use crate::shell::desktop_icons::DesktopIcons;
 use crate::shell::start_menu;
@@ -21,6 +24,9 @@ pub enum Key {
     Terminal,
     Settings,
     AppCenter,
+    Notepad,
+    SaveDocument,
+    NewDocument,
     ToggleTheme,
     CycleLanguage,
     ShowDesktop,
@@ -101,6 +107,8 @@ pub struct Desktop {
     pub timezone: TimeZone,
     pub pointer: Pointer,
     pub files: Browser,
+    pub ramfs: RamFs,
+    pub notepad: Notepad,
     pub icons: DesktopIcons,
     pub clock: Option<ClockTime>,
     layout: Layout,
@@ -126,6 +134,8 @@ impl Desktop {
         Self {
             windows: WindowManager::new(layout),
             files: Browser::new(),
+            ramfs: RamFs::new(),
+            notepad: Notepad::new(),
             icons: DesktopIcons::new(layout),
             clock: None,
             hostname: DeviceName::new(),
@@ -215,7 +225,31 @@ impl Desktop {
         match files_action(rect, x, y) {
             Some(FilesAction::Home) => { self.files.home(); }
             Some(FilesAction::Up) => { self.files.up(); }
-            Some(FilesAction::OpenRow(index)) => { self.files.open_child(index); }
+            Some(FilesAction::OpenRow(index)) => {
+                let static_count = fs::child_count(self.files.current);
+                if self.files.current == DOCUMENTS_DIR && index >= static_count {
+                    if let Some((_, file)) = self.ramfs.nth(index - static_count) {
+                        let _ = self.notepad.open(file.name(), file.content());
+                        self.launch_app(App::Notepad);
+                    }
+                } else {
+                    self.files.open_child(index);
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn notepad_click(&mut self, rect: crate::window_manager::Rect,
+                     x: usize, y: usize) {
+        match editor_action(rect, x, y) {
+            Some(EditorAction::New) => { self.notepad.new_document(); }
+            Some(EditorAction::Save) => { let _ = self.notepad.save(&mut self.ramfs); }
+            Some(EditorAction::Documents) => {
+                self.files.current = DOCUMENTS_DIR;
+                self.files.preview_file = None;
+                self.launch_app(App::Files);
+            }
             None => {}
         }
     }
@@ -284,6 +318,8 @@ impl Desktop {
             return false;
         }
         let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons);
+        let old_note = self.notepad.revision;
+        let old_ramfs = self.ramfs.revision;
         self.pointer.x = self.pointer.x
             .saturating_add_signed(packet.dx as isize)
             .min(self.layout.width.saturating_sub(1));
@@ -339,6 +375,8 @@ impl Desktop {
                     if let Some(chosen) = app_center::app_row_at(rect, x, y) {
                         self.launch_app(chosen);
                     }
+                } else if app == App::Notepad {
+                    self.notepad_click(rect, x, y);
                 }
             } else if let Some(app) = Self::desktop_shortcut_at(self.layout, x, y) {
                 self.launch_app(app);
@@ -360,7 +398,8 @@ impl Desktop {
             }
         }
         self.pointer.left = packet.left;
-        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons);
+        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons)
+            || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -370,14 +409,17 @@ impl Desktop {
     /// Return true only when a state transition changes the visible desktop.
     pub fn handle(&mut self, key: Key) -> bool {
         let before = (self.windows, self.launcher, self.dark, self.language, self.files);
+        let old_note = self.notepad.revision;
+        let old_ramfs = self.ramfs.revision;
         match key {
             Key::Launcher => self.launcher = !self.launcher,
-            Key::Files | Key::Terminal | Key::Settings | Key::AppCenter => {
+            Key::Files | Key::Terminal | Key::Settings | Key::AppCenter | Key::Notepad => {
                 let app = match key {
                     Key::Files => App::Files,
                     Key::Terminal => App::Terminal,
                     Key::Settings => App::Settings,
                     Key::AppCenter => App::AppCenter,
+                    Key::Notepad => App::Notepad,
                     _ => unreachable!(),
                 };
                 self.launch_app(app);
@@ -392,10 +434,33 @@ impl Desktop {
             }
             Key::Minimize => self.windows.minimize_focused(),
             Key::Maximize => self.windows.toggle_maximize(),
+            Key::Move(direction) if self.active() == Some(App::Notepad) => {
+                match direction {
+                    Move::Left => { self.notepad.move_left(); }
+                    Move::Right => { self.notepad.move_right(); }
+                    _ => {}
+                }
+            }
             Key::Move(direction) => self.windows.translate_focused(direction),
             Key::Resize(direction) => self.windows.resize_focused(direction),
-            Key::Backspace if self.active() == Some(App::Files) => { self.files.up(); },
-            Key::Confirm | Key::Backspace | Key::Text(_) => {}
+            Key::SaveDocument if self.active() == Some(App::Notepad) => {
+                let _ = self.notepad.save(&mut self.ramfs);
+            }
+            Key::NewDocument if self.active() == Some(App::Notepad) => {
+                self.notepad.new_document();
+            }
+            Key::Text(ch) if self.active() == Some(App::Notepad) => {
+                self.notepad.insert(ch);
+            }
+            Key::Confirm if self.active() == Some(App::Notepad) => {
+                self.notepad.insert(b'\n');
+            }
+            Key::Backspace if self.active() == Some(App::Notepad) => {
+                self.notepad.backspace();
+            }
+            Key::Backspace if self.active() == Some(App::Files) => { self.files.up(); }
+            Key::SaveDocument | Key::NewDocument | Key::Confirm |
+            Key::Backspace | Key::Text(_) => {}
             Key::Escape => {
                 if self.launcher {
                     self.launcher = false;
@@ -404,7 +469,8 @@ impl Desktop {
                 }
             }
         }
-        let changed = before != (self.windows, self.launcher, self.dark, self.language, self.files);
+        let changed = before != (self.windows, self.launcher, self.dark, self.language, self.files)
+            || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -417,6 +483,7 @@ impl Desktop {
 pub struct ScancodeDecoder {
     extended: bool,
     shift: bool,
+    ctrl: bool,
 }
 
 impl Default for ScancodeDecoder {
@@ -430,6 +497,7 @@ impl ScancodeDecoder {
         Self {
             extended: false,
             shift: false,
+            ctrl: false,
         }
     }
 
@@ -444,6 +512,16 @@ impl ScancodeDecoder {
         }
         if !self.extended && (code == 0xaa || code == 0xb6) {
             self.shift = false;
+            return None;
+        }
+        if code == 0x1d {
+            self.ctrl = true;
+            self.extended = false;
+            return None;
+        }
+        if code == 0x9d {
+            self.ctrl = false;
+            self.extended = false;
             return None;
         }
         let extended = self.extended;
@@ -469,6 +547,7 @@ impl ScancodeDecoder {
             });
         }
 
+        if self.ctrl && code == 0x1f { return Some(Key::SaveDocument); } // Ctrl+S
         match code {
             0x3b => Some(Key::Launcher),     // F1
             0x3c => Some(Key::Files),        // F2
@@ -480,6 +559,8 @@ impl ScancodeDecoder {
             0x42 => Some(Key::CycleLanguage), // F8
             0x43 => Some(Key::ShowDesktop),   // F9
             0x44 => Some(Key::AppCenter),      // F10
+            0x57 => Some(Key::SaveDocument),  // F11
+            0x58 => Some(Key::NewDocument),   // F12
             0x0f => Some(Key::NextApp),      // Tab
             0x01 => Some(Key::Escape),       // Escape
             0x1c => Some(Key::Confirm),      // Enter
@@ -489,20 +570,33 @@ impl ScancodeDecoder {
             // layout may differ, so this is NOT a full international IME.
             0x02..=0x0b => {
                 let digits = *b"1234567890";
-                Some(Key::Text(digits[(code - 0x02) as usize]))
+                let shifted = *b"!@#$%^&*()";
+                Some(Key::Text(if self.shift { shifted[(code - 0x02) as usize] }
+                               else { digits[(code - 0x02) as usize] }))
             }
-            0x0c => Some(Key::Text(b'-')),
+            0x0c => Some(Key::Text(if self.shift { b'_' } else { b'-' })),
+            0x0d => Some(Key::Text(if self.shift { b'+' } else { b'=' })),
+            0x39 => Some(Key::Text(b' ')),
+            0x1a => Some(Key::Text(if self.shift { b'{' } else { b'[' })),
+            0x1b => Some(Key::Text(if self.shift { b'}' } else { b']' })),
+            0x27 => Some(Key::Text(if self.shift { b':' } else { b';' })),
+            0x28 => Some(Key::Text(if self.shift { b'"' } else { b'\'' })),
+            0x29 => Some(Key::Text(if self.shift { b'~' } else { b'`' })),
+            0x2b => Some(Key::Text(if self.shift { b'|' } else { b'\\' })),
+            0x33 => Some(Key::Text(if self.shift { b'<' } else { b',' })),
+            0x34 => Some(Key::Text(if self.shift { b'>' } else { b'.' })),
+            0x35 => Some(Key::Text(if self.shift { b'?' } else { b'/' })),
             0x10..=0x19 => {
                 let letters = *b"qwertyuiop";
-                Some(Key::Text(letters[(code - 0x10) as usize]))
+                Some(Key::Text(if self.shift { letters[(code - 0x10) as usize].to_ascii_uppercase() } else { letters[(code - 0x10) as usize] }))
             }
             0x1e..=0x26 => {
                 let letters = *b"asdfghjkl";
-                Some(Key::Text(letters[(code - 0x1e) as usize]))
+                Some(Key::Text(if self.shift { letters[(code - 0x1e) as usize].to_ascii_uppercase() } else { letters[(code - 0x1e) as usize] }))
             }
             0x2c..=0x32 => {
                 let letters = *b"zxcvbnm";
-                Some(Key::Text(letters[(code - 0x2c) as usize]))
+                Some(Key::Text(if self.shift { letters[(code - 0x2c) as usize].to_ascii_uppercase() } else { letters[(code - 0x2c) as usize] }))
             }
             _ => None,
         }
@@ -511,6 +605,7 @@ impl ScancodeDecoder {
     pub fn reset(&mut self) {
         self.extended = false;
         self.shift = false;
+        self.ctrl = false;
     }
 }
 
@@ -551,6 +646,8 @@ mod tests {
         assert_eq!(decoder.feed(0x42), Some(Key::CycleLanguage));
         assert_eq!(decoder.feed(0x43), Some(Key::ShowDesktop));
         assert_eq!(decoder.feed(0x44), Some(Key::AppCenter));
+        assert_eq!(decoder.feed(0x57), Some(Key::SaveDocument));
+        assert_eq!(decoder.feed(0x58), Some(Key::NewDocument));
         assert_eq!(decoder.feed(0x0f), Some(Key::NextApp));
         assert_eq!(decoder.feed(0x01), Some(Key::Escape));
         assert_eq!(decoder.feed(0xe0), None);
@@ -681,6 +778,44 @@ mod tests {
         state.pointer.y = 19;
         assert!(state.handle_mouse(test_packet(0, 0, true)));
         assert!(state.launcher);
+    }
+
+    #[test]
+    fn notepad_keyboard_saves_and_files_reopen_edited_document() {
+        let mut state = Desktop::new();
+        assert!(state.handle(Key::Notepad));
+        assert!(state.handle(Key::Text(b'H')));
+        assert!(state.handle(Key::Text(b'i')));
+        assert!(state.handle(Key::Confirm));
+        assert!(state.handle(Key::SaveDocument));
+        assert_eq!(state.ramfs.len(), 1);
+        assert_eq!(state.ramfs.nth(0).unwrap().1.content(), b"Hi\n");
+        state.handle(Key::NewDocument);
+        assert_eq!(state.notepad.filename(), "NOTE02.TXT");
+        state.files.current = DOCUMENTS_DIR;
+        state.enable_pointer();
+        let rect = state.windows.rect(App::Files);
+        state.launch_app(App::Files);
+        let cx = rect.x + (rect.width / 4).clamp(70, 170) + 38;
+        state.pointer.x = cx;
+        state.pointer.y = rect.y + 45 + 8 + 42 + 47 + 12;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(state.active(), Some(App::Notepad));
+        assert_eq!(state.notepad.content(), "Hi\n");
+        assert_eq!(state.notepad.filename(), "NOTE01.TXT");
+    }
+
+    #[test]
+    fn ps2_typing_supports_spaces_shift_punctuation_and_ctrl_s() {
+        let mut scan = ScancodeDecoder::new();
+        assert_eq!(scan.feed(0x39), Some(Key::Text(b' ')));
+        assert_eq!(scan.feed(0x34), Some(Key::Text(b'.')));
+        assert_eq!(scan.feed(0x2a), None);
+        assert_eq!(scan.feed(0x1e), Some(Key::Text(b'A')));
+        assert_eq!(scan.feed(0xaa), None);
+        assert_eq!(scan.feed(0x1d), None);
+        assert_eq!(scan.feed(0x1f), Some(Key::SaveDocument));
+        assert_eq!(scan.feed(0x9d), None);
     }
 
     #[test]
