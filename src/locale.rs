@@ -13,7 +13,7 @@ pub enum TextId {
 }
 
 pub const fn text(language: Language, id: TextId) -> &'static str {
-    use Language::*;
+    use crate::setup::Language::{Ukrainian, English, Russian};
     use TextId::*;
     match (language, id) {
         (Ukrainian, Desktop) => "СТІЛ", (English, Desktop) => "DESKTOP", (Russian, Desktop) => "СТОЛ",
