@@ -67,6 +67,20 @@ class VMwareProfileTests(unittest.TestCase):
         self.assertNotIn('wsl.exe -d $Distro -- bash -lc', src)
         self.assertNotIn('wslpath -a $RepoRoot', src)
 
+    def test_vmware_launcher_searches_32bit_and_64bit_install_paths(self):
+        src = PS_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("function Get-ZillaVmwareExe", src)
+        self.assertIn(r"${env:ProgramFiles(x86)}", src)
+        self.assertIn(r"$env:ProgramFiles", src)
+        self.assertIn(r"VMware\VMware Workstation\vmware.exe", src)
+        self.assertIn(r"VMware\VMware Workstation\bin\vmware.exe", src)
+        self.assertIn(r"Broadcom\VMware Workstation\bin\vmware.exe", src)
+        self.assertIn("Get-Command -Name \"vmware.exe\"", src)
+        self.assertIn("Test-Path -LiteralPath $candidate -PathType Leaf", src)
+        self.assertEqual(src.count("Open-ZillaVmware $vmxPath"), 2)
+        self.assertEqual(src.count("Start-Process -FilePath $exe"), 1)
+        self.assertNotIn("VMware executable not located.", src)
+
     def test_linux_build_wrapper_generates_demo_uefi_image(self):
         src = BUILD_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("cargo test --lib", src)
