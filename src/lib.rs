@@ -33,6 +33,7 @@ pub mod shell;
 pub mod apps;
 pub mod services;
 pub mod compat;
+pub mod loaders;
 pub mod video;
 #[path = "fs/install_plan.rs"]
 pub mod install_plan;

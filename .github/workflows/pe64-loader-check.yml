@@ -1,0 +1,30 @@
+name: ZillaOS PE64 loader validation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/loaders/**'
+      - 'src/lib.rs'
+      - 'src/compat/windows_pe.rs'
+      - 'docs/PE_LOADER.md'
+      - '.github/workflows/pe64-loader-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pe64-host-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Test PE images on host (without executing their contents)
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Compile no_std bare-metal kernel
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: Compile existing graphical kernel
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
