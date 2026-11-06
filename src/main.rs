@@ -279,6 +279,7 @@ pub extern "C" fn _start() -> ! {
         loop {
             let previous_windows = desktop.windows;
             let previous_files = desktop.files;
+            let previous_icons = desktop.icons;
             let previous_clock = desktop.clock;
             let previous_launcher = desktop.launcher;
             let previous_theme = desktop.dark;
@@ -316,6 +317,7 @@ pub extern "C" fn _start() -> ! {
                     || previous_theme != desktop.dark
                     || previous_language != desktop.language
                     || previous_files != desktop.files
+                    || previous_icons != desktop.icons
                 {
                     if previous_language != desktop.language {
                         serial::write("ZILLAOS_DESKTOP_LANGUAGE=");
@@ -339,6 +341,7 @@ pub extern "C" fn _start() -> ! {
                         || previous_theme != desktop.dark
                         || previous_language != desktop.language
                         || previous_files != desktop.files
+                        || previous_icons != desktop.icons
                         || previous_clock != desktop.clock;
                     let cursor_damage_applied = mouse_event
                         && !scene_changed
