@@ -7,8 +7,9 @@ use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::limine::{self, Framebuffer};
 use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
+use zillaos_kernel::locale::{text as tr, TextId};
 use zillaos_kernel::raster::{self, Region};
-use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language, TimeZone};
+use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
 
 // Fixed-size offscreen RGB32 surface: 1280 x 800 x 4 = 4,096,000 bytes.
@@ -113,6 +114,21 @@ impl Screen {
             };
             self.rectangle(x.saturating_add(inset), y.saturating_add(row),
                            w.saturating_sub(2 * inset), 1, rgb);
+        }
+    }
+
+    fn decimal(&self, number: usize, x: usize, y: usize, rgb: u32) {
+        let mut chars = [b'0'; 20];
+        let mut n = number;
+        let mut pos = chars.len();
+        loop {
+            pos -= 1;
+            chars[pos] = b'0' + (n % 10) as u8;
+            n /= 10;
+            if n == 0 { break; }
+        }
+        if let Ok(value) = core::str::from_utf8(&chars[pos..]) {
+            self.text(value, x, y, 1, rgb);
         }
     }
 
@@ -293,7 +309,11 @@ impl Screen {
                                         8, 8, 4, 0x0a2834);
                     }
                     let option = match wizard.step {
-                        Step::Language => if i == 0 { "УКРАЇНСЬКА" } else { "ENGLISH" },
+                        Step::Language => match i {
+                            0 => "УКРАЇНСЬКА",
+                            1 => "ENGLISH",
+                            _ => "РУССКИЙ",
+                        },
                         Step::Region => match i {
                             0 => wizard.localized("УКРАЇНА", "UKRAINE"),
                             1 => wizard.localized("ПОЛЬЩА", "POLAND"),
@@ -394,6 +414,7 @@ impl Screen {
                 let language = match wizard.language {
                     Language::Ukrainian => "UKRAINIAN",
                     Language::English => "ENGLISH",
+                    Language::Russian => "RUSSIAN",
                 };
                 let region = match wizard.region {
                     SetupRegion::Ukraine => "UKRAINE",
@@ -477,11 +498,12 @@ impl Screen {
         self.text("Z", 22, 13, 2, 0x0b2535);
         self.text("ZILLAOS", 49, 15, 2, fg);
         if layout.width >= 720 {
-            self.text(if state.language == Language::Ukrainian {
-                "СТІЛ   ФАЙЛ   ВИГЛЯД   ВІКНА"
-            } else {
-                "DESKTOP   FILE   VIEW   WINDOW"
-            }, 170, 18, 1, fg);
+            let mut menu_x = 170;
+            for label in [TextId::Desktop, TextId::File, TextId::View, TextId::Windows] {
+                let title = tr(state.language, label);
+                self.text(title, menu_x, 18, 1, fg);
+                menu_x = menu_x.saturating_add(title.chars().count() * 6 + 16);
+            }
             self.text(state.hostname.as_str(), layout.width - 155, 17, 1, fg);
         }
     }
@@ -490,8 +512,10 @@ impl Screen {
         let fg = if state.dark { 0xecfcff } else { 0x17344b };
         let small = if state.dark { 0x80adc4 } else { 0x35566d };
         if layout.width >= 660 && layout.height >= 480 {
-            self.text("MAKE SOMETHING GREAT.", 42, layout.top_bar + 46, 2, fg);
-            self.text("ZILLA DESKTOP  /  EARLY PREVIEW", 44, layout.top_bar + 75, 1, small);
+            self.text(tr(state.language, TextId::WallpaperTitle),
+                      42, layout.top_bar + 46, 2, fg);
+            self.text(tr(state.language, TextId::WallpaperSubtitle),
+                      44, layout.top_bar + 75, 1, small);
         }
     }
 
@@ -551,18 +575,14 @@ impl Screen {
         for (i, dot) in [0xfd6872, 0xffcb55, 0x45c784].iter().enumerate() {
             self.round_rect(x + 14 + i * 19, y + 13, 11, 11, 5, *dot);
         }
-        let title = if state.language == Language::Ukrainian {
-            match app {
-                App::Files => "ФАЙЛИ",
-                App::Terminal => "ТЕРМІНАЛ",
-                App::Settings => "НАЛАШТУВАННЯ",
-            }
-        } else {
-            app.label()
+        let title = match app {
+            App::Files => tr(state.language, TextId::Files),
+            App::Terminal => tr(state.language, TextId::Terminal),
+            App::Settings => tr(state.language, TextId::Settings),
         };
         self.text(title, x + 87, y + 14, if w >= 360 { 2 } else { 1 }, fg);
         if focused && w >= 310 {
-            self.text("ACTIVE", x + w.saturating_sub(70), y + 18, 1, 0x1bd5ba);
+            self.text(tr(state.language, TextId::Active), x + w.saturating_sub(70), y + 18, 1, 0x1bd5ba);
         }
 
         let body = y + bar_h + 8;
@@ -574,50 +594,72 @@ impl Screen {
         self.round_rect(x + 10, body, side_width, content_h, 9,
                         if state.dark { 0x20344c } else { 0xe7f2f8 });
         let ty = body + 15;
-        self.text("HOME", x + 19, ty, 1, secondary);
+        self.text(tr(state.language, TextId::Home), x + 19, ty, 1, secondary);
         if content_h > 105 {
-            self.text("FILES", x + 19, ty + 24, 1, fg);
-            self.text("APPS", x + 19, ty + 46, 1, fg);
-            self.text("ABOUT", x + 19, ty + 68, 1, fg);
+            self.text(tr(state.language, TextId::Files), x + 19, ty + 24, 1, fg);
+            self.text(tr(state.language, TextId::Apps), x + 19, ty + 46, 1, fg);
+            self.text(tr(state.language, TextId::About), x + 19, ty + 68, 1, fg);
         }
 
         let cx = x + side_width + 27;
         let cw = w.saturating_sub(side_width + 44);
         match app {
             App::Files => {
-                self.text("ZILLA FILES", cx, body + 10, 2, fg);
+                self.text(tr(state.language, TextId::FilePreview), cx, body + 10, 2, fg);
                 if content_h > 100 {
                     let card_y = body + 42;
-                    self.folder_card(cx, card_y, cw, "DOCUMENTS", state.dark);
+                    self.folder_card(cx, card_y, cw, tr(state.language, TextId::Documents), state.dark);
                     if content_h > 175 {
-                        self.folder_card(cx, card_y + 47, cw, "PICTURES", state.dark);
-                        self.folder_card(cx, card_y + 94, cw, "PROJECTS", state.dark);
+                        self.folder_card(cx, card_y + 47, cw, tr(state.language, TextId::Pictures), state.dark);
+                        self.folder_card(cx, card_y + 94, cw, tr(state.language, TextId::Projects), state.dark);
                     }
                 }
             }
             App::Terminal => {
                 self.round_rect(cx, body + 1, cw, content_h.saturating_sub(3), 8, 0x0b1726);
-                self.text("ZILLA TERMINAL", cx + 12, body + 12, 1, 0x1dd9b4);
+                self.text(tr(state.language, TextId::TerminalPreview),
+                          cx + 12, body + 12, 1, 0x1dd9b4);
                 if content_h > 105 {
                     self.text("> ZILLAOS 0.0.2", cx + 12, body + 39, 1, 0xc4dbea);
                     self.text("> RUST / X86_64", cx + 12, body + 58, 1, 0xc4dbea);
-                    self.text("> GUI PREVIEW", cx + 12, body + 77, 1, 0x1dd9b4);
+                    self.text("> DEMO / NO SHELL", cx + 12, body + 77, 1, 0x1dd9b4);
                 }
             }
             App::Settings => {
-                self.text("SETTINGS", cx, body + 10, 2, fg);
+                self.text(tr(state.language, TextId::Settings), cx, body + 9, 2, fg);
                 if content_h > 98 {
-                    self.text("APPEARANCE", cx, body + 44, 1, secondary);
-                    let theme = if state.dark { "DARK THEME" } else { "LIGHT THEME" };
-                    self.text(theme, cx, body + 65, 1, fg);
-                    if content_h > 160 {
-                        self.text("F5 TO SWITCH", cx, body + 105, 1, 0x1ed2b4);
-                        self.text("DISPLAY: RGB32", cx, body + 126, 1, secondary);
-                    if content_h > 200 {
-                        self.text(state.hostname.as_str(), cx, body + 151, 1, fg);
-                        self.text(state.timezone.identifier(), cx, body + 173, 1, secondary);
-                    }
-                    }
+                    self.round_rect(cx, body + 42, cw, 51, 8,
+                        if state.dark { 0x243b52 } else { 0xe1edf5 });
+                    self.text(tr(state.language, TextId::Appearance),
+                              cx + 9, body + 49, 1, secondary);
+                    self.text(tr(state.language, if state.dark {
+                        TextId::ThemeDark
+                    } else { TextId::ThemeLight }), cx + 9, body + 68, 1, fg);
+                }
+                if content_h > 168 {
+                    self.round_rect(cx, body + 105, cw, 52, 8,
+                        if state.dark { 0x243b52 } else { 0xe1edf5 });
+                    self.text(tr(state.language, TextId::Language),
+                              cx + 9, body + 112, 1, secondary);
+                    let lang = match state.language {
+                        Language::Ukrainian => TextId::LangUkrainian,
+                        Language::English => TextId::LangEnglish,
+                        Language::Russian => TextId::LangRussian,
+                    };
+                    self.text(tr(state.language, lang), cx + 9, body + 133, 1, fg);
+                }
+                if content_h > 230 {
+                    self.text(tr(state.language, TextId::BootResolution),
+                              cx, body + 175, 1, secondary);
+                    self.decimal(self.fb.width, cx, body + 195, fg);
+                    self.text("X", cx + 29, body + 195, 1, fg);
+                    self.decimal(self.fb.height, cx + 39, body + 195, fg);
+                    self.text(tr(state.language, TextId::BootHint),
+                              cx, body + 217, 1, 0x1ed2b4);
+                }
+                if content_h > 270 {
+                    self.text(state.hostname.as_str(), cx, body + 245, 1, fg);
+                    self.text(state.timezone.identifier(), cx, body + 263, 1, secondary);
                 }
             }
         }
@@ -644,11 +686,11 @@ impl Screen {
         self.round_rect(x, y, w, h, 12,
                         if state.dark { 0x233850 } else { 0xf0faff });
         let fg = if state.dark { 0xffffff } else { 0x183144 };
-        self.text("ZILLA LAUNCHER", x + 18, y + 17, 2, fg);
+        self.text(tr(state.language, TextId::Launcher), x + 18, y + 17, 2, fg);
         if h >= 120 {
-            self.text("F2  FILES", x + 18, y + 55, 2, fg);
-            self.text("F3  TERMINAL", x + 18, y + 79, 2, fg);
-            self.text("F4  SETTINGS", x + 18, y + 103, 2, fg);
+            self.text(tr(state.language, TextId::Files), x + 38, y + 55, 2, fg);
+            self.text(tr(state.language, TextId::Terminal), x + 38, y + 79, 2, fg);
+            self.text(tr(state.language, TextId::Settings), x + 38, y + 103, 2, fg);
         }
     }
 
@@ -677,7 +719,7 @@ impl Screen {
     fn key_legend(&self, state: &Desktop, layout: &Layout) {
         if layout.width < 730 || layout.height < 460 { return; }
         let fg = if state.dark { 0xa5c7d8 } else { 0x244d64 };
-        self.text("F1 MENU F2 FILES F3 TERM F4 SETTINGS F5 THEME F6 MIN F7 MAX TAB FOCUS ESC CLOSE",
+        self.text("F1 MENU  F2 FILES  F3 TERM  F4 SETTINGS  F5 THEME  F8 LANG  F9 DESKTOP",
                   22, layout.height.saturating_sub(12), 1, fg);
         if layout.height >= 600 && layout.width >= 820 {
             self.text("ARROWS MOVE  SHIFT ARROWS RESIZE",
@@ -830,6 +872,10 @@ fn glyph_unicode(ch: char) -> [u8; 7] {
         'Ш' => [21,21,21,21,21,21,31],
         'Щ' => [21,21,21,21,21,31,1],
         'Ь' => [16,16,16,30,17,17,30],
+        'Ъ' => [24,8,8,14,9,9,14],
+        'Ы' => [17,17,17,29,21,21,29],
+        'Э' => [30,1,1,15,1,1,30],
+        'Ё' => [10,0,31,16,30,16,31],
         'Ю' => [18,21,21,29,21,21,18],
         'Я' => [15,17,17,15,5,9,17],
         ' ' => [0;7],
