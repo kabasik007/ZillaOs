@@ -112,7 +112,25 @@ def validate_limine_config(data: bytes) -> dict[str, str | int]:
         config = data.decode('utf-8')
     except UnicodeDecodeError as exc:
         raise BootAssetError('Limine config is not UTF-8') from exc
-    entries = re.findall(r'(?m)^/([^\n]+)
+    lines = config.splitlines()
+    entries = [line[1:].strip() for line in lines if line.startswith('/')]
+    allowed = ['ZillaOS', 'ZillaOS 800x600', 'ZillaOS 1024x768',
+               'ZillaOS 1280x800']
+    _require(entries == ['ZillaOS'] or entries == allowed,
+             'Limine ZillaOS boot entry missing or unexpected entry')
+    protocols = [line.split(':', 1)[1].strip() for line in lines
+                 if line.strip().startswith('protocol:')]
+    _require(protocols == ['limine'] * len(entries), 'Limine boot protocol mismatch')
+    paths = [line.split(': ', 1)[1].strip() for line in lines
+             if line.strip().startswith('path: ')]
+    _require(paths == ['boot():/boot/kernel.elf'] * len(entries),
+             'Limine kernel path mismatch')
+    resolutions = [line.split(':', 1)[1].strip() for line in lines
+                   if line.strip().startswith('resolution:')]
+    expected_modes = [] if len(entries) == 1 else [
+        '800x600x32', '1024x768x32', '1280x800x32']
+    _require(resolutions == expected_modes, 'Limine resolution mismatch')
+    return {'protocol': 'limine', 'kernel_path': paths[0], 'size_bytes': len(data)}
 
 
 def validate_assets(files: dict[str, bytes]) -> dict[str, dict]:
