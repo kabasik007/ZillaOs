@@ -61,7 +61,11 @@ class VMwareProfileTests(unittest.TestCase):
         self.assertIn("Test-Path -LiteralPath $IsoPath -PathType Leaf", src)
         self.assertIn("startConnected", src)
         self.assertIn('Start-Process -FilePath $exe', src)
-        self.assertIn('wsl.exe -d $Distro -- bash -lc', src)
+        # The VMware helper delegates builds to the repaired Windows entrypoint.
+        # Requiring the old implicit WSL shell would reintroduce broken backslashes.
+        self.assertIn('"windows.ps1") -Action Build -Distro $Distro', src)
+        self.assertNotIn('wsl.exe -d $Distro -- bash -lc', src)
+        self.assertNotIn('wslpath -a $RepoRoot', src)
 
     def test_linux_build_wrapper_generates_demo_uefi_image(self):
         src = BUILD_SCRIPT.read_text(encoding="utf-8")
