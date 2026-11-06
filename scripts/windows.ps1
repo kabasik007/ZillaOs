@@ -20,6 +20,7 @@ $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $DistDir = Join-Path $RepoRoot "dist"
 $OriginalIso = Join-Path $DistDir "zillaos-0.0.2-dev-demo-uefi.iso"
 $FriendlyIso = Join-Path $DistDir "ZillaOS-Desktop-UEFI.iso"
+. (Join-Path $PSScriptRoot "windows_line_endings.ps1")
 
 function Invoke-WslRaw([string[]]$Arguments, [string]$Step) {
     Write-Host "[ZillaOS] $Step" -ForegroundColor Cyan
@@ -76,7 +77,7 @@ function Get-WslDirectory([string]$WindowsDirectory) {
     return $linux
 }
 
-function New-StagedWorkspace {
+function New-StagedWorkspace([string]$Reason = "Repository drive not mounted in WSL") {
     if (-not (Get-Command robocopy.exe -ErrorAction SilentlyContinue)) {
         throw "Repository drive unavailable in WSL and robocopy.exe is missing. Use a locally mounted directory."
     }
@@ -85,7 +86,7 @@ function New-StagedWorkspace {
     }
     $stage = Join-Path $env:TEMP ("ZillaOS-WSL-Stage-" + $PID + "-" + [guid]::NewGuid().ToString("N").Substring(0, 8))
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
-    Write-Host "[ZillaOS] Repo drive not mounted in WSL. Copying sources into $stage" -ForegroundColor Yellow
+    Write-Host "[ZillaOS] $Reason. Copying sources into $stage" -ForegroundColor Yellow
     # Never /MIR or /PURGE: no source files, VM, or user files are removed.
     $excluded = @(".git", "build", "dist", "target") | ForEach-Object { Join-Path $RepoRoot $_ }
     $copyArgs = @($RepoRoot, $stage, "/E", "/R:1", "/W:1", "/XD") + $excluded + @("/NFL", "/NDL", "/NJH", "/NJS", "/NP")
@@ -100,6 +101,9 @@ function New-StagedWorkspace {
     if ($code -ge 8) {
         throw "Source staging failed (robocopy exit $code). No original files changed. Stage: $stage"
     }
+    # Auto-repair CRLF only in this disposable copy. The original source tree
+    # and any uncommitted user modifications remain untouched.
+    Repair-ZillaStagedText $stage
     $linuxStage = Get-WslDirectory $stage
     if (-not $linuxStage) {
         throw "Neither '$RepoRoot' nor TEMP '$stage' is readable in WSL '$Distro'. Check /etc/wsl.conf automount, run wsl --shutdown, or clone under Ubuntu. No original files were changed."
@@ -111,10 +115,15 @@ function New-StagedWorkspace {
 function Get-BuildWorkspace {
     $direct = Get-WslDirectory $RepoRoot
     if ($direct) {
-        Write-Host "[ZillaOS] WSL repo: $direct"
-        return [pscustomobject]@{ WindowsPath = $RepoRoot; LinuxPath = $direct; Staged = $false }
+        $crFiles = @(Get-ZillaCrFiles $RepoRoot)
+        if ($crFiles.Count -eq 0) {
+            Write-Host "[ZillaOS] WSL repo: $direct"
+            return [pscustomobject]@{ WindowsPath = $RepoRoot; LinuxPath = $direct; Staged = $false }
+        }
+        Write-Host "[ZillaOS] Detected CRLF in $($crFiles.Count) Linux script/config files (Windows checkout)." -ForegroundColor Yellow
+        return New-StagedWorkspace -Reason "Linux scripts need LF line endings"
     }
-    return New-StagedWorkspace
+    return New-StagedWorkspace -Reason "Repository drive not mounted in WSL"
 }
 
 function Invoke-RepoAction($Workspace, [string]$Mode, [string]$Step) {
