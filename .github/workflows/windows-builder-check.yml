@@ -15,6 +15,11 @@ on:
       - 'tests/test_vmware_profile.py'
       - 'scripts/windows_wsl_setup.sh'
       - 'scripts/build_vmware.sh'
+      - 'src/**'
+      - 'boot/limine.conf'
+      - 'scripts/boot_assets_audit.py'
+      - 'scripts/installer_lab.py'
+      - 'tests/test_boot_assets_audit.py'
       - '.github/workflows/windows-builder-check.yml'
   pull_request:
     paths:
@@ -27,6 +32,11 @@ on:
       - 'tests/test_windows_entrypoint.py'
       - 'tests/test_windows_wsl_entry.py'
       - 'tests/test_vmware_profile.py'
+      - 'src/**'
+      - 'boot/limine.conf'
+      - 'scripts/boot_assets_audit.py'
+      - 'scripts/installer_lab.py'
+      - 'tests/test_boot_assets_audit.py'
       - '.github/workflows/windows-builder-check.yml'
   workflow_dispatch:
 
@@ -41,6 +51,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate WSL shell entrypoint syntax
         run: bash -n scripts/windows_wsl_entry.sh
+      - name: Compile Python tools before running tests
+        run: python3 -m compileall -q scripts tests
       - name: Execute complete host Python suite (including VMware profile)
         run: python3 -m unittest discover -s tests -v
 
@@ -84,3 +96,5 @@ jobs:
         run: bash scripts/windows_wsl_setup.sh --check
       - name: Link and execute Rust library tests on host
         run: cargo test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Compile bare-metal GUI kernel (Limine demo)
+        run: cargo build --release --target x86_64-unknown-none --offline --features vm-demo
