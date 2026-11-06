@@ -8,7 +8,8 @@
 
 For the desktop preview, languages, keyboard shortcuts and boot-time display modes,
 see [Desktop development guide](docs/DESKTOP.md),
-[Filesystem / source modules](docs/FILESYSTEM.md) and
+[Filesystem / source modules](docs/FILESYSTEM.md),
+[Compatibility roadmap](docs/COMPATIBILITY.md) and
 [Windows ISO build guide](docs/WINDOWS_ISO.md).
 
 ## Mission / Мета
