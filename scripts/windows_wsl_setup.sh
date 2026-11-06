@@ -108,7 +108,16 @@ if command -v cc >/dev/null 2>&1 && command -v ld.lld >/dev/null 2>&1; then
     else
         echo "  FAILED  native host link via cc -fuse-ld=lld"
         cat "$probe_dir/linker-stderr" >&2
+        cc_path="$(command -v cc)"
+        echo "  DIAG    cc resolves to: $cc_path" >&2
+        ls -l -- "$cc_path" >&2 || true
+        resolved_cc="$(readlink -f -- "$cc_path" 2>/dev/null || true)"
+        if [[ -n "$resolved_cc" && "$resolved_cc" != "$cc_path" ]]; then
+            echo "  DIAG    cc symlink target: $resolved_cc" >&2
+            ls -l -- "$resolved_cc" >&2 || true
+        fi
         echo "  FIX     Run -Action Setup (Ubuntu: build-essential + lld)" >&2
+        echo "  NOTE    If Permission denied persists after Setup, inspect WSL file permissions and mount options." >&2
         missing=1
     fi
     rm -rf -- "$probe_dir"
