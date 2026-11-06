@@ -4,6 +4,7 @@ use crate::process::address_space::UserRegion;
 use crate::process::scheduler::RoundRobin;
 use crate::process::{Pid, Process, ProcessError, ProcessTable};
 use crate::process::thread::{Thread, ThreadError, ThreadTable, Tid};
+use super::task_snapshot::TaskSnapshot;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionError {
@@ -74,6 +75,12 @@ impl ProcessManager {
 
     pub fn next_ready_thread(&mut self, cpu: usize) -> Option<Tid> {
         self.threads.next_ready(cpu)
+    }
+
+    /// Consistent read-only metadata snapshot for a future Task Manager IPC.
+    /// The regular Desktop currently has no live user process runtime.
+    pub fn snapshot(&self) -> TaskSnapshot {
+        TaskSnapshot::collect(&self.processes, &self.threads)
     }
 
     pub fn thread(&self, tid: Tid) -> Option<&Thread> {

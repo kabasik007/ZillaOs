@@ -108,3 +108,15 @@ must not be interpreted as audio capture or hardware mute controls.
 The graphics CI uses normalized serial lines to tolerate QEMU CRLF and
 diagnoses which required markers are missing, while still requiring a
 real screenshot-driven boot of the graphical desktop.
+
+## M3 — validated read-only process/thread snapshot
+
+`src/services/task_snapshot.rs` supplies bounded `ProcessInfo` and
+`ThreadInfo` records from **real** `ProcessTable` and `ThreadTable`
+metadata, counting threads by parent PID. `ProcessManager::snapshot()`
+returns this immutable view without owning foreign pointers, executing
+code, changing scheduling or manufacturing CPU/RAM metrics. When no
+processes are registered, the snapshot is explicitly empty. The UI
+currently lists built-in window surfaces rather than populating fake
+`ProcessInfo` records. Later the compositor can consume these snapshots
+through a permission-checked IPC boundary.
