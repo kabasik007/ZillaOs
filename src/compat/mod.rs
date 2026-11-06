@@ -1,3 +1,4 @@
+pub mod windows_pe;
 //! Future multi-platform executable routing for ZillaOS.
 //!
 //! This module parses only minimal file signatures. It never executes code,
