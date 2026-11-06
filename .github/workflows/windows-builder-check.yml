@@ -1,0 +1,49 @@
+name: Windows Builder regression checks
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/windows.ps1'
+      - 'scripts/windows_wsl_entry.sh'
+      - 'scripts/vmware.ps1'
+      - 'tests/test_windows_entrypoint.py'
+      - 'tests/test_windows_wsl_entry.py'
+      - '.github/workflows/windows-builder-check.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  entrypoint-and-staging-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate WSL shell entrypoint syntax
+        run: bash -n scripts/windows_wsl_entry.sh
+      - name: Execute safe path and exit-code regression tests
+        run: python3 -m unittest discover -s tests -p 'test_windows*.py' -v
+
+  windows-powershell-parser:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows PowerShell 5.1 scripts without execution
+        run: |
+          $files = @('scripts/windows.ps1', 'scripts/vmware.ps1')
+          foreach ($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path -LiteralPath $file).Path, [ref]$tokens, [ref]$parseErrors)
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | Format-List * | Out-Host
+              throw ("PowerShell syntax failed: " + $file)
+            }
+            Write-Host ("Parsed: " + $file)
+          }
