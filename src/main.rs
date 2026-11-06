@@ -271,6 +271,7 @@ pub extern "C" fn _start() -> ! {
         // Desktop stays an early single-core test environment.
         loop {
             let previous_windows = desktop.windows;
+            let previous_files = desktop.files;
             let previous_launcher = desktop.launcher;
             let previous_theme = desktop.dark;
             let previous_language = desktop.language;
@@ -301,6 +302,7 @@ pub extern "C" fn _start() -> ! {
                     || previous_launcher != desktop.launcher
                     || previous_theme != desktop.dark
                     || previous_language != desktop.language
+                    || previous_files != desktop.files
                 {
                     if previous_language != desktop.language {
                         serial::write("ZILLAOS_DESKTOP_LANGUAGE=");
@@ -322,7 +324,8 @@ pub extern "C" fn _start() -> ! {
                     let scene_changed = previous_windows != desktop.windows
                         || previous_launcher != desktop.launcher
                         || previous_theme != desktop.dark
-                        || previous_language != desktop.language;
+                        || previous_language != desktop.language
+                        || previous_files != desktop.files;
                     let cursor_damage_applied = mouse_event
                         && !scene_changed
                         && graphics::redraw_cursor(previous_pointer, &desktop);
