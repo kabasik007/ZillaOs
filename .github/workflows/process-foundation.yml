@@ -1,0 +1,33 @@
+name: ZillaOS process foundation checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/kernel/process/**'
+      - 'src/services/process_manager.rs'
+      - 'src/services/mod.rs'
+      - 'src/lib.rs'
+      - 'docs/PROCESSES.md'
+      - '.github/workflows/process-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  process-host-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust
+        run: |
+          rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+          rustc +1.90.0 --version
+      - name: Host process and memory regression tests
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Compile kernel without GUI
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: Compile kernel with existing GUI
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo

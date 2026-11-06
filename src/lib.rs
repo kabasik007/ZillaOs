@@ -8,6 +8,9 @@ pub mod memory;
 #[path = "kernel/paging.rs"]
 pub mod paging;
 
+#[path = "kernel/process/mod.rs"]
+pub mod process;
+
 #[path = "kernel/exceptions.rs"]
 pub mod exceptions;
 
