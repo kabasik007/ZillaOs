@@ -11,6 +11,7 @@ on:
       - 'tests/test_windows_line_endings.ps1'
       - 'tests/test_windows_entrypoint.py'
       - 'tests/test_windows_wsl_entry.py'
+      - 'tests/test_vmware_profile.py'
       - '.github/workflows/windows-builder-check.yml'
   pull_request:
     paths:
@@ -22,6 +23,7 @@ on:
       - 'scripts/vmware.ps1'
       - 'tests/test_windows_entrypoint.py'
       - 'tests/test_windows_wsl_entry.py'
+      - 'tests/test_vmware_profile.py'
       - '.github/workflows/windows-builder-check.yml'
   workflow_dispatch:
 
@@ -36,8 +38,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate WSL shell entrypoint syntax
         run: bash -n scripts/windows_wsl_entry.sh
-      - name: Execute safe path and exit-code regression tests
-        run: python3 -m unittest discover -s tests -p 'test_windows*.py' -v
+      - name: Execute complete host Python suite (including VMware profile)
+        run: python3 -m unittest discover -s tests -v
 
   windows-powershell-parser:
     runs-on: windows-2022
