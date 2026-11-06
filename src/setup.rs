@@ -407,7 +407,9 @@ impl WizardGeometry {
         let body_x = x + sidebar + if width >= 500 { 40 } else { 16 };
         let body_width = width.saturating_sub(sidebar + if width >= 500 { 80 } else { 32 });
         let option_y = y + if height >= 470 { 188 } else { 108 };
-        let option_gap = if height >= 470 { 66 } else { 37 };
+        // Geometry and hit testing use usize; avoid ambiguous integer literals
+        // when calling saturating_sub under the pinned Rust 1.90 toolchain.
+        let option_gap: usize = if height >= 470 { 66 } else { 37 };
         let option_height = option_gap.saturating_sub(6);
         let footer_y = y + height.saturating_sub(72);
         Self {
@@ -576,6 +578,8 @@ mod tests {
         for resolution in [(320, 240), (800, 600), (1024, 768), (1280, 800)] {
             let layout = Layout::for_size(resolution.0, resolution.1).unwrap();
             let g = WizardGeometry::new(layout);
+            assert_eq!(g.option_height, g.option_gap.saturating_sub(6));
+            assert_eq!(g.option_gap, if g.height >= 470 { 66 } else { 37 });
             assert!(g.x + g.width <= layout.width);
             assert!(g.y + g.height <= layout.height);
             assert!(g.next_contains(g.body_x + g.body_width - 10, g.footer_y + 10));
