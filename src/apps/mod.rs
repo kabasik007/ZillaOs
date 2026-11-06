@@ -12,7 +12,7 @@ pub struct AppDescriptor {
     pub install_path: &'static str,
 }
 
-pub const BUILTIN_APPS: [AppDescriptor; 3] = [
+pub static BUILTIN_APPS: [AppDescriptor; 3] = [
     AppDescriptor {
         id: App::Files, name: "Zilla Files",
         install_path: "/Program Files/Zilla Files",
