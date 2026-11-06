@@ -179,31 +179,15 @@ impl Desktop {
     }
 
 
-    /// Hit testing for the Files window mirrors the renderer's directory list.
-    /// All operations affect only a read-only in-memory directory browser.
+    /// All Files hit testing lives in the shell module; browser state owns
+    /// only virtual in-memory paths, never host or block-device operations.
     fn files_click(&mut self, rect: crate::window_manager::Rect, x: usize, y: usize) {
-        let bar_h = if rect.height < 170 { 30 } else { 45 };
-        let body = rect.y + bar_h + 8;
-        let side_width = (rect.width / 4).clamp(70, 170);
-        let content_x = rect.x + side_width + 27;
-        if x >= rect.x + 12 && x < rect.x + 10 + side_width
-            && y >= body + 6 && y < body + 38 {
-            self.files.home();
-            return;
-        }
-        if x < content_x || x >= rect.x + rect.width.saturating_sub(12) {
-            return;
-        }
-        if y >= body + 7 && y < body + 35 {
-            self.files.up();
-            return;
-        }
-        let rows_start = body + 42;
-        if y >= rows_start {
-            let offset = y - rows_start;
-            if offset % 47 < 40 && offset / 47 < 7 {
-                self.files.open_child(offset / 47);
-            }
+        use crate::shell::files_interaction::{files_action, FilesAction};
+        match files_action(rect, x, y) {
+            Some(FilesAction::Home) => { self.files.home(); }
+            Some(FilesAction::Up) => { self.files.up(); }
+            Some(FilesAction::OpenRow(index)) => { self.files.open_child(index); }
+            None => {}
         }
     }
 
