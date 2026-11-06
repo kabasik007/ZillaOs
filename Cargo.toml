@@ -28,6 +28,10 @@ paging-audit = []
 # Experimental owned page-table construction, no CR3 switch or Ring 3 entry.
 vm-staging = ["paging-audit"]
 
+# Disposable QEMU-only, single native Ring 3 fixture with INT 0x80 write/exit.
+# No ELF/PE input, no desktop execution, no public process runtime.
+native-ring3 = ["vm-staging"]
+
 # Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
 pe-inspector-cli = []
 

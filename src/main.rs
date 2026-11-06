@@ -21,6 +21,8 @@ mod memtest;
 mod page_table_observer;
 #[cfg(feature = "vm-staging")]
 mod native_vm_staging;
+#[cfg(feature = "native-ring3")]
+mod native_ring3;
 mod serial;
 
 use core::panic::PanicInfo;
@@ -188,6 +190,31 @@ pub extern "C" fn _start() -> ! {
             serial::write("\nZILLAOS_NATIVE_VM_STACK_FRAME=");
             serial::write_hex(staged.stack_frame);
             serial::write("\nZILLAOS_NATIVE_VM_STAGE_OK\n");
+
+            #[cfg(feature = "native-ring3")]
+            {
+                let result = unsafe { native_ring3::run(&staged, offset) };
+                match result {
+                    Ok(()) => {
+                        serial::write("ZILLAOS_NATIVE_RING3_OK\n");
+                        serial::write("ZILLAOS_BOOT_OK\n");
+                        serial::debug_exit(0x10);
+                    }
+                    Err(reason) => {
+                        serial::write("ZILLAOS_NATIVE_RING3_ERROR=");
+                        serial::write(match reason {
+                            native_ring3::Ring3Error::InvalidNx => "NX_UNAVAILABLE",
+                            native_ring3::Ring3Error::InvalidDescriptorState => "INVALID_GDT_TSS",
+                            native_ring3::Ring3Error::InvalidFixture => "INVALID_FIXTURE",
+                            native_ring3::Ring3Error::UnexpectedExit => "UNEXPECTED_RETURN",
+                            native_ring3::Ring3Error::ExitCode(_) => "NONZERO_EXIT",
+                            native_ring3::Ring3Error::Fault(_) => "USER_FAULT",
+                        });
+                        serial::write("\nZILLAOS_NATIVE_RING3_FAILED\n");
+                        return_boot_failure();
+                    }
+                }
+            }
         }
     }
 

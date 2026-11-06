@@ -8,6 +8,7 @@ on:
       - 'src/kernel/page_table_walk.rs'
       - 'src/page_table_observer.rs'
       - 'src/native_vm_staging.rs'
+      - 'src/native_ring3.rs'
       - 'src/main.rs'
       - 'Cargo.toml'
       - 'scripts/build.sh'
@@ -101,4 +102,37 @@ jobs:
           path: |
             stage-qemu.log
             dist/*stage*.iso
+          if-no-files-found: warn
+
+  native-ring3-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install Rust 1.90 target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build isolated native Ring3 fixture ISO
+        run: bash scripts/build.sh ring3
+      - name: Require real CPL3 syscall and clean exit in QEMU
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-uefi.iso --timeout 90 | tee ring3-qemu.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_ENTER' ring3-qemu.log
+          grep -qx 'ZILLAOS_NATIVE_STDOUT=Hello from ZillaOS Native Ring3!' ring3-qemu.log
+          grep -qx 'ZILLAOS_NATIVE_EXIT_CODE=0x0000000000000000' ring3-qemu.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_RETURNED' ring3-qemu.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_OK' ring3-qemu.log
+          if grep -q 'ZILLAOS_NATIVE_RING3_FAILED' ring3-qemu.log; then exit 1; fi
+      - name: Save isolated native smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-ring3-native-hello-evidence
+          path: |
+            ring3-qemu.log
+            dist/*ring3*.iso
           if-no-files-found: warn
