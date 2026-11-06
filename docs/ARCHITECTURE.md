@@ -1,4 +1,12 @@
 # ZillaOS — Architecture v0.1
+
+> **Цей документ — довгостроковий дизайн, а не перелік реалізованих функцій.**
+> Стан `main` перевіряйте в [ARCHITECTURE_CURRENT.md](ARCHITECTURE_CURRENT.md).
+> Два активні агенти працюють паралельно за
+> [AGENT_COORDINATION.md](AGENT_COORDINATION.md), а security acceptance gates
+> описано в [SECURITY_ARCHITECTURE.md](SECURITY_ARCHITECTURE.md).
+> Метадані PID не означають Ring 3; SVGA probe не означає acceleration.
+
 **Design baseline:** 2026-10-19  
 **Runtime status:** 2026-11-06 — kernel UEFI GUI and mouse were verified by the user in VMware. The higher-level microkernel services described here remain architectural goals until separately implemented.
 
