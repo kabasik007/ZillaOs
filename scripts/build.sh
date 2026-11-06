@@ -6,11 +6,11 @@ ROOT="$PWD"
 
 MODE="${1:-test}"
 case "$MODE" in
-    test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard|ring3-kernel) ;;
-    *) echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard|ring3-kernel]" >&2; exit 2 ;;
+    test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard|ring3-kernel|ring3-threads) ;;
+    *) echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard|ring3-kernel|ring3-threads]" >&2; exit 2 ;;
 esac
 if (( $# > 1 )); then
-    echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard|ring3-kernel]" >&2
+    echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard|ring3-kernel|ring3-threads]" >&2
     exit 2
 fi
 
@@ -77,6 +77,8 @@ elif [[ "$MODE" == "ring3-guard" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features native-ring3-guard-fault
 elif [[ "$MODE" == "ring3-kernel" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features native-ring3-kernel-fault
+elif [[ "$MODE" == "ring3-threads" ]]; then
+    cargo build --release --target x86_64-unknown-none --offline --features native-ring3-threads
 else
     cargo build --release --target x86_64-unknown-none --offline --no-default-features
 fi

@@ -23,6 +23,8 @@ mod page_table_observer;
 mod native_vm_staging;
 #[cfg(feature = "native-ring3")]
 mod native_ring3;
+#[cfg(feature = "native-ring3-threads")]
+mod native_ring3_threads;
 mod serial;
 
 use core::panic::PanicInfo;

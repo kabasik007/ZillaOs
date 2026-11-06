@@ -37,6 +37,8 @@ pub struct StagedSpace {
     pub code_frame: u64,
     pub data_frame: u64,
     pub stack_frame: u64,
+    #[cfg(feature = "native-ring3-threads")]
+    pub stack2_frame: u64,
 }
 
 fn mapped_table_frame(regions: &[MemoryRegion], physical: u64) -> bool {
@@ -131,6 +133,8 @@ pub unsafe fn stage(
     let code = reserve_clean(allocator, hhdm)?;
     let data = reserve_clean(allocator, hhdm)?;
     let stack = reserve_clean(allocator, hhdm)?;
+    #[cfg(feature = "native-ring3-threads")]
+    let stack2 = reserve_clean(allocator, hhdm)?;
 
     // Mirror the upper half *only*. Clear USER at the new root, even when
     // Limine has USER on an ancestor but supervisor-only effective access
@@ -152,7 +156,11 @@ pub unsafe fn stage(
     put(pt_code.address, 0, code.address | PRESENT | USER, hhdm)?;
     put(pt_code.address, 1, data.address | PRESENT | USER | WRITABLE | NO_EXECUTE, hhdm)?;
     put(pt_stack.address, 511, stack.address | PRESENT | USER | WRITABLE | NO_EXECUTE, hhdm)?;
-    // PT[510] is intentionally absent: stack guard page.
+    // PT[510] is intentionally absent: the first stack guard page.
+    #[cfg(feature = "native-ring3-threads")]
+    put(pt_stack.address, 509, stack2.address | PRESENT | USER | WRITABLE | NO_EXECUTE, hhdm)?;
+    // Second stack at 0x7fd000, distinct from first 0x7ff000; PT[508]
+    // remains absent as its independent lower guard page.
     let verify = |va| {
         translate(root.address, va, 48, physical_bits, |frame, index| {
             read_verified(regions, frame, index, hhdm)
@@ -162,12 +170,22 @@ pub unsafe fn stage(
     let text = verify(CODE_VA).map_err(|_| StageError::InvalidPageTables)?;
     let writable_data = verify(DATA_VA).map_err(|_| StageError::InvalidPageTables)?;
     let writable_stack = verify(STACK_VA).map_err(|_| StageError::InvalidPageTables)?;
+    #[cfg(feature = "native-ring3-threads")]
+    let writable_stack2 = verify(0x007f_d000).map_err(|_| StageError::InvalidPageTables)?;
     if text.physical_address != code.address || !text.user || text.writable || !text.executable
         || writable_data.physical_address != data.address
         || !writable_data.user || !writable_data.writable || writable_data.executable
         || writable_stack.physical_address != stack.address
         || !writable_stack.user || !writable_stack.writable || writable_stack.executable
         || verify(GUARD_VA) != Err(WalkError::Unmapped)
+    {
+        return Err(StageError::InvalidPageTables);
+    }
+    #[cfg(feature = "native-ring3-threads")]
+    if writable_stack2.physical_address != stack2.address
+        || !writable_stack2.user || !writable_stack2.writable
+        || writable_stack2.executable
+        || verify(0x007f_c000) != Err(WalkError::Unmapped)
     {
         return Err(StageError::InvalidPageTables);
     }
@@ -183,5 +201,7 @@ pub unsafe fn stage(
         code_frame: code.address,
         data_frame: data.address,
         stack_frame: stack.address,
+        #[cfg(feature = "native-ring3-threads")]
+        stack2_frame: stack2.address,
     })
 }

@@ -5,6 +5,8 @@ use super::Process;
 
 pub const SYS_WRITE: u64 = 1;
 pub const SYS_EXIT: u64 = 2;
+/// Cooperative yield ABI: RAX=3, return RAX=0 after rescheduling.
+pub const SYS_YIELD: u64 = 3;
 pub const STDOUT: u64 = 1;
 pub const MAX_WRITE: u64 = 4096;
 
@@ -20,6 +22,7 @@ pub struct Request {
 pub enum Action {
     Write { address: u64, len: u64 },
     Exit { code: i32 },
+    Yield,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +44,7 @@ pub fn validate(process: &Process, request: Request) -> Result<Action, Error> {
             Ok(Action::Write { address: request.arg1, len: request.arg2 })
         }
         SYS_EXIT => Ok(Action::Exit { code: request.arg0 as i32 }),
+        SYS_YIELD => Ok(Action::Yield),
         _ => Err(Error::Unsupported),
     }
 }

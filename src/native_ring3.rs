@@ -17,6 +17,8 @@ use crate::{native_vm_staging::StagedSpace, serial};
 const KERNEL_CODE: u16 = 0x08;
 #[cfg(all(feature = "native-ring3-guard-fault", feature = "native-ring3-kernel-fault"))]
 compile_error!("Choose only one native Ring3 negative-fault fixture");
+#[cfg(all(feature = "native-ring3-threads", any(feature = "native-ring3-guard-fault", feature = "native-ring3-kernel-fault")))]
+compile_error!("Cooperative threads fixture is incompatible with Ring3 fault variants");
 
 const CODE_VA: u64 = 0x400000;
 const DATA_VA: u64 = 0x401000;
@@ -168,9 +170,11 @@ zilla_native_resume:
     .global zilla_native_interrupt
 zilla_native_interrupt:
     cli
-    mov r11, [rsp + 8]
+    push r11
+    mov r11, [rsp + 16]
     and r11, 3
     cmp r11, 3
+    pop r11
     jne zilla_native_bad_trap
     push rbx
     push rbp
@@ -192,6 +196,7 @@ zilla_native_interrupt:
     mov rdx, rsi
     mov rsi, rdi
     mov rdi, rax
+    mov r8, r12
     call zilla_native_syscall_dispatch
     mov rsp, r12
     cmp rax, -1
@@ -276,7 +281,7 @@ zilla_native_fault_df:
     call zilla_exception_fatal
 "#);
 
-fn install_gdt_tss_and_idt() -> Result<(), Ring3Error> {
+pub(crate) fn install_gdt_tss_and_idt() -> Result<(), Ring3Error> {
     let gdt = GDT.0.get();
     let tss = TSS.0.get();
     let idt = IDT.0.get();
@@ -351,6 +356,13 @@ fn install_gdt_tss_and_idt() -> Result<(), Ring3Error> {
     Ok(())
 }
 
+/// # Safety
+/// Only invoke after installing GDT/TSS/IDT on the single BSP.
+pub(crate) unsafe fn enter_staged(root: u64, entry: u64, stack: u64) {
+    // SAFETY: caller guarantees a validated user PML4 and Ring3 context.
+    unsafe { zilla_native_enter(root, entry, stack) }
+}
+
 fn copy_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     // x86_64: push/pop; write(1, 0x401000, n); exit(0); UD2.
     // Intentionally no libraries, ELF/PE loader or filesystem.
@@ -412,8 +424,18 @@ fn copy_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn zilla_native_syscall_dispatch(
-    number: u64, arg0: u64, arg1: u64, arg2: u64
+    number: u64, arg0: u64, arg1: u64, arg2: u64,
+    _frame: *mut u64,
 ) -> u64 {
+    #[cfg(feature = "native-ring3-threads")]
+    {
+        return crate::native_ring3_threads::dispatch(
+            number, arg0, arg1, arg2,
+            _frame.cast::<crate::native_ring3_threads::UserTrapFrame>(),
+        );
+    }
+    #[cfg(not(feature = "native-ring3-threads"))]
+    {
     // SAFETY: no concurrent CPUs or interrupts; only one process active.
     let runtime = unsafe { &mut *RUN_STATE.0.get() };
     let Some(state) = runtime.as_mut() else { return u64::MAX };
@@ -444,7 +466,9 @@ pub extern "C" fn zilla_native_syscall_dispatch(
             state.exit_reason = Some(ExitReason::Normal(code));
             u64::MAX // assembly returns to saved kernel continuation
         }
+        Ok(Action::Yield) => u64::MAX - 1, // no scheduler in other modes
         Err(_) => u64::MAX - 1,
+    }
     }
 }
 
@@ -482,6 +506,12 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     let efer = (u64::from(hi) << 32) | u64::from(lo);
     if efer & (1 << 11) == 0 { return Err(Ring3Error::InvalidNx) }
 
+    #[cfg(feature = "native-ring3-threads")]
+    {
+        return unsafe { crate::native_ring3_threads::run(staged, hhdm) };
+    }
+    #[cfg(not(feature = "native-ring3-threads"))]
+    {
     let mut table = ProcessTable::new();
     let pid = table.create("native-ring3-fixture", CODE_VA, STACK_TOP, 1)
         .map_err(|_| Ring3Error::InvalidFixture)?;
@@ -537,5 +567,6 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
         ExitReason::Normal(code) => Err(Ring3Error::ExitCode(code)),
         ExitReason::Fault(fault) => Err(Ring3Error::Fault(fault)),
         _ => Err(Ring3Error::UnexpectedExit),
+    }
     }
 }

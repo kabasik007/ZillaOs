@@ -206,7 +206,7 @@ mod tests {
     use super::*;
     use address_space::{Permissions, PAGE_SIZE};
     use scheduler::RoundRobin;
-    use syscall::{Action, Error, Request, SYS_EXIT, SYS_WRITE};
+    use syscall::{Action, Error, Request, SYS_EXIT, SYS_WRITE, SYS_YIELD};
 
     fn code_region(base: u64) -> UserRegion {
         UserRegion::checked(base, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap()
@@ -285,6 +285,7 @@ mod tests {
         assert_eq!(syscall::validate(p, Request { arg2: 0, ..good }), Err(Error::InvalidLength));
         assert_eq!(syscall::validate(p, Request { number: 0xffff, ..good }), Err(Error::Unsupported));
         assert_eq!(syscall::validate(p, Request { number: SYS_EXIT, arg0: 7, ..good }), Ok(Action::Exit { code: 7 }));
+        assert_eq!(syscall::validate(p, Request { number: SYS_YIELD, ..good }), Ok(Action::Yield));
     }
 
     #[test]

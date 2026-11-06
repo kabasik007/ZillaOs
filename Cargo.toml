@@ -38,6 +38,10 @@ native-ring3-guard-fault = ["native-ring3"]
 # Negative QEMU fixture: user read of present supervisor kernel text must fault.
 native-ring3-kernel-fault = ["native-ring3"]
 
+# Disposable one-process/two-user-thread cooperative IRETQ switch fixture.
+# Never enabled for the Desktop or the other Ring3 regression ISOs.
+native-ring3-threads = ["native-ring3"]
+
 # Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
 pe-inspector-cli = []
 

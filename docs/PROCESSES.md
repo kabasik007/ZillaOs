@@ -128,3 +128,26 @@ python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-kernel-uefi.iso
 The success marker is `ZILLAOS_NATIVE_USER_KERNEL_ACCESS_DENIED`.
 The controlled test checks one supervisor mapping and one CPU only;
 it is not a claim of hardened kernel isolation against arbitrary code.
+
+## Milestone 6 — two actual user contexts with cooperative yielding (opt-in)
+
+`native-ring3-threads` adds a separate QEMU-only binary that enters two
+different CPL3 entry points inside the **same** isolated PML4, each with its
+own mapped RW/NX 4KiB user stack and a separate unmapped stack guard.
+The `INT 0x80` trap saves 14 GP registers and the 5-qword user IRET frame;
+`SYS_YIELD=3` swaps the saved frame with the next CPU0 Ready TID selected
+by `ThreadTable`. The test program checks its preserved RBX/R12 counter,
+voluntarily yields three times in each thread (expected trace `ABABAB`),
+and both threads call `SYS_EXIT=2` without causing a kernel panic.
+The existing saved supervisor continuation restores the original CR3 and
+kernel stack after both finish. No ELF/PE files are executed.
+
+```bash
+bash scripts/build.sh ring3-threads
+python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-threads-uefi.iso --timeout 90
+```
+
+This is **true cooperative user context switching**, not timer preemption,
+SMP, arbitrary thread creation or a production ProcessManager backend.
+Only CPU0 is online, interrupts remain masked and all code is a fixed,
+audited 42-byte fixture. The GUI Desktop is unaffected.

@@ -9,6 +9,7 @@ on:
       - 'src/page_table_observer.rs'
       - 'src/native_vm_staging.rs'
       - 'src/native_ring3.rs'
+      - 'src/native_ring3_threads.rs'
       - 'src/main.rs'
       - 'Cargo.toml'
       - 'scripts/build.sh'
@@ -49,6 +50,8 @@ jobs:
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-guard-fault
       - name: Compile supervisor boundary fault fixture
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-kernel-fault
+      - name: Compile cooperative two-thread Ring3 fixture
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-threads
 
   paging-audit-qemu:
     runs-on: ubuntu-24.04
@@ -209,4 +212,40 @@ jobs:
           path: |
             ring3-kernel.log
             dist/*ring3-kernel*.iso
+          if-no-files-found: warn
+
+  native-ring3-cooperative-threads-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install pinned Rust 1.90
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build isolated native two-thread Ring3 ISO
+        run: bash scripts/build.sh ring3-threads
+      - name: Verify six real CPL3 yields and both exits
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-threads-uefi.iso --timeout 90 | tee ring3-threads.log
+          grep -qx 'ZILLAOS_NATIVE_THREADS_ENTER' ring3-threads.log
+          grep -qx 'ZILLAOS_NATIVE_THREADS_RETURNED' ring3-threads.log
+          grep -qx 'ZILLAOS_NATIVE_THREAD_TRACE=ABABAB' ring3-threads.log
+          grep -qx 'ZILLAOS_NATIVE_THREAD_A_EXIT' ring3-threads.log
+          grep -qx 'ZILLAOS_NATIVE_THREAD_B_EXIT' ring3-threads.log
+          grep -qx 'ZILLAOS_NATIVE_THREADS_BOTH_EXITED' ring3-threads.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_OK' ring3-threads.log
+          grep -qx 'ZILLAOS_BOOT_OK' ring3-threads.log
+          if grep -q 'ZILLAOS_NATIVE_RING3_FAILED\|ZILLAOS_EXCEPTION_FATAL\|ZILLAOS_PANIC' ring3-threads.log; then exit 1; fi
+      - name: Save Ring3 cooperative execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-ring3-two-threads-evidence
+          path: |
+            ring3-threads.log
+            dist/*ring3-threads*.iso
           if-no-files-found: warn
