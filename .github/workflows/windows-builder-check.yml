@@ -12,6 +12,8 @@ on:
       - 'tests/test_windows_entrypoint.py'
       - 'tests/test_windows_wsl_entry.py'
       - 'tests/test_vmware_profile.py'
+      - 'scripts/windows_wsl_setup.sh'
+      - 'scripts/build_vmware.sh'
       - '.github/workflows/windows-builder-check.yml'
   pull_request:
     paths:
@@ -65,3 +67,19 @@ jobs:
           }
       - name: Execute CRLF regression in Windows PowerShell 5.1
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File tests/test_windows_line_endings.ps1
+
+  rust-host-link-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Provide host C compiler and LLD
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential lld xorriso
+      - name: Install pinned Rust version and bare-metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Diagnose real linker availability
+        run: bash scripts/windows_wsl_setup.sh --check
+      - name: Link and execute Rust library tests on host
+        run: cargo test --lib --target x86_64-unknown-linux-gnu --offline
