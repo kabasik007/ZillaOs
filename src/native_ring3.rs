@@ -328,14 +328,14 @@ fn install_gdt_tss_and_idt() -> Result<(), Ring3Error> {
             "push rax",
             "retfq",
             "2:",
-            mov ax, 0x10
+            "mov ax, 0x10",
             "mov ss, ax",
             "mov ds, ax",
             "mov es, ax",
             "xor eax, eax",
             "mov fs, ax",
             "mov gs, ax",
-            mov ax, 0x28
+            "mov ax, 0x28",
             "ltr ax",
             "lidt [{idtr}]",
             gdtr = in(reg) &gdtr,
