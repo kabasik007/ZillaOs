@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn show_desktop_minimizes_windows_and_dock_restores_them() {
-        let mut wm = wm();
+        let mut wm = manager();
         wm.open(App::Settings);
         wm.open(App::Terminal);
         let stored = wm.rect(App::Terminal);
