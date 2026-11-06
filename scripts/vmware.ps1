@@ -36,6 +36,43 @@ if (-not $VmDir) {
     $VmDir = Join-Path $RepoRoot "build\vmware\ZillaOS"
 }
 
+function Get-ZillaVmwareExe {
+    # VMware Workstation may be installed under Program Files (x86), even on
+    # 64-bit Windows. Search its main directory and bin subdirectory.
+    $found = Get-Command -Name "vmware.exe" -CommandType Application -ErrorAction SilentlyContinue
+    if ($found -and (Test-Path -LiteralPath $found.Source -PathType Leaf)) {
+        return $found.Source
+    }
+    foreach ($root in @(${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+        if ([string]::IsNullOrWhiteSpace($root)) { continue }
+        foreach ($relative in @(
+            "VMware\VMware Workstation\vmware.exe",
+            "VMware\VMware Workstation\bin\vmware.exe",
+            "Broadcom\VMware Workstation\vmware.exe",
+            "Broadcom\VMware Workstation\bin\vmware.exe"
+        )) {
+            $candidate = Join-Path -Path $root -ChildPath $relative
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                return $candidate
+            }
+        }
+    }
+    return $null
+}
+
+function Open-ZillaVmware([string]$VmxPath) {
+    $exe = Get-ZillaVmwareExe
+    if ($exe) {
+        Write-Host "[ZillaOS] Launching VMware Workstation: $exe"
+        Start-Process -FilePath $exe -ArgumentList ('"' + $VmxPath + '"')
+    } else {
+        Write-Host "[ZillaOS] VMware executable not found; ISO and VMX are ready." -ForegroundColor Yellow
+        Write-Host "Open this existing VMX in VMware Workstation:"
+        Write-Host $VmxPath
+        Write-Host "Or set the install path if VMware Workstation uses a custom location."
+    }
+}
+
 if ($Build) {
     # Reuse the repaired Windows/WSL builder instead of the old independent
     # wslpath + bash -lc implementation (which corrupted backslashes).
@@ -63,19 +100,8 @@ if (Test-Path -LiteralPath $vmxPath) {
         Write-Host $vmxPath
         Write-Host "[ZillaOS] ISO reference in VM settings should point to: $iso"
         if ($Launch) {
-            # Launch existing VM configuration without editing it.
-            $Vmware = Get-Command vmware.exe -ErrorAction SilentlyContinue
-            $exe = if ($Vmware) { $Vmware.Source } else { $null }
-            if (-not $exe) {
-                foreach ($candidate in @(
-                    (Join-Path $env:ProgramFiles "VMware\VMware Workstation\vmware.exe"),
-                    (Join-Path $env:ProgramFiles "Broadcom\VMware Workstation\vmware.exe")
-                )) {
-                    if (Test-Path $candidate) { $exe = $candidate; break }
-                }
-            }
-            if ($exe) { Start-Process -FilePath $exe -ArgumentList ('"' + $vmxPath + '"') }
-            else { Write-Host "Open the VMX manually in VMware Workstation: $vmxPath" }
+            # Launch without changing any existing VMX, NVRAM or snapshots.
+            Open-ZillaVmware $vmxPath
         }
         return
     }
@@ -148,22 +174,7 @@ Write-Host "UEFI VM manually and attach the same ISO as a virtual CD/DVD."
 Write-Host ""
 
 if ($Launch) {
-    $found = Get-Command vmware.exe -ErrorAction SilentlyContinue
-    $exe = if ($found) { $found.Source } else { $null }
-    if (-not $exe) {
-        foreach ($candidate in @(
-            (Join-Path $env:ProgramFiles "VMware\VMware Workstation\vmware.exe"),
-            (Join-Path $env:ProgramFiles "Broadcom\VMware Workstation\vmware.exe")
-        )) {
-            if (Test-Path $candidate) { $exe = $candidate; break }
-        }
-    }
-    if ($exe) {
-        Start-Process -FilePath $exe -ArgumentList ('"' + $vmxPath + '"')
-    } else {
-        Write-Host "VMware executable not located. Open the VMX manually:"
-        Write-Host $vmxPath
-    }
+    Open-ZillaVmware $vmxPath
 } else {
     Write-Host "Next: Open the VMX in VMware Workstation and click Power on."
 }
