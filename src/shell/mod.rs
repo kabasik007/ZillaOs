@@ -7,3 +7,5 @@ pub mod clock;
 pub mod desktop_icons;
 
 pub mod start_menu;
+pub mod taskbar;
+pub mod task_view;

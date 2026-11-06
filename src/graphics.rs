@@ -12,7 +12,7 @@ use zillaos_kernel::fs::{self, NodeKind};
 use zillaos_kernel::apps;
 use zillaos_kernel::apps::notepad::EditorStatus;
 use zillaos_kernel::fs::ramfs::DOCUMENTS_DIR;
-use zillaos_kernel::shell::start_menu;
+use zillaos_kernel::shell::{start_menu, taskbar, task_view};
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
@@ -519,14 +519,21 @@ impl Screen {
         self.text("ZILLAOS", 49, 15, 2, fg);
         if layout.width >= 720 {
             let mut menu_x = 170;
-            for label in [TextId::Desktop, TextId::File, TextId::View, TextId::Windows] {
-                let title = tr(state.language, label);
+            for index in 0..taskbar::MENU_COUNT {
+                let title = taskbar::menu_label(state.language, index);
                 self.text(title, menu_x, 18, 1, fg);
                 menu_x = menu_x.saturating_add(title.chars().count() * 6 + 16);
             }
             if layout.width >= 940 && state.hostname.as_str().chars().count() <= 12 {
                 self.text(state.hostname.as_str(), layout.width - 235, 17, 1, fg);
             }
+        }
+        // No microphone driver is initialized. Never show simulated activity.
+        if layout.width >= 1050 {
+            let mic_x = layout.width.saturating_sub(341);
+            self.round_rect(mic_x, 9, 82, 25, 6,
+                if state.dark { 0x263a50 } else { 0xdce9ee });
+            self.text("MIC N/A", mic_x + 11, 18, 1, 0x83adb9);
         }
         let time_x = layout.width.saturating_sub(118);
         if let Some(clock) = state.clock {
@@ -587,6 +594,45 @@ impl Screen {
             let width = name.chars().count().saturating_mul(6);
             self.text(name, point.x + 46usize.saturating_sub(width / 2),
                       point.y + 52, 1, fg);
+        }
+    }
+
+    /// Hybrid Windows taskbar / macOS dock. Buttons share hit-test geometry.
+    fn taskbar(&self, state: &Desktop, layout: &Layout) {
+        let y = layout.height.saturating_sub(layout.dock_height + 12);
+        self.rectangle(0, y, layout.width, layout.height.saturating_sub(y),
+                       if state.dark { 0x12243a } else { 0xd9ebf3 });
+        self.rectangle(0, y, layout.width, 1,
+                       if state.dark { 0x294860 } else { 0xb2d1d9 });
+        for action in [taskbar::Action::Start, taskbar::Action::Tasks] {
+            let Some(rect) = taskbar::button(*layout, action) else { continue };
+            let active = match action {
+                taskbar::Action::Start => state.launcher,
+                taskbar::Action::Tasks => state.active() == Some(App::TaskManager),
+            };
+            let bg = if active { 0x1b777d } else if state.dark { 0x28425a } else { 0xc8dee8 };
+            self.round_rect(rect.x, rect.y, rect.width, rect.height, 10, bg);
+            let fg = if state.dark || active { 0xeaf8ff } else { 0x244458 };
+            match action {
+                taskbar::Action::Start => {
+                    self.round_rect(rect.x + 9, rect.y + 11, 23, 23, 7, 0x19c7b0);
+                    self.text("Z", rect.x + 16, rect.y + 17, 1, 0x102236);
+                    self.text("START", rect.x + 36, rect.y + 20, 1, fg);
+                }
+                taskbar::Action::Tasks => {
+                    self.round_rect(rect.x + 8, rect.y + 11, 23, 23, 6, 0x147f91);
+                    for i in 0..2 { for j in 0..2 {
+                        self.rectangle(rect.x + 13 + i * 8, rect.y + 16 + j * 8, 5, 5, 0xe5fdff);
+                    } }
+                    self.text("TASKS", rect.x + 37, rect.y + 20, 1, fg);
+                }
+            }
+        }
+        if layout.width >= 960 {
+            let right = layout.width.saturating_sub(146);
+            self.text("RTC", right, y + 17, 1, 0x8fc6d1);
+            self.text("MIC --", right + 36, y + 17, 1, 0x80a7b9);
+            self.text("CTRL SHIFT ESC", right.saturating_sub(24), y + 33, 1, 0x7595aa);
         }
     }
 
@@ -740,17 +786,57 @@ impl Screen {
                         self.text(tr(state.language, entry.title_key),
                                   cx + 40, py + 13, 1, fg);
                     }
-                    if content_h > 290 {
+                    if content_h > 385 {
                         self.text("LINUX / WINDOWS / ANDROID: NO RUNTIME",
-                                  cx, body + 258, 1, 0xffc35a);
-                        self.text("NATIVE USER PROCESSES: NOT READY",
-                                  cx, body + 277, 1, secondary);
+                                  cx, body + 355, 1, 0xffc35a);
+                        self.text("USER TASKS: EXPERIMENTAL TEST ISO",
+                                  cx, body + 373, 1, secondary);
                     }
                 }
             }
             App::Notepad => {
                 self.notepad_body(state, cx, body, cw, content_h, fg, secondary);
             }
+            App::TaskManager => {
+                // These are kernel-embedded GUI windows, not independent
+                // processes. Do not invent PID, CPU %, memory, or threads.
+                self.text("TASK MANAGER", cx, body + 9, 2, fg);
+                self.round_rect(cx, body + 36, cw, 49, 8,
+                    if state.dark { 0x234254 } else { 0xd7f0ed });
+                self.text("KERNEL: RING 0 / BOOT CPU", cx + 10, body + 46, 1, 0x22d1b7);
+                self.text("SMP OFF  |  RING3: TEST ISO ONLY", cx + 10,
+                          body + 65, 1, secondary);
+                self.text("EMBEDDED GUI WINDOWS  /  NOT PROCESSES", cx,
+                          body + 89, 1, secondary);
+                for (i, descriptor) in apps::BUILTIN_APPS.iter().enumerate() {
+                    let top = body + task_view::ROW_START + i * task_view::ROW_GAP;
+                    if top + task_view::ROW_HEIGHT >= body + content_h.saturating_sub(8) { break; }
+                    let win = state.windows.window(descriptor.id);
+                    let status = if state.active() == Some(descriptor.id) { "FOCUSED" }
+                        else { match win.mode {
+                            WindowMode::Normal | WindowMode::Maximized => "VISIBLE",
+                            WindowMode::Minimized => "MINIMIZED",
+                            WindowMode::Hidden => "CLOSED",
+                        } };
+                    let card = if state.active() == Some(descriptor.id) { 0x275669 }
+                        else if state.dark { 0x263b52 } else { 0xe4f1f5 };
+                    self.round_rect(cx, top, cw, task_view::ROW_HEIGHT, 7, card);
+                    self.round_rect(cx + 6, top + 7, 23, 23, 6, descriptor.color);
+                    self.text(descriptor.glyph, cx + 14, top + 14, 1, 0xffffff);
+                    self.text(descriptor.id.label(), cx + 38, top + 14, 1, fg);
+                    if cw >= 320 {
+                        self.text(status, cx + cw.saturating_sub(78), top + 14, 1,
+                                  if status == "CLOSED" { secondary } else { 0x44dfbe });
+                    }
+                }
+                if content_h >= 380 {
+                    self.text("CLICK ROW TO OPEN / FOCUS WINDOW", cx,
+                              body + content_h.saturating_sub(28), 1, secondary);
+                    self.text("CPU / RAM / THREAD METRICS: N/A", cx,
+                              body + content_h.saturating_sub(13), 1, 0xd6b36e);
+                }
+            }
+
             App::Settings => {
                 self.text(tr(state.language, TextId::Settings), cx, body + 9, 2, fg);
                 if content_h > 98 {
@@ -916,16 +1002,7 @@ impl Screen {
                                       3, 5), self.rgb(0x1dd9b4));
     }
 
-    fn key_legend(&self, state: &Desktop, layout: &Layout) {
-        if layout.width < 730 || layout.height < 460 { return; }
-        let fg = if state.dark { 0xa5c7d8 } else { 0x244d64 };
-        self.text("F1 START F2 FILES F3 TERM F4 SET F5 THEME F8 LANG F9 DESKTOP F10 APPS F11 SAVE F12 NEW",
-                  22, layout.height.saturating_sub(12), 1, fg);
-        if layout.height >= 600 && layout.width >= 820 {
-            self.text("ARROWS MOVE  SHIFT ARROWS RESIZE",
-                      22, layout.height.saturating_sub(layout.dock_height + 25), 1, fg);
-        }
-    }
+
 }
 
 /// Draw one entire desktop frame. The caller drives redraw on input events.
@@ -946,9 +1023,9 @@ pub fn render(state: &Desktop) -> bool {
             screen.window(state, app, state.windows.rect(app), state.active() == Some(app));
         }
     }
+    screen.taskbar(state, &layout);
     screen.dock(state, &layout);
     screen.launcher(state, &layout);
-    screen.key_legend(state, &layout);
 
     if buffered {
         // Compose all GUI layers before a single complete screen transfer.

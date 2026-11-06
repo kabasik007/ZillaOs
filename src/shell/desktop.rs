@@ -9,7 +9,7 @@ use crate::apps::notepad_ui::{editor_action, EditorAction};
 use crate::shell::clock::ClockTime;
 use crate::shell::desktop_icons::DesktopIcons;
 use crate::video::VideoAdapter;
-use crate::shell::start_menu;
+use crate::shell::{start_menu, taskbar, task_view};
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
@@ -26,6 +26,7 @@ pub enum Key {
     Settings,
     AppCenter,
     Notepad,
+    TaskManager,
     SaveDocument,
     NewDocument,
     ToggleTheme,
@@ -303,15 +304,16 @@ impl Desktop {
 
     /// The top panel menus are real desktop actions rather than mock labels.
     fn top_menu_at(&self, x: usize, y: usize) -> Option<usize> {
-        if y >= self.layout.top_bar || self.layout.width < 720 { return None; }
-        let mut start = 170;
-        for (index, id) in [TextId::Desktop, TextId::File,
-                             TextId::View, TextId::Windows].iter().enumerate() {
-            let end = start + tr(self.language, *id).chars().count() * 6 + 16;
-            if x >= start && x < end { return Some(index); }
-            start = end;
+        taskbar::menu_hit(self.layout, self.language, x, y)
+    }
+
+    fn toggle_task_manager(&mut self) {
+        if self.active() == Some(App::TaskManager) {
+            self.windows.minimize_focused();
+        } else {
+            self.launch_app(App::TaskManager);
         }
-        None
+        self.launcher = false;
     }
 
     /// Handle one decoded packet. The Y-axis is already screen-oriented.
@@ -338,6 +340,11 @@ impl Desktop {
                     self.launch_app(app);
                 }
                 self.launcher = false;
+            } else if let Some(action) = taskbar::hit(self.layout, x, y) {
+                match action {
+                    taskbar::Action::Start => self.launcher = !self.launcher,
+                    taskbar::Action::Tasks => self.toggle_task_manager(),
+                }
             } else if let Some(app) = Self::dock_app_at(self.layout, x, y) {
                 self.launch_app(app);
             } else if y < self.layout.top_bar && x < 46 {
@@ -347,7 +354,8 @@ impl Desktop {
                     0 => self.launcher = !self.launcher,
                     1 => self.launch_app(App::Files),
                     2 => self.dark = !self.dark,
-                    _ => self.windows.show_desktop(),
+                    3 => self.windows.show_desktop(),
+                    _ => self.toggle_task_manager(),
                 }
             } else if let Some((app, title)) = self.windows.activate_at(x, y) {
                 let rect = self.windows.rect(app);
@@ -380,6 +388,10 @@ impl Desktop {
                     }
                 } else if app == App::Notepad {
                     self.notepad_click(rect, x, y);
+                } else if app == App::TaskManager {
+                    if let Some(chosen) = task_view::row_at(rect, x, y) {
+                        if chosen != App::TaskManager { self.launch_app(chosen); }
+                    }
                 }
             } else if let Some(app) = Self::desktop_shortcut_at(self.layout, x, y) {
                 self.launch_app(app);
@@ -416,6 +428,7 @@ impl Desktop {
         let old_ramfs = self.ramfs.revision;
         match key {
             Key::Launcher => self.launcher = !self.launcher,
+            Key::TaskManager => self.toggle_task_manager(),
             Key::Files | Key::Terminal | Key::Settings | Key::AppCenter | Key::Notepad => {
                 let app = match key {
                     Key::Files => App::Files,
@@ -550,6 +563,9 @@ impl ScancodeDecoder {
             });
         }
 
+        if self.ctrl && self.shift && code == 0x01 {
+            return Some(Key::TaskManager); // Ctrl+Shift+Esc: real taskbar action
+        }
         if self.ctrl && code == 0x1f { return Some(Key::SaveDocument); } // Ctrl+S
         match code {
             0x3b => Some(Key::Launcher),     // F1
@@ -764,6 +780,41 @@ mod tests {
             state.handle_mouse(test_packet(-255, -255, false));
         }
         assert_eq!((state.pointer.x, state.pointer.y), (0, 0));
+    }
+
+    #[test]
+    fn taskbar_start_and_task_manager_are_real_window_actions() {
+        let mut desktop = Desktop::new();
+        desktop.enable_pointer();
+        let task_button = taskbar::button(desktop.layout, taskbar::Action::Tasks).unwrap();
+        desktop.pointer.x = task_button.x + 12;
+        desktop.pointer.y = task_button.y + 12;
+        assert!(desktop.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(desktop.active(), Some(App::TaskManager));
+        desktop.handle_mouse(test_packet(0, 0, false));
+        assert!(desktop.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(desktop.windows.window(App::TaskManager).mode, WindowMode::Minimized);
+        desktop.handle_mouse(test_packet(0, 0, false));
+        assert!(desktop.handle(Key::TaskManager));
+        assert_eq!(desktop.active(), Some(App::TaskManager));
+        let rect = desktop.windows.rect(App::TaskManager);
+        let cx = rect.x + (rect.width / 4).clamp(70,170) + 27;
+        let body = rect.y + 45 + 8;
+        desktop.pointer.x = cx + 12;
+        desktop.pointer.y = body + task_view::ROW_START + 10;
+        assert!(desktop.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(desktop.active(), Some(App::Files));
+    }
+
+    #[test]
+    fn ctrl_shift_escape_opens_task_manager_without_closing_other_windows() {
+        let mut keyboard=ScancodeDecoder::new();
+        assert_eq!(keyboard.feed(0x1d),None);
+        assert_eq!(keyboard.feed(0x2a),None);
+        assert_eq!(keyboard.feed(0x01),Some(Key::TaskManager));
+        keyboard.feed(0xaa);
+        keyboard.feed(0x9d);
+        assert_eq!(keyboard.feed(0x01),Some(Key::Escape));
     }
 
     #[test]

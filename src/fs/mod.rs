@@ -22,7 +22,7 @@ pub mod ramfs;
 
 // Every parent index must refer to an existing directory. Root is its own
 // sentinel parent. These are virtual paths INSIDE ZillaOS, never Windows paths.
-pub static NODES: [Node; 26] = [
+pub static NODES: [Node; 27] = [
     Node { name: "ZillaOS", path: "/", parent: 0, kind: NodeKind::Directory, data: b"" },
     Node { name: "Program Files", path: "/Program Files", parent: 0, kind: NodeKind::Directory, data: b"" },
     Node { name: "Users", path: "/Users", parent: 0, kind: NodeKind::Directory, data: b"" },
@@ -52,6 +52,8 @@ pub static NODES: [Node; 26] = [
     Node { name: "Zilla App Center", path: "/Program Files/Zilla App Center", parent: 1,
            kind: NodeKind::Directory, data: b"" },
     Node { name: "Zilla Notepad", path: "/Program Files/Zilla Notepad", parent: 1,
+           kind: NodeKind::Directory, data: b"" },
+    Node { name: "Zilla Task Manager", path: "/Program Files/Zilla Task Manager", parent: 1,
            kind: NodeKind::Directory, data: b"" },
 ];
 

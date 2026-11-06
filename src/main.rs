@@ -468,6 +468,7 @@ pub extern "C" fn _start() -> ! {
                         Some(App::Settings) => serial::write("SETTINGS\n"),
                         Some(App::AppCenter) => serial::write("APP_CENTER\n"),
                         Some(App::Notepad) => serial::write("NOTEPAD\n"),
+                        Some(App::TaskManager) => serial::write("TASK_MANAGER\n"),
                         None => serial::write("NONE\n"),
                     }
                 }

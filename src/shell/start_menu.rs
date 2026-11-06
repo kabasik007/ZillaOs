@@ -16,7 +16,7 @@ pub struct Panel {
 pub fn panel(layout: Layout, progress: u8) -> Panel {
     let width = layout.width.saturating_sub(32).min(360);
     let available = layout.height.saturating_sub(layout.top_bar + layout.dock_height + 26);
-    let height = available.min(184);
+    let height = available.min(228);
     let base = layout.height.saturating_sub(layout.dock_height + height + 22)
         .max(layout.top_bar + 8);
     let hidden = height.saturating_add(24);

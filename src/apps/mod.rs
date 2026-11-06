@@ -25,6 +25,8 @@ pub static BUILTIN_APPS: [AppDescriptor; App::COUNT] = [
                     title_key: TextId::AppCenter, glyph: "A", color: 0x419776 },
     AppDescriptor { id: App::Notepad, name: "Zilla Notepad", install_path: "/Program Files/Zilla Notepad",
                     title_key: TextId::Notepad, glyph: "N", color: 0xb18a51 },
+    AppDescriptor { id: App::TaskManager, name: "Zilla Task Manager", install_path: "/Program Files/Zilla Task Manager",
+                    title_key: TextId::TaskManager, glyph: "P", color: 0x258b8c },
 ];
 pub fn descriptor(id: App) -> &'static AppDescriptor { &BUILTIN_APPS[id.index()] }
 pub fn find_by_path(path: &str) -> Option<&'static AppDescriptor> {

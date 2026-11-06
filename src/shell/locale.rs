@@ -4,7 +4,7 @@ use crate::setup::Language;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextId {
-    Desktop, File, View, Windows, Files, Terminal, Settings, AppCenter, Notepad, Home, Apps, About,
+    Desktop, File, View, Windows, Files, Terminal, Settings, AppCenter, Notepad, TaskManager, Home, Apps, About,
     Documents, Pictures, Downloads, ProgramFiles, Projects, Appearance, ThemeDark, ThemeLight,
     Language, LangUkrainian, LangEnglish, LangRussian, Display, BootResolution,
     BootHint, ModeChangedAfterReboot, Launcher, Active, WallpaperTitle,
@@ -25,6 +25,7 @@ pub const fn text(language: Language, id: TextId) -> &'static str {
         (Ukrainian, Settings) => "НАЛАШТУВАННЯ", (English, Settings) => "SETTINGS", (Russian, Settings) => "НАСТРОЙКИ",
         (Ukrainian, AppCenter) => "ЦЕНТР ПРОГРАМ", (English, AppCenter) => "APP CENTER", (Russian, AppCenter) => "ЦЕНТР ПРОГРАММ",
         (Ukrainian, Notepad) => "БЛОКНОТ", (English, Notepad) => "NOTEPAD", (Russian, Notepad) => "БЛОКНОТ",
+        (Ukrainian, TaskManager) => "ДИСПЕТЧЕР ЗАДАЧ", (English, TaskManager) => "TASK MANAGER", (Russian, TaskManager) => "ДИСПЕТЧЕР ЗАДАЧ",
         (Ukrainian, Home) => "ГОЛОВНА", (English, Home) => "HOME", (Russian, Home) => "ГЛАВНАЯ",
         (Ukrainian, Apps) => "ПРОГРАМИ", (English, Apps) => "APPS", (Russian, Apps) => "ПРОГРАММЫ",
         (Ukrainian, About) => "ПРО СИСТЕМУ", (English, About) => "ABOUT", (Russian, About) => "О СИСТЕМЕ",
@@ -66,7 +67,7 @@ mod tests {
     #[test]
     fn localization_is_complete_and_utf8() {
         let ids = [TextId::Desktop, TextId::File, TextId::View, TextId::Windows,
-            TextId::Files, TextId::Terminal, TextId::Settings, TextId::AppCenter, TextId::Notepad, TextId::Home,
+            TextId::Files, TextId::Terminal, TextId::Settings, TextId::AppCenter, TextId::Notepad, TextId::TaskManager, TextId::Home,
             TextId::Apps, TextId::About, TextId::Documents, TextId::Pictures,
             TextId::Downloads, TextId::ProgramFiles,
             TextId::Projects, TextId::Appearance, TextId::ThemeDark,
