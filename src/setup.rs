@@ -60,6 +60,7 @@ impl Step {
 pub enum Language {
     Ukrainian,
     English,
+    Russian,
 }
 
 impl Language {
@@ -67,6 +68,7 @@ impl Language {
         match self {
             Self::Ukrainian => "uk",
             Self::English => "en",
+            Self::Russian => "ru",
         }
     }
 }
@@ -219,7 +221,8 @@ impl Wizard {
 
     pub const fn option_count(&self) -> usize {
         match self.step {
-            Step::Language | Step::Appearance => 2,
+            Step::Language => 3,
+            Step::Appearance => 2,
             Step::Region => 3,
             Step::TimeZone => 4,
             _ => 0,
@@ -292,10 +295,10 @@ impl Wizard {
 
     fn apply_choice(&mut self) {
         match self.step {
-            Step::Language => self.language = if self.selection == 0 {
-                Language::Ukrainian
-            } else {
-                Language::English
+            Step::Language => self.language = match self.selection {
+                1 => Language::English,
+                2 => Language::Russian,
+                _ => Language::Ukrainian,
             },
             Step::Region => self.region = match self.selection {
                 1 => Region::Poland,
@@ -315,7 +318,11 @@ impl Wizard {
 
     fn selection_for_step(&self) -> usize {
         match self.step {
-            Step::Language => if self.is_ukrainian() { 0 } else { 1 },
+            Step::Language => match self.language {
+                Language::Ukrainian => 0,
+                Language::English => 1,
+                Language::Russian => 2,
+            },
             Step::Region => match self.region {
                 Region::Ukraine => 0,
                 Region::Poland => 1,
@@ -507,6 +514,23 @@ mod tests {
         }
         assert!(s.finished());
         assert!(!s.handle_key(Key::Confirm));
+    }
+
+    #[test]
+    fn setup_offers_three_languages_and_keeps_russian_selection() {
+        let mut s = wizard();
+        s.handle_key(Key::Confirm);
+        assert_eq!(s.step, Step::Language);
+        assert_eq!(s.option_count(), 3);
+        s.handle_key(Key::Move(Move::Right));
+        s.handle_key(Key::Move(Move::Right));
+        assert_eq!(s.language, Language::Russian);
+        assert_eq!(s.language.code(), "ru");
+        s.handle_key(Key::Confirm);
+        assert_eq!(s.step, Step::Region);
+        s.handle_key(Key::Escape);
+        assert_eq!(s.step, Step::Language);
+        assert_eq!(s.selection, 2);
     }
 
     #[test]
