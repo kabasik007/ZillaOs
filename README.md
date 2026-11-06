@@ -2,7 +2,7 @@
 
 **ZillaOS** is an experimental, independent Rust-first operating system. The goal is a small capability-oriented microkernel with isolated user-space services; the current graphical preview still draws from the early kernel.
 
-> **Verified on user's Windows/VMware (2026-11-06):** UEFI ISO booted into a graphical ZillaOS desktop with working mouse and windows. User screenshots and logs verified the graphical desktop, multilingual folders and RTC clock in VMware, with **122 Python and 122 Rust tests passing** for that build. App Center, shared launch services and Zilla Notepad with volatile text saving passed GitHub CI; the new editor still requires a VMware GUI check.
+> **Verified on user's Windows/VMware (2026-11-06):** UEFI ISO booted into a graphical ZillaOS desktop with working mouse and windows. User screenshots and logs verified the graphical desktop, multilingual folders and RTC clock in VMware, with **122 Python and 122 Rust tests passing** for that build. App Center and Zilla Notepad are now verified by the user's VMware screenshot. The newer Windows PE32+ inspector and VMware PCI video detection passed GitHub CI; runtime EXE execution, video mode switching and GPU acceleration are not implemented yet.
 
 > **Scope:** this is a volatile development desktop, not yet a general-purpose OS, standalone installer, filesystem manager or command shell.
 
@@ -11,7 +11,8 @@ see [Desktop development guide](docs/DESKTOP.md),
 [Filesystem / source modules](docs/FILESYSTEM.md),
 [Application Manager and App Center](docs/APPLICATIONS.md),
 [Zilla Notepad](docs/NOTEPAD.md),
-[Compatibility roadmap](docs/COMPATIBILITY.md) and
+[Compatibility roadmap](docs/COMPATIBILITY.md),
+[Windows PE + VMware graphics implementation status](docs/WINDOWS_GRAPHICS.md) and
 [Windows ISO build guide](docs/WINDOWS_ISO.md).
 
 ## Mission / Мета

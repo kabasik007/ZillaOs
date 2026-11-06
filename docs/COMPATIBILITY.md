@@ -54,7 +54,10 @@ ELF — тільки формат файлу; потрібна Linux ABI (syscal
 Просте розпізнавання ELF не запускає Linux-програми.
 
 ### Windows
-PE32+ loader, Win32/NT API й DLL-сумісність або Windows VM.
+Вже реалізовано сувору перевірку PE32+ x86-64 заголовків та
+окрему host-утиліту `pe-inspect`, що використовує той самий Rust-парсер.
+**Виконання EXE досі недоступне.** Наступний крок — ізольований PE
+image mapper, Win32/NT API й DLL-сумісність або Windows VM.
 Wine — приклад сумісного шару Win32, що перекладає виклики
 в POSIX API. Без POSIX або адаптації Wine до власного API
 напряму скопіювати його в ZillaOS неможливо.
@@ -87,6 +90,9 @@ ZIP не обов'язково APK, ELF не обов'язково Linux ABI, а
 `target_os`, `arch`, `entrypoint`, `permissions`,
 `signature`, `runtime_version`. Застосунки завантажуються
 тільки через ізольований App Manager.
+
+Практичний стан та команди перевірки Windows-файлів описані в
+[WINDOWS_GRAPHICS.md](WINDOWS_GRAPHICS.md).
 
 ## Практичні етапи
 

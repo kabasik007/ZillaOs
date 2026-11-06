@@ -95,6 +95,12 @@ ZillaOs/
 │   │   ├── start_menu.rs    геометрія слайд-анімації
 │   │   ├── files_interaction.rs
 │   │   └── mod.rs
+│   ├── video/
+│   │   └── mod.rs           PCI graphics discovery (read-only)
+│   ├── compat/
+│   │   └── windows_pe.rs    Windows PE32+ x64 inspector
+│   ├── bin/
+│   │   └── pe_inspect.rs    host CLI (not in boot ISO)
 │   ├── apps/
 │   │   ├── mod.rs           каталог вбудованих програм
 │   │   ├── notepad.rs       текстовий редактор
