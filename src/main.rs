@@ -280,6 +280,8 @@ pub extern "C" fn _start() -> ! {
         loop {
             let previous_windows = desktop.windows;
             let previous_files = desktop.files;
+            let previous_notepad_revision = desktop.notepad.revision;
+            let previous_ramfs_revision = desktop.ramfs.revision;
             let previous_icons = desktop.icons;
             let previous_clock = desktop.clock;
             let previous_launcher = desktop.launcher;
@@ -340,6 +342,7 @@ pub extern "C" fn _start() -> ! {
                         Some(App::Terminal) => serial::write("TERMINAL\n"),
                         Some(App::Settings) => serial::write("SETTINGS\n"),
                         Some(App::AppCenter) => serial::write("APP_CENTER\n"),
+                        Some(App::Notepad) => serial::write("NOTEPAD\n"),
                         None => serial::write("NONE\n"),
                     }
                 }
@@ -350,6 +353,8 @@ pub extern "C" fn _start() -> ! {
                         || previous_theme != desktop.dark
                         || previous_language != desktop.language
                         || previous_files != desktop.files
+                        || previous_notepad_revision != desktop.notepad.revision
+                        || previous_ramfs_revision != desktop.ramfs.revision
                         || previous_icons != desktop.icons
                         || previous_clock != desktop.clock;
                     let cursor_damage_applied = mouse_event
