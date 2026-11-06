@@ -1,6 +1,11 @@
 # ZillaOS — Architecture v0.1
-**Date:** 2026-10-19  
-**Status:** Proposed baseline. No implementation is claimed.
+**Design baseline:** 2026-10-19  
+**Runtime status:** 2026-11-06 — kernel UEFI GUI and mouse were verified by the user in VMware. The higher-level microkernel services described here remain architectural goals until separately implemented.
+
+**Current modules:** [Filesystem and source layout](FILESYSTEM.md),
+[Desktop UI](DESKTOP.md), and
+[Linux/Windows/Android/console compatibility roadmap](COMPATIBILITY.md).
+The kernel is independent from Linux; Ubuntu/WSL is a build environment only.
 
 ## 1. Architectural mandate
 
