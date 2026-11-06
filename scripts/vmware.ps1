@@ -98,12 +98,44 @@ if (Test-Path -LiteralPath $vmxPath) {
     if (-not $Force) {
         Write-Host "[ZillaOS] Existing VMX preserved (use -Force ONLY when powered off):" -ForegroundColor Yellow
         Write-Host $vmxPath
-        # Existing VMX files are user-owned. Never rewrite them implicitly.
-        # Read the actual CD/DVD mapping so a stale VM can be diagnosed
-        # without destroying EFI NVRAM, user settings or snapshots.
-        $vmxText = [IO.File]::ReadAllText($vmxPath)
-        $mapping = [regex]::Match($vmxText,
-            '(?m)^\s*sata0:0\.fileName\s*=\s*"([^"\r\n]+)"\s*
+        # Read the actual CD-ROM ISO reference without rewriting any VM files.
+        # A stale path must not silently boot an old ZillaOS version.
+        $assignedIso = $null
+        foreach ($line in [IO.File]::ReadAllLines($vmxPath)) {
+            $trimmed = $line.Trim()
+            if ($trimmed.StartsWith('sata0:0.fileName', [StringComparison]::OrdinalIgnoreCase)) {
+                $equals = $trimmed.IndexOf('=')
+                if ($equals -ge 0) {
+                    $assignedIso = $trimmed.Substring($equals + 1).Trim().Trim('"')
+                }
+                break
+            }
+        }
+        $mappingCorrect = $false
+        if (-not [string]::IsNullOrWhiteSpace($assignedIso)) {
+            if (-not [IO.Path]::IsPathRooted($assignedIso)) {
+                $assignedIso = Join-Path $vmFolder $assignedIso
+            }
+            $assignedIso = [IO.Path]::GetFullPath($assignedIso)
+            $mappingCorrect = [string]::Equals($assignedIso, $iso,
+                [StringComparison]::OrdinalIgnoreCase)
+            if ($mappingCorrect) {
+                Write-Host "[ZillaOS] Existing VMX CD/DVD mapping verified: $assignedIso" -ForegroundColor Green
+            } else {
+                Write-Warning "[ZillaOS] Existing VMX CD/DVD points to DIFFERENT ISO: $assignedIso"
+            }
+        } else {
+            Write-Warning "[ZillaOS] Existing VMX has no recognized sata0:0.fileName reference."
+        }
+        if (-not $mappingCorrect) {
+            Write-Host "[ZillaOS] Expected ISO: $iso"
+            Write-Host "[ZillaOS] Power off the VM, then choose this file under VMware CD/DVD Settings."
+            Write-Host "[ZillaOS] Alternatively run scripts/vmware.ps1 -IsoPath <iso> -Force while VM is off."
+            if ($Launch) {
+                throw "Refusing to launch a VMware configuration with an unverified ISO path."
+            }
+        }
+        if ($Launch) {
             # Launch without changing any existing VMX, NVRAM or snapshots.
             Open-ZillaVmware $vmxPath
         }
