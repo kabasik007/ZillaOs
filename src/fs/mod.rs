@@ -21,7 +21,7 @@ pub const ROOT: usize = 0;
 
 // Every parent index must refer to an existing directory. Root is its own
 // sentinel parent. These are virtual paths INSIDE ZillaOS, never Windows paths.
-pub const NODES: [Node; 24] = [
+pub static NODES: [Node; 24] = [
     Node { name: "ZillaOS", path: "/", parent: 0, kind: NodeKind::Directory, data: b"" },
     Node { name: "Program Files", path: "/Program Files", parent: 0, kind: NodeKind::Directory, data: b"" },
     Node { name: "Users", path: "/Users", parent: 0, kind: NodeKind::Directory, data: b"" },
