@@ -8,6 +8,7 @@ use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::limine::{self, Framebuffer};
 use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
 use zillaos_kernel::locale::{text as tr, TextId};
+use zillaos_kernel::fs::{self, NodeKind};
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
@@ -635,17 +636,45 @@ impl Screen {
         let cw = w.saturating_sub(side_width + 44);
         match app {
             App::Files => {
-                self.text(tr(state.language, TextId::FilePreview), cx, body + 10, 2, fg);
-                if content_h > 100 {
-                    let card_y = body + 42;
-                    self.folder_card(cx, card_y, cw, tr(state.language, TextId::Documents), state.dark);
-                    if content_h > 175 {
-                        self.folder_card(cx, card_y + 47, cw, tr(state.language, TextId::Pictures), state.dark);
-                        self.folder_card(cx, card_y + 94, cw, tr(state.language, TextId::Projects), state.dark);
+                // True in-memory path navigation, not decorative fake folders.
+                // The virtual tree is read-only and has no disk driver yet.
+                let current = fs::node(state.files.current);
+                let location = current.map(|n| n.name).unwrap_or("ZillaOS");
+                if content_h > 35 {
+                    self.text(location, cx, body + 11, if cw > 250 { 2 } else { 1 }, fg);
+                }
+                if let Some(preview_id) = state.files.preview_file {
+                    if content_h > 80 {
+                        self.text("BACKSPACE / UP", cx, body + 31, 1, secondary);
+                        if let Some(file) = fs::node(preview_id) {
+                            self.text(file.name, cx, body + 58, 1, 0x1dd9b4);
+                            if let Ok(contents) = core::str::from_utf8(file.data) {
+                                for (row, line) in contents.lines().take(5).enumerate() {
+                                    let pos_y = body + 86 + row * 23;
+                                    if pos_y + 15 < body + content_h {
+                                        self.text(line, cx, pos_y, 1, fg);
+                                    }
+                                }
+                            }
+                        }
                     }
-                    if content_h > 224 {
-                        self.text(tr(state.language, TextId::NoDisk), cx, body + 202, 1, secondary);
+                } else if content_h > 95 {
+                    self.text(if state.files.current == fs::ROOT {
+                        "Z:/  RAMFS"
+                    } else { "BACKSPACE / UP" }, cx, body + 31, 1, secondary);
+                    for row in 0..7 {
+                        let top = body + 42 + row * 47;
+                        if top + 40 >= body + content_h.saturating_sub(22) {
+                            break;
+                        }
+                        let Some((_, entry)) = fs::child_at(state.files.current, row) else {
+                            break;
+                        };
+                        self.folder_card(cx, top, cw, entry.name, state.dark,
+                                         entry.kind == NodeKind::File);
                     }
+                    self.text("RAMFS / READ ONLY / NO DISK WRITE",
+                              cx, body + content_h.saturating_sub(18), 1, secondary);
                 }
             }
             App::Terminal => {
@@ -698,14 +727,19 @@ impl Screen {
         }
     }
 
-    fn folder_card(&self, x: usize, y: usize, max_width: usize, title: &str, dark: bool) {
-        if max_width < 70 {
-            return;
-        }
+    fn folder_card(&self, x: usize, y: usize, max_width: usize, title: &str,
+                   dark: bool, file: bool) {
+        if max_width < 70 { return; }
         self.round_rect(x, y, max_width.min(360), 40, 7,
                         if dark { 0x283e55 } else { 0xe1edf5 });
-        self.round_rect(x + 10, y + 12, 19, 15, 3, 0x2bc5be);
-        self.rectangle(x + 13, y + 9, 11, 5, 0x58dce0);
+        if file {
+            self.round_rect(x + 12, y + 9, 16, 22, 2, 0x64aaf0);
+            self.rectangle(x + 15, y + 15, 10, 2, 0xe5f5ff);
+            self.rectangle(x + 15, y + 21, 8, 2, 0xe5f5ff);
+        } else {
+            self.round_rect(x + 10, y + 12, 19, 15, 3, 0x2bc5be);
+            self.rectangle(x + 13, y + 9, 11, 5, 0x58dce0);
+        }
         self.text(title, x + 38, y + 16, 1, if dark { 0xebf5ff } else { 0x173047 });
     }
 
