@@ -42,15 +42,21 @@ F10 / Start / Dock / Desktop Icon / App Center
 | Terminal | `/Program Files/Zilla Terminal` | демонстраційне вікно, не shell |
 | Settings | `/Program Files/Zilla Settings` | поточні volatile налаштування |
 | AppCenter | `/Program Files/Zilla App Center` | каталог і відкриття вбудованих застосунків |
+| Notepad | `/Program Files/Zilla Notepad` | редактор `.TXT` із записом у RAMFS |
 
 `src/apps/id.rs` — стабільні App ID;
 `src/apps/mod.rs` — дескриптори, шляхи, іконки й локалізаційні ключі;
 `src/apps/app_center.rs` — геометрія кліків для App Center;
+`src/apps/notepad.rs` — модель текстового редактора;
+`src/apps/notepad_ui.rs` — панель NEW/SAVE/DOCUMENTS;
+`src/fs/ramfs.rs` — обмежений volatile запис `.TXT`;
 `src/services/app_manager.rs` — єдина точка запуску;
 `src/shell/window_manager.rs` — фокус, вікна, мінімізація й переміщення;
 `src/shell/start_menu.rs` — лише геометрія Start;
 `src/graphics.rs` — поточний вбудований renderer;
 `src/compat/mod.rs` — наразі всі foreign runtimes вимкнені.
+
+**Робочий Notepad:** редагування ASCII, `F11`/`Ctrl+S` — Save, `F12` — New; збережені документи з'являються в Files → Documents. Подробиці: [NOTEPAD.md](NOTEPAD.md).
 
 ## Безпека і межі
 
