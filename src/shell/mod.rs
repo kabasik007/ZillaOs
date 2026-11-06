@@ -3,3 +3,5 @@
 pub mod files_interaction;
 
 pub mod clock;
+
+pub mod desktop_icons;
