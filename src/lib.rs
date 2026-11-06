@@ -8,11 +8,14 @@ pub mod paging;
 
 pub mod exceptions;
 
+#[path = "shell/desktop.rs"]
 pub mod desktop;
+#[path = "shell/window_manager.rs"]
 pub mod window_manager;
 pub mod mouse;
 pub mod raster;
 pub mod setup;
+#[path = "shell/locale.rs"]
 pub mod locale;
 pub mod fs;
 pub mod shell;
