@@ -3,6 +3,7 @@
 
 use crate::mouse::MousePacket;
 use crate::fs::Browser;
+use crate::shell::clock::ClockTime;
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
@@ -110,6 +111,7 @@ pub struct Desktop {
     pub timezone: TimeZone,
     pub pointer: Pointer,
     pub files: Browser,
+    pub clock: Option<ClockTime>,
     layout: Layout,
     pub launcher: bool,
     pub dark: bool,
@@ -132,6 +134,7 @@ impl Desktop {
         Self {
             windows: WindowManager::new(layout),
             files: Browser::new(),
+            clock: None,
             hostname: DeviceName::new(),
             language: Language::Ukrainian,
             region: Region::Ukraine,
@@ -152,6 +155,19 @@ impl Desktop {
 
     pub const fn active(&self) -> Option<App> {
         self.windows.focused()
+    }
+
+    /// Read-only RTC update. The caller triggers repaint only for changed
+    /// seconds; invalid CMOS readings do not erase the last valid time.
+    pub fn update_clock(&mut self, time: Option<ClockTime>) -> bool {
+        if let Some(time) = time {
+            if self.clock != Some(time) {
+                self.clock = Some(time);
+                self.changes = self.changes.wrapping_add(1);
+                return true;
+            }
+        }
+        false
     }
 
     pub fn cycle_language(&mut self) {
@@ -494,6 +510,16 @@ impl ScancodeDecoder {
 mod tests {
     use super::*;
     use crate::window_manager::WindowMode;
+
+    #[test]
+    fn rtc_seconds_only_redraw_when_clock_value_changes() {
+        let mut desktop = Desktop::new();
+        assert!(desktop.update_clock(ClockTime::new(11, 22, 33)));
+        assert_eq!(desktop.clock, ClockTime::new(11, 22, 33));
+        assert!(!desktop.update_clock(ClockTime::new(11, 22, 33)));
+        assert!(!desktop.update_clock(None));
+        assert!(desktop.update_clock(ClockTime::new(11, 22, 34)));
+    }
 
     #[test]
     fn desktop_starts_with_valid_default_preferences() {
