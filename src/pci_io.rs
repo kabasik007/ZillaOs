@@ -37,3 +37,10 @@ fn read_config(loc: PciLocation, offset: u8) -> u32 {
 pub fn inventory() -> StorageInventory {
     enumerate_storage(read_config)
 }
+
+ 
+/// Read-only PCI video identification; does not enable the SVGA FIFO,
+/// map GPU BARs, change a mode or issue any accelerated commands.
+pub fn video_adapter() -> zillaos_kernel::video::VideoAdapter {
+    zillaos_kernel::video::probe_pci_video(read_config)
+}

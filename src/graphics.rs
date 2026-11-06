@@ -780,8 +780,12 @@ impl Screen {
                               cx, body + 217, 1, 0x1ed2b4);
                 }
                 if content_h > 270 {
-                    self.text(state.hostname.as_str(), cx, body + 245, 1, fg);
-                    self.text(state.timezone.identifier(), cx, body + 263, 1, secondary);
+                    self.text(state.video.name(), cx, body + 245, 1, fg);
+                    self.text("GPU ACCEL: NOT ENABLED", cx, body + 263, 1, 0xffc35a);
+                }
+                if content_h > 312 {
+                    self.text(state.hostname.as_str(), cx, body + 285, 1, secondary);
+                    self.text(state.timezone.identifier(), cx, body + 304, 1, secondary);
                 }
             }
         }

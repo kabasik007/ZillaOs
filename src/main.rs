@@ -249,6 +249,11 @@ pub extern "C" fn _start() -> ! {
         desktop.language = wizard.language;
         desktop.region = wizard.region;
         desktop.timezone = wizard.timezone;
+        desktop.video = pci_io::video_adapter();
+        serial::write("ZILLAOS_VIDEO_ADAPTER=");
+        serial::write(desktop.video.name());
+        serial::write("\n");
+        serial::write("ZILLAOS_GPU_ACCELERATION=NOT_IMPLEMENTED\n");
         desktop.update_clock(drivers::rtc::read_time());
         if input.mouse_available() {
             desktop.enable_pointer();

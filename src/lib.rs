@@ -27,6 +27,7 @@ pub mod shell;
 pub mod apps;
 pub mod services;
 pub mod compat;
+pub mod video;
 #[path = "fs/install_plan.rs"]
 pub mod install_plan;
 #[path = "drivers/storage_pci.rs"]

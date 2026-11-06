@@ -8,6 +8,7 @@ use crate::apps::notepad::Notepad;
 use crate::apps::notepad_ui::{editor_action, EditorAction};
 use crate::shell::clock::ClockTime;
 use crate::shell::desktop_icons::DesktopIcons;
+use crate::video::VideoAdapter;
 use crate::shell::start_menu;
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
@@ -111,6 +112,7 @@ pub struct Desktop {
     pub notepad: Notepad,
     pub icons: DesktopIcons,
     pub clock: Option<ClockTime>,
+    pub video: VideoAdapter,
     layout: Layout,
     pub launcher: bool,
     pub launcher_step: u8,
@@ -138,6 +140,7 @@ impl Desktop {
             notepad: Notepad::new(),
             icons: DesktopIcons::new(layout),
             clock: None,
+            video: VideoAdapter::FirmwareOnly,
             hostname: DeviceName::new(),
             language: Language::Ukrainian,
             region: Region::Ukraine,
