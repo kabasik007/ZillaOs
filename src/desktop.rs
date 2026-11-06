@@ -2,6 +2,7 @@
 //! Real processes and IPC-backed application surfaces are a later milestone.
 
 use crate::mouse::MousePacket;
+use crate::fs::Browser;
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
@@ -108,6 +109,7 @@ pub struct Desktop {
     pub region: Region,
     pub timezone: TimeZone,
     pub pointer: Pointer,
+    pub files: Browser,
     layout: Layout,
     pub launcher: bool,
     pub dark: bool,
@@ -129,6 +131,7 @@ impl Desktop {
     pub fn with_layout(layout: Layout) -> Self {
         Self {
             windows: WindowManager::new(layout),
+            files: Browser::new(),
             hostname: DeviceName::new(),
             language: Language::Ukrainian,
             region: Region::Ukraine,
@@ -175,6 +178,34 @@ impl Desktop {
         None
     }
 
+
+    /// Hit testing for the Files window mirrors the renderer's directory list.
+    /// All operations affect only a read-only in-memory directory browser.
+    fn files_click(&mut self, rect: crate::window_manager::Rect, x: usize, y: usize) {
+        let bar_h = if rect.height < 170 { 30 } else { 45 };
+        let body = rect.y + bar_h + 8;
+        let side_width = (rect.width / 4).clamp(70, 170);
+        let content_x = rect.x + side_width + 27;
+        if x >= rect.x + 12 && x < rect.x + 10 + side_width
+            && y >= body + 6 && y < body + 38 {
+            self.files.home();
+            return;
+        }
+        if x < content_x || x >= rect.x + rect.width.saturating_sub(12) {
+            return;
+        }
+        if y >= body + 7 && y < body + 35 {
+            self.files.up();
+            return;
+        }
+        let rows_start = body + 42;
+        if y >= rows_start {
+            let offset = y - rows_start;
+            if offset % 47 < 40 && offset / 47 < 7 {
+                self.files.open_child(offset / 47);
+            }
+        }
+    }
 
     pub fn enable_pointer(&mut self) {
         if !self.pointer.visible {
@@ -257,7 +288,7 @@ impl Desktop {
         if !self.pointer.visible {
             return false;
         }
-        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language);
+        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files);
         self.pointer.x = self.pointer.x
             .saturating_add_signed(packet.dx as isize)
             .min(self.layout.width.saturating_sub(1));
@@ -307,6 +338,8 @@ impl Desktop {
                         Some(1) => self.cycle_language(),
                         _ => {}
                     }
+                } else if app == App::Files {
+                    self.files_click(rect, x, y);
                 }
             } else if let Some(app) = Self::desktop_shortcut_at(self.layout, x, y) {
                 self.windows.open(app);
@@ -319,7 +352,7 @@ impl Desktop {
             self.pointer.dragging = None;
         }
         self.pointer.left = packet.left;
-        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language);
+        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files);
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -328,7 +361,7 @@ impl Desktop {
 
     /// Return true only when a state transition changes the visible desktop.
     pub fn handle(&mut self, key: Key) -> bool {
-        let before = (self.windows, self.launcher, self.dark, self.language);
+        let before = (self.windows, self.launcher, self.dark, self.language, self.files);
         match key {
             Key::Launcher => self.launcher = !self.launcher,
             Key::Files => {
@@ -354,6 +387,7 @@ impl Desktop {
             Key::Maximize => self.windows.toggle_maximize(),
             Key::Move(direction) => self.windows.translate_focused(direction),
             Key::Resize(direction) => self.windows.resize_focused(direction),
+            Key::Backspace if self.active() == Some(App::Files) => { self.files.up(); },
             Key::Confirm | Key::Backspace | Key::Text(_) => {}
             Key::Escape => {
                 if self.launcher {
@@ -363,7 +397,7 @@ impl Desktop {
                 }
             }
         }
-        let changed = before != (self.windows, self.launcher, self.dark, self.language);
+        let changed = before != (self.windows, self.launcher, self.dark, self.language, self.files);
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -676,6 +710,33 @@ mod tests {
         assert!(state.handle_mouse(test_packet(0, 0, true)));
         assert_eq!(state.active(), Some(App::Settings));
         assert!(!state.launcher);
+    }
+
+    #[test]
+    fn files_window_opens_real_in_memory_directories_and_previews_file() {
+        let mut state = Desktop::new();
+        state.enable_pointer();
+        let rect = state.windows.rect(App::Files);
+        let body = rect.y + 45 + 8;
+        let cx = rect.x + (rect.width / 4).clamp(70, 170) + 40;
+        let mut click_row = |state: &mut Desktop, row: usize| {
+            state.pointer.x = cx;
+            state.pointer.y = body + 42 + row * 47 + 12;
+            assert!(state.handle_mouse(test_packet(0, 0, true)));
+            state.handle_mouse(test_packet(0, 0, false));
+        };
+        click_row(&mut state, 1); // /Users
+        click_row(&mut state, 0); // /Users/Guest
+        click_row(&mut state, 1); // /Users/Guest/Documents
+        click_row(&mut state, 0); // WELCOME.TXT
+        assert_eq!(crate::fs::node(state.files.current).unwrap().path,
+                   "/Users/Guest/Documents");
+        assert!(state.files.preview().is_some());
+        assert!(state.handle(Key::Backspace));
+        assert!(state.files.preview().is_none());
+        assert!(state.handle(Key::Backspace));
+        assert_eq!(crate::fs::node(state.files.current).unwrap().path,
+                   "/Users/Guest");
     }
 
     #[test]
