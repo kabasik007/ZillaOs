@@ -4,6 +4,7 @@
 use crate::mouse::MousePacket;
 use crate::fs::Browser;
 use crate::shell::clock::ClockTime;
+use crate::shell::desktop_icons::DesktopIcons;
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
@@ -111,6 +112,7 @@ pub struct Desktop {
     pub timezone: TimeZone,
     pub pointer: Pointer,
     pub files: Browser,
+    pub icons: DesktopIcons,
     pub clock: Option<ClockTime>,
     layout: Layout,
     pub launcher: bool,
@@ -134,6 +136,7 @@ impl Desktop {
         Self {
             windows: WindowManager::new(layout),
             files: Browser::new(),
+            icons: DesktopIcons::new(layout),
             clock: None,
             hostname: DeviceName::new(),
             language: Language::Ukrainian,
@@ -288,7 +291,7 @@ impl Desktop {
         if !self.pointer.visible {
             return false;
         }
-        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files);
+        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons);
         self.pointer.x = self.pointer.x
             .saturating_add_signed(packet.dx as isize)
             .min(self.layout.width.saturating_sub(1));
@@ -343,16 +346,25 @@ impl Desktop {
                 }
             } else if let Some(app) = Self::desktop_shortcut_at(self.layout, x, y) {
                 self.windows.open(app);
+            } else if let Some(icon) = self.icons.hit(x, y) {
+                self.icons.begin(icon);
             }
         } else if packet.left && self.pointer.left {
             if let Some(app) = self.pointer.dragging {
                 self.windows.drag_window(app, packet.dx, packet.dy);
+            } else if self.icons.dragging.is_some() {
+                self.icons.move_by(packet.dx, packet.dy);
             }
         } else if !packet.left {
             self.pointer.dragging = None;
+            if let Some(directory) = self.icons.finish() {
+                self.files.current = directory;
+                self.files.preview_file = None;
+                self.windows.open(App::Files);
+            }
         }
         self.pointer.left = packet.left;
-        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files);
+        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons);
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -672,6 +684,30 @@ mod tests {
         state.pointer.y = 19;
         assert!(state.handle_mouse(test_packet(0, 0, true)));
         assert!(state.launcher);
+    }
+
+    #[test]
+    fn desktop_folder_click_opens_guest_documents_not_host_files() {
+        let mut desktop = Desktop::new();
+        desktop.enable_pointer();
+        assert!(desktop.handle(Key::ShowDesktop));
+        let at = desktop.icons.positions[0];
+        desktop.pointer.x = at.x + 10;
+        desktop.pointer.y = at.y + 12;
+        desktop.handle_mouse(test_packet(0, 0, true));
+        desktop.handle_mouse(test_packet(0, 0, false));
+        assert_eq!(desktop.active(), Some(App::Files));
+        assert_eq!(crate::fs::node(desktop.files.current).unwrap().path,
+                   "/Users/Guest/Documents");
+        desktop.handle(Key::ShowDesktop);
+        let old = desktop.icons.positions[0];
+        desktop.pointer.x = old.x + 8;
+        desktop.pointer.y = old.y + 12;
+        desktop.handle_mouse(test_packet(0, 0, true));
+        desktop.handle_mouse(test_packet(-30, 12, true));
+        desktop.handle_mouse(test_packet(0, 0, false));
+        assert_eq!(desktop.icons.positions[0].x, old.x - 30);
+        assert_eq!(desktop.active(), None);
     }
 
     #[test]
