@@ -234,7 +234,16 @@ impl Wizard {
     }
 
     pub fn localized(&self, uk: &'static str, en: &'static str) -> &'static str {
-        if self.is_ukrainian() { uk } else { en }
+        self.localized3(uk, en, en)
+    }
+
+    pub const fn localized3(&self, uk: &'static str, en: &'static str,
+                            ru: &'static str) -> &'static str {
+        match self.language {
+            Language::Ukrainian => uk,
+            Language::English => en,
+            Language::Russian => ru,
+        }
     }
 
     /// Layout is shared with the renderer and click hit testing. On small
@@ -514,6 +523,16 @@ mod tests {
         }
         assert!(s.finished());
         assert!(!s.handle_key(Key::Confirm));
+    }
+
+    #[test]
+    fn localized3_returns_correct_strings_without_allocations() {
+        let mut wizard = wizard();
+        assert_eq!(wizard.localized3("ТАК", "YES", "ДА"), "ТАК");
+        wizard.language = Language::English;
+        assert_eq!(wizard.localized3("ТАК", "YES", "ДА"), "YES");
+        wizard.language = Language::Russian;
+        assert_eq!(wizard.localized3("ТАК", "YES", "ДА"), "ДА");
     }
 
     #[test]
