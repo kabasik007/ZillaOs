@@ -19,6 +19,8 @@ mod drivers;
 mod memtest;
 #[cfg(feature = "paging-audit")]
 mod page_table_observer;
+#[cfg(feature = "vm-staging")]
+mod native_vm_staging;
 mod serial;
 
 use core::panic::PanicInfo;
@@ -146,6 +148,37 @@ pub extern "C" fn _start() -> ! {
         serial::write("\nZILLAOS_PAGING_AUDIT_HHDM_PAGE_SIZE=");
         serial::write_hex(snapshot.hhdm_page.page_size);
         serial::write("\nZILLAOS_PAGING_AUDIT_OK\n");
+
+        // Staging tests are intentionally opt-in: construct owned page
+        // tables but DO NOT load CR3 or execute a user-mode instruction.
+        #[cfg(feature = "vm-staging")]
+        {
+            let staged = match unsafe {
+                native_vm_staging::stage(
+                    &mut allocator,
+                    &map.regions[..map.count],
+                    offset,
+                    &snapshot,
+                    cpu.physical_address_bits,
+                    cpu.nx_supported,
+                )
+            } {
+                Ok(staged) => staged,
+                Err(_) => {
+                    serial::write("ZILLAOS_NATIVE_VM_STAGE_FAILED\n");
+                    return_boot_failure();
+                }
+            };
+            serial::write("ZILLAOS_NATIVE_VM_STAGED_CR3=");
+            serial::write_hex(staged.root);
+            serial::write("\nZILLAOS_NATIVE_VM_CODE_FRAME=");
+            serial::write_hex(staged.code_frame);
+            serial::write("\nZILLAOS_NATIVE_VM_DATA_FRAME=");
+            serial::write_hex(staged.data_frame);
+            serial::write("\nZILLAOS_NATIVE_VM_STACK_FRAME=");
+            serial::write_hex(staged.stack_frame);
+            serial::write("\nZILLAOS_NATIVE_VM_STAGE_OK\n");
+        }
     }
 
     #[cfg(feature = "vm-demo")]

@@ -55,3 +55,32 @@ feature, the original boot and desktop paths are unchanged.
    and return to desktop without kernel panic. PE64 remains blocked.
 
 Reference: https://github.com/limine-bootloader/limine-protocol/blob/trunk/PROTOCOL.md
+
+## Milestone 2 — owned PML4 staging (no CPU switch)
+
+An optional `vm-staging` feature (via `bash scripts/build.sh stage`)
+reuses the existing single `FrameAllocator` to reserve fresh RAM pages,
+zeros them through the validated HHDM and builds a 4-level page-table
+tree. Upper-half supervisor mappings are inherited read-only from the
+active Limine root. The lower half is new, with explicit U/S and NX:
+
+- `0x400000`: one user executable, read-only page (RX).
+- `0x401000`: one user writable, non-executable page (RW + NX).
+- `0x7ff000`: one user stack page (RW + NX).
+- `0x7fe000`: stack guard intentionally **not present**.
+
+The verifier walks the *new* root and rejects bad permissions,
+unexpected physical frames, a mapped guard, or a missing supervisor
+kernel text mapping. This requires 48-bit active paging and CPU NX.
+It reserves eight 4 KiB frames; no freeing occurs in this prototype.
+
+**The new CR3 is never loaded** and these pages are not executed.
+This demonstrates table construction, not isolated process execution.
+Future work: safe CR3 switch, recoverable fault handling, GDT/TSS,
+Ring 3 entry and syscall trap. Full memory ownership/reclamation,
+W^X hardening for all mappings, and SMP isolation remain unimplemented.
+
+```bash
+bash scripts/build.sh stage
+python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-stage-uefi.iso --timeout 90
+```

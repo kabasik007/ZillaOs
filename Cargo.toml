@@ -25,6 +25,9 @@ exception-self-test = []
 # Explicit opt-in: read-only CR3 observation and verified page-table walk.
 paging-audit = []
 
+# Experimental owned page-table construction, no CR3 switch or Ring 3 entry.
+vm-staging = ["paging-audit"]
+
 # Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
 pe-inspector-cli = []
 

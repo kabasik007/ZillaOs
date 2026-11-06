@@ -7,6 +7,7 @@ on:
       - 'src/kernel/process/**'
       - 'src/kernel/page_table_walk.rs'
       - 'src/page_table_observer.rs'
+      - 'src/native_vm_staging.rs'
       - 'src/main.rs'
       - 'Cargo.toml'
       - 'scripts/build.sh'
@@ -70,4 +71,34 @@ jobs:
           path: |
             audit-qemu.log
             dist/*audit*.iso
+          if-no-files-found: warn
+
+  native-vm-staging-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install Rust 1.90 target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build staging ISO
+        run: bash scripts/build.sh stage
+      - name: Verify staging page tables in QEMU
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-stage-uefi.iso --timeout 90 | tee stage-qemu.log
+          grep -qx 'ZILLAOS_NATIVE_VM_STAGE_OK' stage-qemu.log
+          grep -q '^ZILLAOS_NATIVE_VM_STAGED_CR3=0x' stage-qemu.log
+          if grep -q 'ZILLAOS_NATIVE_VM_STAGE_FAILED' stage-qemu.log; then exit 1; fi
+      - name: Save staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-native-vm-staging-evidence
+          path: |
+            stage-qemu.log
+            dist/*stage*.iso
           if-no-files-found: warn

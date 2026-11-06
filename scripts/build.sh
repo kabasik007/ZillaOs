@@ -6,11 +6,11 @@ ROOT="$PWD"
 
 MODE="${1:-test}"
 case "$MODE" in
-    test|demo|fault|audit) ;;
-    *) echo "Usage: bash scripts/build.sh [test|demo|fault|audit]" >&2; exit 2 ;;
+    test|demo|fault|audit|stage) ;;
+    *) echo "Usage: bash scripts/build.sh [test|demo|fault|audit|stage]" >&2; exit 2 ;;
 esac
 if (( $# > 1 )); then
-    echo "Usage: bash scripts/build.sh [test|demo|fault|audit]" >&2
+    echo "Usage: bash scripts/build.sh [test|demo|fault|audit|stage]" >&2
     exit 2
 fi
 
@@ -66,6 +66,8 @@ elif [[ "$MODE" == "fault" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features exception-self-test
 elif [[ "$MODE" == "audit" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features paging-audit
+elif [[ "$MODE" == "stage" ]]; then
+    cargo build --release --target x86_64-unknown-none --offline --features vm-staging
 else
     cargo build --release --target x86_64-unknown-none --offline --no-default-features
 fi
