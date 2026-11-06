@@ -12,7 +12,7 @@ use zillaos_kernel::fs::{self, NodeKind};
 use zillaos_kernel::apps;
 use zillaos_kernel::apps::notepad::EditorStatus;
 use zillaos_kernel::fs::ramfs::DOCUMENTS_DIR;
-use zillaos_kernel::shell::{start_menu, taskbar, task_view};
+use zillaos_kernel::shell::{start_menu, taskbar, task_view, status_bar};
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
@@ -524,38 +524,39 @@ impl Screen {
                 self.text(title, menu_x, 18, 1, fg);
                 menu_x = menu_x.saturating_add(title.chars().count() * 6 + 16);
             }
-            if layout.width >= 940 && state.hostname.as_str().chars().count() <= 12 {
-                self.text(state.hostname.as_str(), layout.width - 235, 17, 1, fg);
-            }
         }
-        // No microphone driver is initialized. Never show simulated activity.
-        if layout.width >= 1050 {
-            let mic_x = layout.width.saturating_sub(365);
-            self.round_rect(mic_x, 9, 82, 25, 6,
+        // One deterministic right-aligned layout shared with host-side tests.
+        // Optional fields disappear rather than overwrite ZILLA-PC or menu.
+        let status = status_bar::status(
+            *layout, state.language, state.hostname.as_str().chars().count(),
+        );
+        if let Some(slot) = status.microphone {
+            self.round_rect(slot.x, 9, slot.width, 25, 6,
                 if state.dark { 0x263a50 } else { 0xdce9ee });
-            self.text("MIC N/A", mic_x + 11, 18, 1, 0x83adb9);
+            self.text("MIC N/A", slot.x + 11, 18, 1, 0x83adb9);
         }
-        if layout.width >= 780 {
-            let date_x = layout.width.saturating_sub(260);
+        if let Some(slot) = status.hostname {
+            self.text(state.hostname.as_str(), slot.x, 17, 1, fg);
+        }
+        if let Some(slot) = status.date {
             if let Some(date) = state.date {
                 let bytes = date.ascii();
                 if let Ok(label) = core::str::from_utf8(&bytes) {
-                    self.text(label, date_x, 17, 1, fg);
+                    self.text(label, slot.x, 17, 1, fg);
                 }
             } else {
-                self.text("DATE N/A", date_x, 17, 1, 0x83a8ba);
+                self.text("DATE N/A", slot.x, 17, 1, 0x83a8ba);
             }
         }
-        let time_x = layout.width.saturating_sub(118);
         if let Some(clock) = state.clock {
             let bytes = clock.ascii();
             if let Ok(time) = core::str::from_utf8(&bytes) {
-                self.text(time, time_x, 17, 1, fg);
+                self.text(time, status.time.x, 17, 1, fg);
             }
         } else {
-            self.text("--:--:--", time_x, 17, 1, fg);
+            self.text("--:--:--", status.time.x, 17, 1, fg);
         }
-        self.text("RTC", layout.width.saturating_sub(54), 17, 1, 0x58c5ce);
+        self.text("RTC", status.rtc.x, 17, 1, 0x58c5ce);
     }
 
     fn wallpaper_label(&self, state: &Desktop, layout: &Layout) {

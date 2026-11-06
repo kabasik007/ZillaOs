@@ -120,3 +120,15 @@ processes are registered, the snapshot is explicitly empty. The UI
 currently lists built-in window surfaces rather than populating fake
 `ProcessInfo` records. Later the compositor can consume these snapshots
 through a permission-checked IPC boundary.
+
+## Right-side top panel: responsive layout fix
+
+A VMware screenshot of the first Task Manager revealed `YYYY-MM-DD` was
+painted over `ZILLA-PC` in the top right because hardcoded positions
+for hostname and date overlapped. `shell::status_bar` now owns
+right-aligned slots for microphone (optional), hostname (optional), date
+(optional), RTC time and RTC label. It never displays an optional field
+when it would overlap the clickable top menu or another status field.
+Pure host-side tests cover 320 through 1920 widths, three locales and a
+maximum 12-character hostname. On smaller screens optional indicators
+are hidden, not illegibly painted over other fields.

@@ -8,4 +8,5 @@ pub mod desktop_icons;
 
 pub mod start_menu;
 pub mod taskbar;
+pub mod status_bar;
 pub mod task_view;
