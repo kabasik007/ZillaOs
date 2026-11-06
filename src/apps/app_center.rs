@@ -27,7 +27,7 @@ mod tests {
         for (i, descriptor) in BUILTIN_APPS.iter().enumerate() {
             assert_eq!(app_row_at(rect, x, y + i * 43 + 5), Some(descriptor.id));
         }
-        assert_eq!(app_row_at(rect, x - 300, y + 5), None);
+        assert_eq!(app_row_at(rect, x.saturating_sub(300), y + 5), None);
         assert_eq!(app_row_at(rect, x, y + BUILTIN_APPS.len() * 43 + 5), None);
     }
 }
