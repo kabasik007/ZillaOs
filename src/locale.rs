@@ -5,7 +5,7 @@ use crate::setup::Language;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextId {
     Desktop, File, View, Windows, Files, Terminal, Settings, Home, Apps, About,
-    Documents, Pictures, Projects, Appearance, ThemeDark, ThemeLight,
+    Documents, Pictures, Downloads, ProgramFiles, Projects, Appearance, ThemeDark, ThemeLight,
     Language, LangUkrainian, LangEnglish, LangRussian, Display, BootResolution,
     BootHint, ModeChangedAfterReboot, Launcher, Active, WallpaperTitle,
     WallpaperSubtitle, Preview, Shortcuts, System, ColorDepth, NoDisk,
@@ -28,6 +28,8 @@ pub const fn text(language: Language, id: TextId) -> &'static str {
         (Ukrainian, About) => "ПРО СИСТЕМУ", (English, About) => "ABOUT", (Russian, About) => "О СИСТЕМЕ",
         (Ukrainian, Documents) => "ДОКУМЕНТИ", (English, Documents) => "DOCUMENTS", (Russian, Documents) => "ДОКУМЕНТЫ",
         (Ukrainian, Pictures) => "ЗОБРАЖЕННЯ", (English, Pictures) => "PICTURES", (Russian, Pictures) => "ИЗОБРАЖЕНИЯ",
+        (Ukrainian, Downloads) => "ЗАВАНТАЖЕННЯ", (English, Downloads) => "DOWNLOADS", (Russian, Downloads) => "ЗАГРУЗКИ",
+        (Ukrainian, ProgramFiles) => "ПРОГРАМИ", (English, ProgramFiles) => "PROGRAM FILES", (Russian, ProgramFiles) => "ПРОГРАММЫ",
         (Ukrainian, Projects) => "ПРОЄКТИ", (English, Projects) => "PROJECTS", (Russian, Projects) => "ПРОЕКТЫ",
         (Ukrainian, Appearance) => "ОФОРМЛЕННЯ", (English, Appearance) => "APPEARANCE", (Russian, Appearance) => "ОФОРМЛЕНИЕ",
         (Ukrainian, ThemeDark) => "ТЕМНА ТЕМА", (English, ThemeDark) => "DARK THEME", (Russian, ThemeDark) => "ТЁМНАЯ ТЕМА",
@@ -64,6 +66,7 @@ mod tests {
         let ids = [TextId::Desktop, TextId::File, TextId::View, TextId::Windows,
             TextId::Files, TextId::Terminal, TextId::Settings, TextId::Home,
             TextId::Apps, TextId::About, TextId::Documents, TextId::Pictures,
+            TextId::Downloads, TextId::ProgramFiles,
             TextId::Projects, TextId::Appearance, TextId::ThemeDark,
             TextId::ThemeLight, TextId::Language, TextId::LangUkrainian,
             TextId::LangEnglish, TextId::LangRussian, TextId::Display,
