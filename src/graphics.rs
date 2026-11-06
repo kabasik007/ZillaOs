@@ -10,6 +10,8 @@ use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
 use zillaos_kernel::locale::{text as tr, TextId};
 use zillaos_kernel::fs::{self, NodeKind};
 use zillaos_kernel::apps;
+use zillaos_kernel::apps::notepad::EditorStatus;
+use zillaos_kernel::fs::ramfs::DOCUMENTS_DIR;
 use zillaos_kernel::shell::start_menu;
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
@@ -693,11 +695,18 @@ impl Screen {
                         if top + 40 >= body + content_h.saturating_sub(22) {
                             break;
                         }
-                        let Some((_, entry)) = fs::child_at(state.files.current, row) else {
+                        if let Some((_, entry)) = fs::child_at(state.files.current, row) {
+                            self.folder_card(cx, top, cw, entry.name, state.dark,
+                                             entry.kind == NodeKind::File);
+                        } else if state.files.current == DOCUMENTS_DIR {
+                            let static_count = fs::child_count(DOCUMENTS_DIR);
+                            if row < static_count { break; }
+                            let Some((_, memory_file)) = state.ramfs.nth(row - static_count)
+                                else { break; };
+                            self.folder_card(cx, top, cw, memory_file.name(), state.dark, true);
+                        } else {
                             break;
-                        };
-                        self.folder_card(cx, top, cw, entry.name, state.dark,
-                                         entry.kind == NodeKind::File);
+                        }
                     }
                     self.text("RAMFS / READ ONLY / NO DISK WRITE",
                               cx, body + content_h.saturating_sub(18), 1, secondary);
@@ -734,6 +743,9 @@ impl Screen {
                                   cx, body + 277, 1, secondary);
                     }
                 }
+            }
+            App::Notepad => {
+                self.notepad_body(state, cx, body, cw, content_h, fg, secondary);
             }
             App::Settings => {
                 self.text(tr(state.language, TextId::Settings), cx, body + 9, 2, fg);
@@ -772,6 +784,69 @@ impl Screen {
                     self.text(state.timezone.identifier(), cx, body + 263, 1, secondary);
                 }
             }
+        }
+    }
+
+    fn notepad_body(&self, state: &Desktop, cx: usize, body: usize,
+                    cw: usize, content_h: usize, fg: u32, secondary: u32) {
+        let note = &state.notepad;
+        self.text(note.filename(), cx, body + 8, 2, fg);
+        if note.dirty { self.text("*", cx + 180, body + 11, 2, 0xffc35a); }
+        for (i, (name, color)) in [("NEW", 0x365b77), ("SAVE", 0x278f87),
+                                    ("DOCUMENTS", 0x4c6486)].iter().enumerate() {
+            let x = cx + match i { 0 => 0, 1 => 88, _ => 176 };
+            let w = if i == 2 { 100 } else { 80 };
+            if x + w < cx + cw {
+                self.round_rect(x, body + 37, w, 35, 6, *color);
+                self.text(name, x + 11, body + 50, 1, 0xffffff);
+            }
+        }
+        let status = match note.status {
+            EditorStatus::Ready => "READY - ASCII / US PS2",
+            EditorStatus::Modified => "UNSAVED CHANGES",
+            EditorStatus::Saved => "SAVED IN RAMFS",
+            EditorStatus::UnsavedChanges => "SAVE BEFORE NEW / OPEN",
+            EditorStatus::StorageError(_) => "RAMFS FULL / SAVE FAILED",
+            EditorStatus::BufferFull => "EDITOR BUFFER FULL",
+        };
+        self.text(status, cx, body + content_h.saturating_sub(32), 1, secondary);
+        self.text("F11 / CTRL+S SAVE  F12 NEW  VOLATILE",
+                  cx, body + content_h.saturating_sub(17), 1, secondary);
+
+        if content_h < 150 || cw < 80 { return; }
+        let edit_y = body + 88;
+        let rows = content_h.saturating_sub(140) / 17;
+        if rows == 0 { return; }
+        let columns = (cw.saturating_sub(28) / 6).max(1);
+        self.round_rect(cx, edit_y - 5, cw, rows * 17 + 12, 6,
+                        if state.dark { 0x0d1c2e } else { 0xeaf3fb });
+        let (cursor_row, cursor_col) = note.cursor_visual(columns);
+        let scroll = cursor_row.saturating_sub(rows - 1);
+        let bytes = note.bytes();
+        let mut visual_row = 0usize;
+        let mut col = 0usize;
+        let mut from = 0usize;
+        for index in 0..=bytes.len() {
+            let at_end = index == bytes.len();
+            let newline = !at_end && bytes[index] == b'\n';
+            let wrap = col >= columns;
+            if at_end || newline || wrap {
+                if visual_row >= scroll && visual_row - scroll < rows && index > from {
+                    if let Ok(line) = core::str::from_utf8(&bytes[from..index]) {
+                        self.text(line, cx + 10, edit_y + (visual_row - scroll) * 17,
+                                  1, fg);
+                    }
+                }
+                visual_row += 1;
+                from = if newline { index + 1 } else { index };
+                col = 0;
+            }
+            if !at_end && !newline { col += 1; }
+        }
+        if cursor_row >= scroll && cursor_row - scroll < rows {
+            self.rectangle(cx + 10 + cursor_col * 6,
+                           edit_y + (cursor_row - scroll) * 17,
+                           2, 10, 0x20d5bd);
         }
     }
 
@@ -836,7 +911,7 @@ impl Screen {
     fn key_legend(&self, state: &Desktop, layout: &Layout) {
         if layout.width < 730 || layout.height < 460 { return; }
         let fg = if state.dark { 0xa5c7d8 } else { 0x244d64 };
-        self.text("F1 START F2 FILES F3 TERM F4 SETTINGS F5 THEME F8 LANG F9 DESKTOP F10 APPS",
+        self.text("F1 START F2 FILES F3 TERM F4 SET F5 THEME F8 LANG F9 DESKTOP F10 APPS F11 SAVE F12 NEW",
                   22, layout.height.saturating_sub(12), 1, fg);
         if layout.height >= 600 && layout.width >= 820 {
             self.text("ARROWS MOVE  SHIFT ARROWS RESIZE",
