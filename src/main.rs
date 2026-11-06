@@ -275,6 +275,7 @@ pub extern "C" fn _start() -> ! {
         // The cadence is an iteration throttle, not the source of time:
         // displayed seconds come from the actual CMOS clock.
         let mut rtc_poll_counter: u32 = 0;
+        let mut menu_poll_counter: u32 = 0;
         // Desktop stays an early single-core test environment.
         loop {
             let previous_windows = desktop.windows;
@@ -282,6 +283,7 @@ pub extern "C" fn _start() -> ! {
             let previous_icons = desktop.icons;
             let previous_clock = desktop.clock;
             let previous_launcher = desktop.launcher;
+            let previous_menu_step = desktop.launcher_step;
             let previous_theme = desktop.dark;
             let previous_language = desktop.language;
             let previous_pointer = desktop.pointer;
@@ -296,6 +298,11 @@ pub extern "C" fn _start() -> ! {
             if rtc_poll_counter >= 150_000 {
                 rtc_poll_counter = 0;
                 changed |= desktop.update_clock(drivers::rtc::read_time());
+            }
+            menu_poll_counter += 1;
+            if menu_poll_counter >= 40_000 {
+                menu_poll_counter = 0;
+                changed |= desktop.tick_launcher();
             }
             if changed {
                 if mouse_event {
@@ -338,6 +345,7 @@ pub extern "C" fn _start() -> ! {
                 if desktop_available {
                     let scene_changed = previous_windows != desktop.windows
                         || previous_launcher != desktop.launcher
+                        || previous_menu_step != desktop.launcher_step
                         || previous_theme != desktop.dark
                         || previous_language != desktop.language
                         || previous_files != desktop.files
