@@ -9,6 +9,7 @@ use crate::limine::{self, Framebuffer};
 use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
 use zillaos_kernel::locale::{text as tr, TextId};
 use zillaos_kernel::fs::{self, NodeKind};
+use zillaos_kernel::shell::start_menu;
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
@@ -778,11 +779,11 @@ impl Screen {
     }
 
     fn launcher(&self, state: &Desktop, layout: &Layout) {
-        if !state.launcher { return; }
-        let w = layout.width.saturating_sub(40).min(410);
-        let x = layout.width.saturating_sub(w) / 2;
-        let y = layout.top_bar + 16;
-        let h = 158.min(layout.height.saturating_sub(y + 10));
+        if state.launcher_step == 0 { return; }
+        // Real slide animation from taskbar. Pointer hit-testing uses exactly
+        // the same geometry, supplied by the no_std shell module.
+        let rect = start_menu::panel(*layout, state.launcher_step);
+        let (x, y, w, h) = (rect.x, rect.y, rect.width, rect.height);
         self.round_rect(x + 5, y + 7, w, h, 12, 0x071526);
         self.round_rect(x, y, w, h, 12,
                         if state.dark { 0x233850 } else { 0xf0faff });
