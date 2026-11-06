@@ -6,6 +6,7 @@ on:
     paths:
       - '.gitattributes'
       - 'scripts/windows.ps1'
+      - 'scripts/vmware.ps1'
       - 'scripts/windows_line_endings.ps1'
       - 'scripts/windows_wsl_entry.sh'
       - 'tests/test_windows_line_endings.ps1'
