@@ -9,6 +9,8 @@ on:
       - 'scripts/windows_line_endings.ps1'
       - 'scripts/windows_wsl_entry.sh'
       - 'tests/test_windows_line_endings.ps1'
+      - 'tests/test_windows_entrypoint.py'
+      - 'tests/test_windows_wsl_entry.py'
       - '.github/workflows/windows-builder-check.yml'
   pull_request:
     paths:
