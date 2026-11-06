@@ -179,6 +179,17 @@ impl WindowManager {
         }
     }
 
+    /// Minimise all visible demo windows, retaining them for dock restore.
+    /// Unlike close, their geometry and title state remain unchanged.
+    pub fn show_desktop(&mut self) {
+        for window in &mut self.windows {
+            if window.visible() {
+                window.mode = WindowMode::Minimized;
+            }
+        }
+        self.focus = None;
+    }
+
     pub fn close_focused(&mut self) {
         if let Some(app) = self.focus {
             self.windows[Self::index(app)].mode = WindowMode::Hidden;
@@ -291,6 +302,21 @@ mod tests {
         assert_eq!(wm.back_to_front()[2], App::Settings);
         wm.open(App::Files);
         assert_eq!(wm.back_to_front()[2], App::Files);
+    }
+
+    #[test]
+    fn show_desktop_minimizes_windows_and_dock_restores_them() {
+        let mut wm = wm();
+        wm.open(App::Settings);
+        wm.open(App::Terminal);
+        let stored = wm.rect(App::Terminal);
+        wm.show_desktop();
+        assert_eq!(wm.visible_count(), 0);
+        assert_eq!(wm.focused(), None);
+        assert_eq!(wm.window(App::Terminal).mode, WindowMode::Minimized);
+        wm.open(App::Terminal);
+        assert_eq!(wm.focused(), Some(App::Terminal));
+        assert_eq!(wm.rect(App::Terminal), stored);
     }
 
     #[test]
