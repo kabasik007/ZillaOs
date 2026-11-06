@@ -29,6 +29,8 @@ pub enum Key {
     Terminal,
     Settings,
     ToggleTheme,
+    CycleLanguage,
+    ShowDesktop,
     NextApp,
     Minimize,
     Maximize,
@@ -148,6 +150,31 @@ impl Desktop {
         self.windows.focused()
     }
 
+    pub fn cycle_language(&mut self) {
+        self.language = match self.language {
+            Language::Ukrainian => Language::English,
+            Language::English => Language::Russian,
+            Language::Russian => Language::Ukrainian,
+        };
+    }
+
+    /// Settings rows share these coordinates with the immediate renderer.
+    /// 0 is appearance and 1 is language. Resolution is read-only because
+    /// the Limine-provided GOP framebuffer cannot change modes after handoff.
+    fn settings_row(rect: crate::window_manager::Rect, x: usize, y: usize) -> Option<usize> {
+        let bar_h = if rect.height < 170 { 30 } else { 45 };
+        let body = rect.y + bar_h + 8;
+        let side = (rect.width / 4).clamp(70, 170);
+        let cx = rect.x + side + 27;
+        if x < cx || x >= rect.x.saturating_add(rect.width).saturating_sub(12) {
+            return None;
+        }
+        if y >= body + 42 && y < body + 96 { return Some(0); }
+        if y >= body + 105 && y < body + 160 { return Some(1); }
+        None
+    }
+
+
     pub fn enable_pointer(&mut self) {
         if !self.pointer.visible {
             self.pointer.visible = true;
@@ -199,7 +226,7 @@ impl Desktop {
         if !self.pointer.visible {
             return false;
         }
-        let before = (self.windows, self.pointer, self.launcher);
+        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language);
         self.pointer.x = self.pointer.x
             .saturating_add_signed(packet.dx as isize)
             .min(self.layout.width.saturating_sub(1));
@@ -236,6 +263,12 @@ impl Desktop {
                     }
                 } else if title {
                     self.pointer.dragging = Some(app);
+                } else if app == App::Settings {
+                    match Self::settings_row(rect, x, y) {
+                        Some(0) => self.dark = !self.dark,
+                        Some(1) => self.cycle_language(),
+                        _ => {}
+                    }
                 }
             }
         } else if packet.left && self.pointer.left {
@@ -246,7 +279,7 @@ impl Desktop {
             self.pointer.dragging = None;
         }
         self.pointer.left = packet.left;
-        let changed = before != (self.windows, self.pointer, self.launcher);
+        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language);
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -255,7 +288,7 @@ impl Desktop {
 
     /// Return true only when a state transition changes the visible desktop.
     pub fn handle(&mut self, key: Key) -> bool {
-        let before = (self.windows, self.launcher, self.dark);
+        let before = (self.windows, self.launcher, self.dark, self.language);
         match key {
             Key::Launcher => self.launcher = !self.launcher,
             Key::Files => {
@@ -271,6 +304,8 @@ impl Desktop {
                 self.launcher = false;
             }
             Key::ToggleTheme => self.dark = !self.dark,
+            Key::CycleLanguage => self.cycle_language(),
+            Key::ShowDesktop => self.windows.show_desktop(),
             Key::NextApp => {
                 self.launcher = false;
                 self.windows.cycle();
@@ -288,7 +323,7 @@ impl Desktop {
                 }
             }
         }
-        let changed = before != (self.windows, self.launcher, self.dark);
+        let changed = before != (self.windows, self.launcher, self.dark, self.language);
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -361,6 +396,8 @@ impl ScancodeDecoder {
             0x3f => Some(Key::ToggleTheme),  // F5
             0x40 => Some(Key::Minimize),     // F6
             0x41 => Some(Key::Maximize),     // F7
+            0x42 => Some(Key::CycleLanguage), // F8
+            0x43 => Some(Key::ShowDesktop),   // F9
             0x0f => Some(Key::NextApp),      // Tab
             0x01 => Some(Key::Escape),       // Escape
             0x1c => Some(Key::Confirm),      // Enter
@@ -419,6 +456,8 @@ mod tests {
         assert_eq!(decoder.feed(0x3f), Some(Key::ToggleTheme));
         assert_eq!(decoder.feed(0x40), Some(Key::Minimize));
         assert_eq!(decoder.feed(0x41), Some(Key::Maximize));
+        assert_eq!(decoder.feed(0x42), Some(Key::CycleLanguage));
+        assert_eq!(decoder.feed(0x43), Some(Key::ShowDesktop));
         assert_eq!(decoder.feed(0x0f), Some(Key::NextApp));
         assert_eq!(decoder.feed(0x01), Some(Key::Escape));
         assert_eq!(decoder.feed(0xe0), None);
@@ -470,6 +509,37 @@ mod tests {
         assert_eq!(state.windows.visible_count(), 2);
         assert!(state.handle(Key::ToggleTheme));
         assert!(state.dark);
+    }
+
+    #[test]
+    fn f8_cycles_three_locales_without_losing_windows() {
+        let mut state = Desktop::new();
+        state.handle(Key::Terminal);
+        let before = state.windows;
+        assert!(state.handle(Key::CycleLanguage));
+        assert_eq!(state.language, Language::English);
+        assert!(state.handle(Key::CycleLanguage));
+        assert_eq!(state.language, Language::Russian);
+        assert!(state.handle(Key::CycleLanguage));
+        assert_eq!(state.language, Language::Ukrainian);
+        assert_eq!(state.windows, before);
+    }
+
+    #[test]
+    fn settings_click_changes_theme_and_language() {
+        let mut state = Desktop::new();
+        state.enable_pointer();
+        state.handle(Key::Settings);
+        let rect = state.windows.rect(App::Settings);
+        let side = (rect.width / 4).clamp(70, 170);
+        state.pointer.x = rect.x + side + 40;
+        state.pointer.y = rect.y + 45 + 8 + 62;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert!(!state.dark);
+        state.handle_mouse(test_packet(0, 0, false));
+        state.pointer.y = rect.y + 45 + 8 + 128;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(state.language, Language::English);
     }
 
     #[test]
