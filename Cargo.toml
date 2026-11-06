@@ -31,6 +31,9 @@ vm-staging = ["paging-audit"]
 # Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
 pe-inspector-cli = []
 
+# Optional VMware SVGA ID negotiation. Off for the normal desktop ISO.
+svga-id-negotiate = []
+
 [[bin]]
 name = "pe-inspect"
 path = "src/bin/pe_inspect.rs"

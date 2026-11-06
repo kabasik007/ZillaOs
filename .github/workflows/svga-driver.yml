@@ -1,0 +1,33 @@
+name: ZillaOS VMware SVGA driver checks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/drivers/gpu/**'
+      - 'src/video/**'
+      - 'src/pci_io.rs'
+      - 'Cargo.toml'
+      - 'scripts/build.sh'
+      - '.github/workflows/svga-driver.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  svga-host-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain and x86-64 bare metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Check ISO builder syntax
+        run: bash -n scripts/build.sh
+      - name: Run mock SVGA and full Rust library tests
+        run: cargo test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Build standard read-only desktop image kernel
+        run: cargo build --release --target x86_64-unknown-none --features vm-demo --offline
+      - name: Build separately opt-in ID negotiation kernel
+        run: cargo build --release --target x86_64-unknown-none --features 'vm-demo svga-id-negotiate' --offline

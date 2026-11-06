@@ -46,7 +46,18 @@ pub fn video_adapter() -> zillaos_kernel::video::VideoAdapter {
 
     let adapter = zillaos_kernel::video::probe_pci_video(read_config);
     // One read-only probe per desktop boot; failure does not touch GOP.
-    match vmware_svga::probe(read_config, read_svga_register) {
+    #[cfg(feature = "svga-id-negotiate")]
+    let probe_result = {
+        crate::serial::write("ZILLAOS_SVGA_ID_NEGOTIATION=OPT_IN\n");
+        vmware_svga::probe_with_negotiation(
+            read_config,
+            read_svga_register,
+            write_svga_id,
+        )
+    };
+    #[cfg(not(feature = "svga-id-negotiate"))]
+    let probe_result = vmware_svga::probe(read_config, read_svga_register);
+    match probe_result {
         Ok(Some(info)) => {
             serial_probe_hex("ZILLAOS_SVGA_ID_HEX=", info.registers.interface_id as u64);
             serial_probe_hex("ZILLAOS_SVGA_MAX_WIDTH_HEX=", info.registers.max_width as u64);
@@ -97,4 +108,31 @@ fn read_svga_register(base: u16, index: u32) -> u32 {
         );
     }
     result
+}
+
+/// The only SVGA device-value write in this experimental opt-in path.
+/// SAFETY: only called after PCI identity, I/O decoder and BAR0 validation.
+/// The index is allowlisted to REG_ID; the value must be a known interface
+/// ID. The single-core VM boot serializes port access. Does not enable FIFO,
+/// map MMIO, write PCI config space, or select a graphics mode.
+#[cfg(feature = "svga-id-negotiate")]
+fn write_svga_id(base: u16, index: u32, value: u32) {
+    use zillaos_kernel::video::gpu::vmware_svga::registers;
+    if index != registers::ID || !registers::known_id(value) {
+        return;
+    }
+    unsafe {
+        asm!(
+            "out dx, eax",
+            in("dx") base,
+            in("eax") registers::ID,
+            options(nomem, nostack, preserves_flags)
+        );
+        asm!(
+            "out dx, eax",
+            in("dx") (base + 1),
+            in("eax") value,
+            options(nomem, nostack, preserves_flags)
+        );
+    }
 }

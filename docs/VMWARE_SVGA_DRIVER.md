@@ -48,3 +48,45 @@ The existing .github/workflows/boot-smoke.yml requires **manual** workflow_dispa
 Version-negotiation opt-in, safe GPU MMIO mappings with verified aperture extents, bounded FIFO commands and timeout, DisplayManager with mock mode switching and rollback, only then 2D acceleration. Windows Runtime is out of scope.
 
 Specifications: VMware svga_reg.h and svga_interface.txt; see docs/WINDOWS_GRAPHICS.md.
+
+## Stage 2 — opt-in SVGA ID handshake (2026-11-06)
+
+Normal Windows BuildRun and `scripts/build.sh demo` remain **read-only**.
+The VMware interface specification requires writing the highest supported
+interface ID to `SVGA_REG_ID` and checking its readback. The opt-in
+`negotiation.rs` tries IDs 2, 1 and 0 at most once each, and stops on
+the first exact match. `probe_with_negotiation` requires a validated
+VMware PCI BAR0 before calling the writer; the platform writer
+allowlists REG_ID and known ID values only. The final ID is read again
+and mismatches fail closed. Nothing writes WIDTH, HEIGHT, ENABLE or FIFO.
+
+The pure `fifo::encode_update` implementation validates the complete
+five-DWORD `SVGA_CMD_UPDATE` packet and rejects rectangles outside the
+supplied surface, zero sizes and arithmetic overflow. It **does not**
+send any command to the device. BAR1/BAR2 aperture mapping and
+actual FIFO sync remain unimplemented.
+
+Normal ISO (no SVGA value-port writes):
+
+```bash
+bash scripts/build.sh demo
+```
+
+Experimental ISO (separate file, VM snapshot recommended):
+
+```bash
+bash scripts/build.sh demo-svga-id
+```
+
+The experimental artifact is
+`dist/zillaos-0.0.2-dev-demo-svga-id-uefi.iso`.
+Set VMware's CD/DVD ISO path manually to this file; default Windows
+BuildRun does not select it. An opt-in boot logs
+`ZILLAOS_SVGA_ID_NEGOTIATION=OPT_IN` to COM1 before the probe.
+Compare that to a normal build, which must never log that marker.
+Watch for `ZILLAOS_SVGA_PROBE=READ_ONLY_OK` or a FALLBACK status.
+No claim of physical resolution changes, GPU/FIFO initialization,
+2D/3D acceleration or real VMware validation is made at this point.
+
+Reference: https://github.com/prepare/vmware-svga/blob/master/doc/svga_interface.txt
+Reference: https://github.com/prepare/vmware-svga/blob/master/lib/vmware/svga_reg.h

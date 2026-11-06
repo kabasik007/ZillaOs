@@ -6,11 +6,11 @@ ROOT="$PWD"
 
 MODE="${1:-test}"
 case "$MODE" in
-    test|demo|fault|audit|stage) ;;
-    *) echo "Usage: bash scripts/build.sh [test|demo|fault|audit|stage]" >&2; exit 2 ;;
+    test|demo|demo-svga-id|fault|audit|stage) ;;
+    *) echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage]" >&2; exit 2 ;;
 esac
 if (( $# > 1 )); then
-    echo "Usage: bash scripts/build.sh [test|demo|fault|audit|stage]" >&2
+    echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage]" >&2
     exit 2
 fi
 
@@ -62,6 +62,9 @@ find_limine_file() {
 echo "Building ZillaOS kernel (mode: $MODE)"
 if [[ "$MODE" == "demo" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features vm-demo
+elif [[ "$MODE" == "demo-svga-id" ]]; then
+    # Explicit opt-in. The default demo retains the read-only probe.
+    cargo build --release --target x86_64-unknown-none --offline --features "vm-demo svga-id-negotiate"
 elif [[ "$MODE" == "fault" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features exception-self-test
 elif [[ "$MODE" == "audit" ]]; then
