@@ -164,8 +164,18 @@ pub extern "C" fn _start() -> ! {
                 )
             } {
                 Ok(staged) => staged,
-                Err(_) => {
-                    serial::write("ZILLAOS_NATIVE_VM_STAGE_FAILED\n");
+                Err(reason) => {
+                    serial::write("ZILLAOS_NATIVE_VM_STAGE_ERROR=");
+                    let reason = match reason {
+                        native_vm_staging::StageError::UnsupportedPaging => "UNSUPPORTED_PAGING",
+                        native_vm_staging::StageError::PhysicalMemoryUnavailable => "OUT_OF_FRAMES",
+                        native_vm_staging::StageError::InvalidHhdm => "INVALID_HHDM",
+                        native_vm_staging::StageError::UnsafeBootMapping => "UNSAFE_BOOT_MAPPING",
+                        native_vm_staging::StageError::InvalidUserPlan => "INVALID_USER_PLAN",
+                        native_vm_staging::StageError::InvalidPageTables => "INVALID_PAGE_TABLES",
+                    };
+                    serial::write(reason);
+                    serial::write("\nZILLAOS_NATIVE_VM_STAGE_FAILED\n");
                     return_boot_failure();
                 }
             };
