@@ -39,16 +39,29 @@ class WindowsEntrypointTests(unittest.TestCase):
 
     def test_powershell_wsl_build_and_iso_fingerprint(self):
         source = PS.read_text(encoding="utf-8")
-        for action in ("Doctor", "Setup", "Build", "BuildRun", "Run", "OpenISO", "Smoke"):
+        for action in ("Check", "Doctor", "Setup", "Build", "BuildRun", "Run", "OpenISO", "Smoke"):
             self.assertIn('"' + action + '"', source)
-        self.assertIn("wsl.exe -d $Distro -- bash -lc", source)
-        self.assertIn("wslpath -a $RepoRoot", source)
-        self.assertIn("bash scripts/build_vmware.sh", source)
+        # Never rely on the implicit WSL shell: it eats backslashes in
+        # Windows drive letters, and can eat printf's newline as well.
+        self.assertIn("wsl.exe -d $Distro --exec @Arguments", source)
+        self.assertIn("wsl.exe -d $Distro --exec /usr/bin/wslpath -u -a $WindowsDirectory", source)
+        self.assertIn("wsl.exe -d $Distro --exec /usr/bin/test -f $entry", source)
+        self.assertNotIn("wsl.exe -d $Distro -- bash -lc", source)
+        self.assertIn("New-StagedWorkspace", source)
+        self.assertIn('"/E"', source)
+        self.assertNotIn('"/MIR"', source)
+        self.assertNotIn('"/PURGE"', source)
+        self.assertIn("Copy-BuildLog", source)
         self.assertIn("ZillaOS-Desktop-UEFI.iso", source)
         self.assertIn("Get-FileHash", source)
         self.assertIn("Move-Item -LiteralPath $temporary -Destination $FriendlyIso -Force", source)
         self.assertIn('ISO copy verification failed', source)
         self.assertIn('"vmware.ps1"', source)
+
+    def test_vmware_optional_build_uses_same_wsl_entrypoint(self):
+        source = (ROOT / "scripts/vmware.ps1").read_text(encoding="utf-8")
+        self.assertIn('"windows.ps1") -Action Build', source)
+        self.assertNotIn("wslpath -a $RepoRoot", source)
 
     def test_windows_menu_routes_each_option_without_unconditional_goto(self):
         source = CMD.read_text(encoding="ascii")
