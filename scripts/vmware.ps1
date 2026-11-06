@@ -119,6 +119,14 @@ if (Test-Path -LiteralPath $vmxPath) {
             $assignedIso = [IO.Path]::GetFullPath($assignedIso)
             $mappingCorrect = [string]::Equals($assignedIso, $iso,
                 [StringComparison]::OrdinalIgnoreCase)
+            # The Builder deliberately emits two byte-identical ISO names.
+            # A previously saved VMX using the friendly alias is also valid.
+            if (-not $mappingCorrect -and (Test-Path -LiteralPath $assignedIso -PathType Leaf)) {
+                $assignedHash = (Get-FileHash -LiteralPath $assignedIso -Algorithm SHA256).Hash
+                $expectedHash = (Get-FileHash -LiteralPath $iso -Algorithm SHA256).Hash
+                $mappingCorrect = [string]::Equals($assignedHash, $expectedHash,
+                    [StringComparison]::OrdinalIgnoreCase)
+            }
             if ($mappingCorrect) {
                 Write-Host "[ZillaOS] Existing VMX CD/DVD mapping verified: $assignedIso" -ForegroundColor Green
             } else {
