@@ -1,8 +1,14 @@
 # ZillaOS
 
-**ZillaOS** is an experimental, independent operating system project: a Rust-first, capability-oriented microkernel with isolated user-space services. This is a learning and engineering project. The **first kernel bootstrap source is committed**, but a successful boot has not yet been independently verified.
+**ZillaOS** is an experimental, independent Rust-first operating system. The goal is a small capability-oriented microkernel with isolated user-space services; the current graphical preview still draws from the early kernel.
 
-> Status (2026-10-19): **v0.0.2-dev** committed directly to **main**. CPUID, HHDM/RAM tests, paging primitives and a minimal fatal CPU exception IDT are in source. **Rust build and QEMU boot/fault execution remain NOT VERIFIED**.
+> **Verified on user's Windows/VMware (2026-11-06):** UEFI ISO booted into a graphical ZillaOS desktop with working mouse and windows. The earlier build passed **120 Python tests and 95 Rust tests**. New multilingual UI and video-mode menu changes in `main` still require a fresh ISO build and VMware regression test.
+
+> **Scope:** this is a volatile development desktop, not yet a general-purpose OS, standalone installer, filesystem manager or command shell.
+
+For the desktop preview, languages, keyboard shortcuts and boot-time display modes,
+see [Desktop development guide](docs/DESKTOP.md) and
+[Windows ISO build guide](docs/WINDOWS_ISO.md).
 
 ## Mission / Мета
 
