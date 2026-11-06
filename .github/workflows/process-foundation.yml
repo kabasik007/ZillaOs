@@ -47,6 +47,8 @@ jobs:
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3
       - name: Compile user guard-fault regression fixture
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-guard-fault
+      - name: Compile supervisor boundary fault fixture
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-kernel-fault
 
   paging-audit-qemu:
     runs-on: ubuntu-24.04
@@ -173,4 +175,38 @@ jobs:
           path: |
             ring3-guard.log
             dist/*ring3-guard*.iso
+          if-no-files-found: warn
+
+  native-ring3-kernel-boundary-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install Rust 1.90 target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build supervisor boundary ISO
+        run: bash scripts/build.sh ring3-kernel
+      - name: Verify CPL3 cannot read mapped kernel code
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-kernel-uefi.iso --timeout 90 | tee ring3-kernel.log
+          grep -qx 'ZILLAOS_NATIVE_STDOUT=Hello from ZillaOS Native Ring3!' ring3-kernel.log
+          grep -qx 'ZILLAOS_NATIVE_USER_FAULT_VECTOR=0x000000000000000e' ring3-kernel.log
+          grep -qx 'ZILLAOS_NATIVE_USER_KERNEL_ACCESS_DENIED' ring3-kernel.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_RETURNED' ring3-kernel.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_OK' ring3-kernel.log
+          grep -qx 'ZILLAOS_BOOT_OK' ring3-kernel.log
+          if grep -q 'ZILLAOS_EXCEPTION_FATAL\|ZILLAOS_NATIVE_RING3_FAILED\|ZILLAOS_PANIC' ring3-kernel.log; then exit 1; fi
+      - name: Save kernel-boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-ring3-supervisor-protection-evidence
+          path: |
+            ring3-kernel.log
+            dist/*ring3-kernel*.iso
           if-no-files-found: warn

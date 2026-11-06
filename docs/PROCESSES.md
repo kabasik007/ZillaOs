@@ -111,3 +111,20 @@ Expected serial evidence is `ZILLAOS_NATIVE_USER_FAULT_VECTOR=0x...0e`,
 `ZILLAOS_NATIVE_USER_GUARD_FAULT_OK`, and normal kernel
 `ZILLAOS_BOOT_OK`; no fatal kernel exception. This test does not prove
 every user/kernel permission boundary or general fault recovery.
+
+## Milestone 5 — present kernel-page privilege boundary
+
+The opt-in `native-ring3-kernel-fault` fixture attempts to read the
+actual mapped higher-half `_start` kernel code page from CPL3.
+Expected #PF has `P=1`, `U/S=1`, `W/R=0`, proving that the present
+supervisor PML4 mapping rejects this user read. The handler must still
+recover to the saved kernel continuation without a panic.
+
+```bash
+bash scripts/build.sh ring3-kernel
+python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-kernel-uefi.iso --timeout 90
+```
+
+The success marker is `ZILLAOS_NATIVE_USER_KERNEL_ACCESS_DENIED`.
+The controlled test checks one supervisor mapping and one CPU only;
+it is not a claim of hardened kernel isolation against arbitrary code.

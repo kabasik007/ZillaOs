@@ -15,6 +15,9 @@ use zillaos_kernel::process::{
 use crate::{native_vm_staging::StagedSpace, serial};
 
 const KERNEL_CODE: u16 = 0x08;
+#[cfg(all(feature = "native-ring3-guard-fault", feature = "native-ring3-kernel-fault"))]
+compile_error!("Choose only one native Ring3 negative-fault fixture");
+
 const CODE_VA: u64 = 0x400000;
 const DATA_VA: u64 = 0x401000;
 #[cfg(feature = "native-ring3-guard-fault")]
@@ -379,6 +382,23 @@ fn copy_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
         0x90, 0x90,                   // padding
     ]);
 
+    // Negative privilege-boundary fixture. Mov rsi, sign-extended imm32
+    // targets the actual, already verified higher-half kernel _start page.
+    // A CPL3 read must fault because the new PML4 entry has U/S cleared.
+    #[cfg(feature = "native-ring3-kernel-fault")]
+    {
+        let kernel_target = crate::_start as usize as u64;
+        if kernel_target >> 32 != 0xffff_ffff || (kernel_target as u32) < 0x8000_0000 {
+            return Err(Ring3Error::InvalidFixture);
+        }
+        program[29..40].copy_from_slice(&[
+            0x48, 0xc7, 0xc6, 0, 0, 0, 0, // mov rsi, sign-extended imm32
+            0x8a, 0x06,                   // mov al, byte ptr [rsi]
+            0x0f, 0x0b,                   // ud2 if unexpectedly permitted
+        ]);
+        program[32..36].copy_from_slice(&(kernel_target as u32).to_le_bytes());
+    }
+
     let code_ptr = hhdm.checked_add(staged.code_frame).ok_or(Ring3Error::InvalidFixture)?;
     let data_ptr = hhdm.checked_add(staged.data_frame).ok_or(Ring3Error::InvalidFixture)?;
     // SAFETY: both frames are exclusively owned USABLE frames, initially
@@ -492,6 +512,15 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     table.mark_exited(pid, reason).map_err(|_| Ring3Error::UnexpectedExit)?;
     table.reap(pid).map_err(|_| Ring3Error::UnexpectedExit)?;
     match reason {
+        #[cfg(feature = "native-ring3-kernel-fault")]
+        ExitReason::Fault(UserFault::PageFault { address, error })
+            if address == crate::_start as usize as u64
+                && error & 0x7 == 0x5
+                && state.written == HELLO.len() as u64 =>
+        {
+            serial::write("ZILLAOS_NATIVE_USER_KERNEL_ACCESS_DENIED\n");
+            Ok(())
+        }
         #[cfg(feature = "native-ring3-guard-fault")]
         ExitReason::Fault(UserFault::PageFault { address, error })
             if address == GUARD_VA && error & 0x7 == 0x4
@@ -500,7 +529,7 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
             serial::write("ZILLAOS_NATIVE_USER_GUARD_FAULT_OK\n");
             Ok(())
         }
-        #[cfg(not(feature = "native-ring3-guard-fault"))]
+        #[cfg(not(any(feature = "native-ring3-guard-fault", feature = "native-ring3-kernel-fault")))]
         ExitReason::Normal(0) if state.written == HELLO.len() as u64 => {
             serial::write("ZILLAOS_NATIVE_EXIT_CODE=0x0000000000000000\n");
             Ok(())
