@@ -7,7 +7,8 @@
 > **Scope:** this is a volatile development desktop, not yet a general-purpose OS, standalone installer, filesystem manager or command shell.
 
 For the desktop preview, languages, keyboard shortcuts and boot-time display modes,
-see [Desktop development guide](docs/DESKTOP.md) and
+see [Desktop development guide](docs/DESKTOP.md),
+[Filesystem / source modules](docs/FILESYSTEM.md) and
 [Windows ISO build guide](docs/WINDOWS_ISO.md).
 
 ## Mission / Мета
