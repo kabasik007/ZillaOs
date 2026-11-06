@@ -145,3 +145,31 @@ device fences and a real FIFO backend only after that.
 References:
 - https://github.com/prepare/vmware-svga/blob/master/doc/svga_interface.txt
 - https://github.com/prepare/vmware-svga/blob/master/lib/vmware/svga_reg.h
+
+## Stage 3B — DisplayManager with mock backend
+
+A separate no_std `src/video/display_manager.rs` introduces mode-change
+transaction semantics without changing the active Limine/UEFI desktop:
+
+- Supported candidate modes are shown only when a backend explicitly
+  supports them; device max width/height alone is not sufficient.
+- Apply checks backend readiness, prepares resources, performs a mode
+  request and verifies the resulting mode via backend readback.
+- A new mode is pending until explicit confirmation. Cancel restores
+  the previous mode and checks readback.
+- Failed mode apply or mismatched readback triggers rollback when
+  the backend claims rollback is safe. Otherwise the manager is
+  permanently poisoned; no fake success can be displayed.
+- Mock tests cover no runtime switching, unsupported modes, Apply,
+  Cancel, Confirm, stale readback, prep failures and unsafe rollback.
+
+**This state machine is not connected to Settings, the renderer,
+window coordinates, mouse, or GPU hardware.** Its mode list is a
+contract for a future real driver rather than a list of confirmed
+VMware resolutions. Only the Limine boot menu changes resolution.
+
+Before wiring this into Settings -> Display: a safe owned framebuffer
+allocator and compositor reflow callback must be implemented, and
+the driver must really set, read back and restore the physical mode.
+User confirmation also requires an actual monotonic timeout source;
+no wall-clock timeout is claimed for this pure model.

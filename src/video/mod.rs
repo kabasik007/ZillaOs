@@ -8,6 +8,9 @@ use crate::storage_pci::PciLocation;
 #[path = "../drivers/gpu/mod.rs"]
 pub mod gpu;
 
+// Pure transactional mode switching; no runtime hardware backend yet.
+pub mod display_manager;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VideoAdapter {
     FirmwareOnly,

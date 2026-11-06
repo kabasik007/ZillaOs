@@ -1,0 +1,394 @@
+//! Pure no_std transaction logic for a future runtime DisplayManager.
+//!
+//! Not connected to the current GOP framebuffer, Settings or WindowManager.
+//! Real backends must implement atomic surface allocation and viewport
+//! preparation as part of prepare_mode before issuing physical mode writes.
+//! The user must confirm the mode before the new mode is considered stable.
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Mode {
+    pub width: u32,
+    pub height: u32,
+    pub bpp: u16,
+}
+
+impl Mode {
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self { width, height, bpp: 32 }
+    }
+
+    pub fn is_sane(self) -> bool {
+        self.bpp == 32 && (320..=8192).contains(&self.width)
+            && (200..=8192).contains(&self.height)
+            && u64::from(self.width) * u64::from(self.height) * 4 <= 256 * 1024 * 1024
+    }
+}
+
+pub const PROPOSED_MODES: [Mode; 5] = [
+    Mode::new(800, 600),
+    Mode::new(1024, 768),
+    Mode::new(1280, 800),
+    Mode::new(1600, 900),
+    Mode::new(1920, 1080),
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackendFailure {
+    Unavailable,
+    Rejected,
+    ReadbackFailed,
+}
+
+/// Backend is responsible for proving the mode is actually supported; merely
+/// checking SVGA MAX_WIDTH/MAX_HEIGHT is NOT proof of mode availability.
+/// A future backend must guarantee prepare_mode changes no visible mode,
+/// and preserve resources for safe rollback until user confirmation.
+pub trait ModeBackend {
+    fn runtime_switch_available(&self) -> bool;
+    fn supports_mode(&self, mode: Mode) -> bool;
+    fn prepare_mode(&mut self, mode: Mode) -> Result<(), BackendFailure>;
+    fn set_mode(&mut self, mode: Mode) -> Result<(), BackendFailure>;
+    fn read_mode(&mut self) -> Result<Mode, BackendFailure>;
+    fn can_restore(&self, previous: Mode) -> bool;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DisplayError {
+    NotAvailable,
+    InvalidMode,
+    Unsupported,
+    AlreadyPending,
+    NoPendingMode,
+    Poisoned,
+    PreparationFailed,
+    ApplyFailed,
+    ReadbackMismatch,
+    RollbackFailed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Apply {
+    AlreadyCurrent,
+    AwaitingConfirmation,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DisplayManager {
+    confirmed: Mode,
+    current: Mode,
+    pending_previous: Option<Mode>,
+    poisoned: bool,
+}
+
+impl DisplayManager {
+    /// Current must be obtained from a validated boot framebuffer or a real
+    /// device readback; this model does not inspect hardware on creation.
+    pub fn new(boot_mode: Mode) -> Option<Self> {
+        if !boot_mode.is_sane() {
+            return None;
+        }
+        Some(Self {
+            confirmed: boot_mode,
+            current: boot_mode,
+            pending_previous: None,
+            poisoned: false,
+        })
+    }
+
+    pub const fn confirmed_mode(&self) -> Mode {
+        self.confirmed
+    }
+
+    pub const fn current_mode(&self) -> Mode {
+        self.current
+    }
+
+    pub const fn awaiting_confirmation(&self) -> bool {
+        self.pending_previous.is_some()
+    }
+
+    pub const fn is_poisoned(&self) -> bool {
+        self.poisoned
+    }
+
+    /// This is a list of *candidate* modes filtered by backend evidence;
+    /// a device maximum width/height alone cannot validate these modes.
+    pub fn supported_presets(&self, backend: &impl ModeBackend) -> [Option<Mode>; 5] {
+        let mut modes = [None; 5];
+        if backend.runtime_switch_available() && !self.poisoned {
+            for (index, mode) in PROPOSED_MODES.iter().copied().enumerate() {
+                if backend.supports_mode(mode) {
+                    modes[index] = Some(mode);
+                }
+            }
+        }
+        modes
+    }
+
+    fn rollback(
+        &mut self,
+        backend: &mut impl ModeBackend,
+        previous: Mode,
+    ) -> Result<(), DisplayError> {
+        // If restoration cannot be proved safe, fail closed rather than
+        // guessing that GOP or the prior SVGA mode survived a mode write.
+        if !backend.can_restore(previous)
+            || backend.prepare_mode(previous).is_err()
+            || backend.set_mode(previous).is_err()
+            || backend.read_mode() != Ok(previous)
+        {
+            self.poisoned = true;
+            self.pending_previous = None;
+            return Err(DisplayError::RollbackFailed);
+        }
+        self.current = previous;
+        self.pending_previous = None;
+        Ok(())
+    }
+
+    /// Apply is provisional. The DisplayManager must not notify the UI of a
+    /// confirmed mode until readback succeeds and the user confirms.
+    pub fn apply(
+        &mut self,
+        backend: &mut impl ModeBackend,
+        requested: Mode,
+    ) -> Result<Apply, DisplayError> {
+        if self.poisoned {
+            return Err(DisplayError::Poisoned);
+        }
+        if self.awaiting_confirmation() {
+            return Err(DisplayError::AlreadyPending);
+        }
+        if !backend.runtime_switch_available() {
+            return Err(DisplayError::NotAvailable);
+        }
+        if !requested.is_sane() {
+            return Err(DisplayError::InvalidMode);
+        }
+        if !backend.supports_mode(requested) {
+            return Err(DisplayError::Unsupported);
+        }
+        if requested == self.current {
+            return if backend.read_mode() == Ok(self.current) {
+                Ok(Apply::AlreadyCurrent)
+            } else {
+                Err(DisplayError::ReadbackMismatch)
+            };
+        }
+        backend.prepare_mode(requested).map_err(|_| DisplayError::PreparationFailed)?;
+        let prior = self.current;
+        if backend.set_mode(requested).is_err() {
+            self.rollback(backend, prior)?;
+            return Err(DisplayError::ApplyFailed);
+        }
+        if backend.read_mode() != Ok(requested) {
+            self.rollback(backend, prior)?;
+            return Err(DisplayError::ReadbackMismatch);
+        }
+        self.current = requested;
+        self.pending_previous = Some(prior);
+        Ok(Apply::AwaitingConfirmation)
+    }
+
+    /// Confirm after explicit user approval, with a final hardware readback.
+    pub fn confirm(&mut self, backend: &mut impl ModeBackend) -> Result<(), DisplayError> {
+        let Some(prior) = self.pending_previous else {
+            return Err(DisplayError::NoPendingMode);
+        };
+        if self.poisoned {
+            return Err(DisplayError::Poisoned);
+        }
+        if backend.read_mode() != Ok(self.current) {
+            self.rollback(backend, prior)?;
+            return Err(DisplayError::ReadbackMismatch);
+        }
+        self.confirmed = self.current;
+        self.pending_previous = None;
+        Ok(())
+    }
+
+    /// Cancel or external confirmation deadline: restore and verify old mode.
+    pub fn cancel(&mut self, backend: &mut impl ModeBackend) -> Result<(), DisplayError> {
+        let Some(prior) = self.pending_previous else {
+            return Err(DisplayError::NoPendingMode);
+        };
+        if self.poisoned {
+            return Err(DisplayError::Poisoned);
+        }
+        self.rollback(backend, prior)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct MockDisplay {
+        current: Mode,
+        available: bool,
+        failed_apply: bool,
+        wrong_readback: bool,
+        restorable: bool,
+        prepared: usize,
+        writes: usize,
+        fail_prepare: bool,
+    }
+
+    impl MockDisplay {
+        fn new() -> Self {
+            Self {
+                current: Mode::new(1024, 768),
+                available: true,
+                failed_apply: false,
+                wrong_readback: false,
+                restorable: true,
+                prepared: 0,
+                writes: 0,
+                fail_prepare: false,
+            }
+        }
+    }
+
+    impl ModeBackend for MockDisplay {
+        fn runtime_switch_available(&self) -> bool {
+            self.available
+        }
+        fn supports_mode(&self, m: Mode) -> bool {
+            matches!((m.width, m.height, m.bpp),
+                (800, 600, 32) | (1024, 768, 32) | (1280, 800, 32))
+        }
+        fn prepare_mode(&mut self, _: Mode) -> Result<(), BackendFailure> {
+            self.prepared += 1;
+            if self.fail_prepare { Err(BackendFailure::Rejected) } else { Ok(()) }
+        }
+        fn set_mode(&mut self, m: Mode) -> Result<(), BackendFailure> {
+            self.writes += 1;
+            if self.failed_apply && m.width == 1280 {
+                return Err(BackendFailure::Rejected);
+            }
+            self.current = m;
+            Ok(())
+        }
+        fn read_mode(&mut self) -> Result<Mode, BackendFailure> {
+            if self.wrong_readback && self.current.width == 1280 {
+                Ok(Mode::new(800, 600))
+            } else {
+                Ok(self.current)
+            }
+        }
+        fn can_restore(&self, _: Mode) -> bool {
+            self.restorable
+        }
+    }
+
+    #[test]
+    fn no_backend_means_no_fake_runtime_modes() {
+        let mut gpu = MockDisplay::new();
+        gpu.available = false;
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.supported_presets(&gpu), [None; 5]);
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::NotAvailable));
+        assert_eq!(gpu.writes, 0);
+    }
+
+    #[test]
+    fn only_backend_confirmed_presets_are_listed() {
+        let gpu = MockDisplay::new();
+        let mgr = DisplayManager::new(gpu.current).unwrap();
+        let modes = mgr.supported_presets(&gpu);
+        assert_eq!(modes[0], Some(Mode::new(800, 600)));
+        assert_eq!(modes[1], Some(Mode::new(1024, 768)));
+        assert_eq!(modes[2], Some(Mode::new(1280, 800)));
+        assert_eq!(modes[3], None);
+        assert_eq!(modes[4], None);
+    }
+
+    #[test]
+    fn apply_confirm_and_cancel_preserve_confirmed_state() {
+        let mut gpu = MockDisplay::new();
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Ok(Apply::AwaitingConfirmation));
+        assert!(mgr.awaiting_confirmation());
+        assert_eq!(mgr.confirmed_mode(), Mode::new(1024, 768));
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(800, 600)), Err(DisplayError::AlreadyPending));
+        assert_eq!(mgr.cancel(&mut gpu), Ok(()));
+        assert_eq!(mgr.current_mode(), Mode::new(1024, 768));
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Ok(Apply::AwaitingConfirmation));
+        assert_eq!(mgr.confirm(&mut gpu), Ok(()));
+        assert_eq!(mgr.confirmed_mode(), Mode::new(1280, 800));
+    }
+
+    #[test]
+    fn failed_set_mode_rolls_back_and_reports_failure() {
+        let mut gpu = MockDisplay::new();
+        gpu.failed_apply = true;
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::ApplyFailed));
+        assert_eq!(mgr.current_mode(), Mode::new(1024, 768));
+        assert!(!mgr.awaiting_confirmation());
+        assert!(!mgr.is_poisoned());
+    }
+
+    #[test]
+    fn wrong_readback_rolls_back_and_never_confirms() {
+        let mut gpu = MockDisplay::new();
+        gpu.wrong_readback = true;
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::ReadbackMismatch));
+        assert_eq!(gpu.current, Mode::new(1024, 768));
+        assert_eq!(mgr.confirmed_mode(), Mode::new(1024, 768));
+    }
+
+    #[test]
+    fn unsafe_rollback_poison_prevents_all_future_changes() {
+        let mut gpu = MockDisplay::new();
+        gpu.failed_apply = true;
+        gpu.restorable = false;
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::RollbackFailed));
+        assert!(mgr.is_poisoned());
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(800, 600)), Err(DisplayError::Poisoned));
+    }
+
+    #[test]
+    fn unsupported_and_invalid_modes_are_rejected_without_writes() {
+        let mut gpu = MockDisplay::new();
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1920, 1080)), Err(DisplayError::Unsupported));
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(0, 0)), Err(DisplayError::InvalidMode));
+        assert_eq!(gpu.writes, 0);
+        assert_eq!(gpu.prepared, 0);
+    }
+
+    #[test]
+    fn prepare_error_does_not_change_visible_mode() {
+        let mut gpu = MockDisplay::new();
+        gpu.fail_prepare = true;
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::PreparationFailed));
+        assert_eq!(gpu.writes, 0);
+        assert_eq!(mgr.current_mode(), Mode::new(1024, 768));
+    }
+
+    #[test]
+    fn same_mode_still_requires_device_readback() {
+        let mut gpu = MockDisplay::new();
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        gpu.current = Mode::new(800, 600);
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1024, 768)),
+            Err(DisplayError::ReadbackMismatch)
+        );
+        assert_eq!(gpu.writes, 0);
+    }
+
+    #[test]
+    fn cannot_confirm_without_a_pending_device_mode() {
+        let mut gpu = MockDisplay::new();
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.confirm(&mut gpu), Err(DisplayError::NoPendingMode));
+        assert_eq!(mgr.cancel(&mut gpu), Err(DisplayError::NoPendingMode));
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1024, 768)), Ok(Apply::AlreadyCurrent));
+    }
+}
