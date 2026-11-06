@@ -90,3 +90,58 @@ No claim of physical resolution changes, GPU/FIFO initialization,
 
 Reference: https://github.com/prepare/vmware-svga/blob/master/doc/svga_interface.txt
 Reference: https://github.com/prepare/vmware-svga/blob/master/lib/vmware/svga_reg.h
+
+## Stage 3 — FIFO transaction model and PCI MMIO resource preflight
+
+**Implemented, but not connected to physical GPU memory:**
+
+- mmio.rs checks independent explicit PCI BAR1/BAR2 resource lengths,
+  power-of-two alignment, physical-address limits and overlap, in
+  addition to device-reported framebuffer/VRAM/FIFO requirements.
+- queue.rs defines a no_std FIFO backend interface with payload writes
+  separated from publication of FIFO_NEXT_CMD. A failed write or
+  synchronization poisons the queue to avoid reusing indeterminate state.
+- try_enqueue checks FIFO header bounds, free space and 10 KiB
+  minimum FIFO data area. A full queue returns InsufficientSpace
+  without publishing or overwriting any memory.
+- synchronize uses a caller-provided bounded BUSY poll budget. This
+  is not a clock-based timeout because the current early kernel
+  has no monotonic timer integrated into this graphics code.
+- Tests use an in-memory mock FIFO to verify wraparound, publication
+  order, header corruption, missing space, partial writes, and timeout.
+
+**Security and hardware invariants:**
+
+1. The PCI BAR register gives only a base address, not resource size.
+   Never treat SVGA_REG_VRAM_SIZE or SVGA_REG_MEM_SIZE as proof of
+   the PCI BAR aperture length. mmio.rs requires external authoritative
+   resource metadata; currently the kernel cannot provide that proof.
+2. No device FIFO backend has been added. The mock can only write
+   Rust memory. It cannot issue actual SVGA_CMD_UPDATE commands.
+3. A future backend must own a separate UC-mapped MMIO region with
+   correct page permissions/cache policy, acquire sole FIFO writer
+   ownership, prevent concurrent mode changes, and enforce a hardware
+   release/ordering barrier before updating NEXT_CMD.
+4. Never set CONFIG_DONE, ENABLE or SYNC while no mapped FIFO is
+   available. On failed preflight, retain the Limine GOP framebuffer.
+5. FIFO commands require successful SVGA ID negotiation and at least
+   SVGA_ID_1, followed by device-capability verification.
+
+**Test entrypoint:**
+
+```bash
+cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+cargo +1.90.0 build --release --target x86_64-unknown-none --features vm-demo --offline
+```
+
+**VMware:** normal BuildRun should still boot the same desktop and
+produce the same ZILLAOS_SVGA_PROBE COM1 markers as Stage 2.
+No FIFO marker is emitted because no FIFO hardware writes occur.
+
+Next blocker: implement a PCI resource allocator that knows BAR
+aperture sizes and a kernel-owned MMIO mapping API; implement proper
+device fences and a real FIFO backend only after that.
+
+References:
+- https://github.com/prepare/vmware-svga/blob/master/doc/svga_interface.txt
+- https://github.com/prepare/vmware-svga/blob/master/lib/vmware/svga_reg.h

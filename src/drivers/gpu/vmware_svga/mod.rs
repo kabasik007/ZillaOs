@@ -1,8 +1,10 @@
-//! VMware SVGA II stage 1: read-only guest inspection, GOP always fallback.
+//! VMware SVGA II driver: read-only discovery and unconnected FIFO models.
 //! Selecting the INDEX I/O port does not write SVGA register VALUE.
-//! No VRAM/FIFO mapping, runtime mode switching or GPU acceleration.
+//! No VRAM/FIFO MMIO mapping, runtime mode switching or GPU acceleration.
 pub mod capabilities;
 pub mod fifo;
+pub mod mmio;
+pub mod queue;
 pub mod negotiation;
 pub mod pci;
 pub mod registers;
