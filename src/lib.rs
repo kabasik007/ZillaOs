@@ -25,6 +25,7 @@ pub mod locale;
 pub mod fs;
 pub mod shell;
 pub mod apps;
+pub mod services;
 pub mod compat;
 #[path = "fs/install_plan.rs"]
 pub mod install_plan;

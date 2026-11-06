@@ -1,7 +1,7 @@
 //! Minimal deterministic floating-window manager for the Zilla Desktop VM.
 //!
 //! Pure no_std state: no heap, pointers, filesystem or privileged resources.
-//! The three Window records stand for DEMO VIEWS, not user-space processes.
+//! Window records are kernel-embedded views, not user-space processes.
 
 use crate::desktop::{App, Layout};
 
@@ -44,9 +44,9 @@ pub enum Move {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct WindowManager {
-    windows: [Window; 3],
+    windows: [Window; App::COUNT],
     // Back to front, with the highest indexed visible window focused.
-    order: [App; 3],
+    order: [App; App::COUNT],
     focus: Option<App>,
     viewport: Layout,
 }
@@ -85,20 +85,15 @@ impl WindowManager {
                 Window { app: App::Files, rect: base, mode: WindowMode::Normal },
                 Window { app: App::Terminal, rect: shifted, mode: WindowMode::Hidden },
                 Window { app: App::Settings, rect: shifted_again, mode: WindowMode::Hidden },
+                Window { app: App::AppCenter, rect: shifted, mode: WindowMode::Hidden },
             ],
-            order: [App::Settings, App::Terminal, App::Files],
+            order: [App::AppCenter, App::Settings, App::Terminal, App::Files],
             focus: Some(App::Files),
             viewport,
         }
     }
 
-    const fn index(app: App) -> usize {
-        match app {
-            App::Files => 0,
-            App::Terminal => 1,
-            App::Settings => 2,
-        }
-    }
+    const fn index(app: App) -> usize { app.index() }
 
     pub const fn focused(&self) -> Option<App> {
         self.focus
@@ -108,7 +103,7 @@ impl WindowManager {
         self.windows[Self::index(app)]
     }
 
-    pub const fn back_to_front(&self) -> [App; 3] {
+    pub const fn back_to_front(&self) -> [App; App::COUNT] {
         self.order
     }
 
@@ -150,10 +145,10 @@ impl WindowManager {
     fn bring_to_front(&mut self, app: App) {
         let index = self.order.iter().position(|candidate| *candidate == app);
         if let Some(index) = index {
-            for n in index..2 {
+            for n in index..(App::COUNT - 1) {
                 self.order[n] = self.order[n + 1];
             }
-            self.order[2] = app;
+            self.order[App::COUNT - 1] = app;
         }
         self.focus = Some(app);
     }
@@ -167,11 +162,11 @@ impl WindowManager {
     }
 
     pub fn cycle(&mut self) {
-        let available: [App; 3] = self.order;
+        let available: [App; App::COUNT] = self.order;
         let start = self.focus.and_then(|focus| available.iter().position(|app| *app == focus));
         // Choose the next visible window in stable cyclic Z order.
-        for distance in 1..=3 {
-            let candidate = available[(start.unwrap_or(2) + distance) % 3];
+        for distance in 1..=App::COUNT {
+            let candidate = available[(start.unwrap_or(App::COUNT - 1) + distance) % App::COUNT];
             if self.window(candidate).visible() {
                 self.bring_to_front(candidate);
                 return;
@@ -299,9 +294,9 @@ mod tests {
         wm.open(App::Settings);
         assert_eq!(wm.visible_count(), 3);
         assert_eq!(wm.focused(), Some(App::Settings));
-        assert_eq!(wm.back_to_front()[2], App::Settings);
+        assert_eq!(wm.back_to_front()[App::COUNT - 1], App::Settings);
         wm.open(App::Files);
-        assert_eq!(wm.back_to_front()[2], App::Files);
+        assert_eq!(wm.back_to_front()[App::COUNT - 1], App::Files);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 //! Windows-like sliding Start panel geometry.
 //! This is a pure no_std animation model, independent of framebuffer I/O.
 use crate::desktop::Layout;
+use crate::apps::App;
 
 pub const STEPS: u8 = 8;
 
@@ -15,7 +16,7 @@ pub struct Panel {
 pub fn panel(layout: Layout, progress: u8) -> Panel {
     let width = layout.width.saturating_sub(32).min(360);
     let available = layout.height.saturating_sub(layout.top_bar + layout.dock_height + 26);
-    let height = available.min(158);
+    let height = available.min(184);
     let base = layout.height.saturating_sub(layout.dock_height + height + 22)
         .max(layout.top_bar + 8);
     let hidden = height.saturating_add(24);
@@ -31,12 +32,10 @@ pub fn app_row(layout: Layout, progress: u8, x: usize, y: usize) -> Option<usize
         || y < rect.y || y >= rect.y.saturating_add(rect.height) {
         return None;
     }
-    match y - rect.y {
-        50..=77 => Some(0),
-        78..=101 => Some(1),
-        102..=131 => Some(2),
-        _ => None,
-    }
+    let offset = y - rect.y;
+    if offset < 50 { return None; }
+    let row = (offset - 50) / 24;
+    if row < App::COUNT { Some(row) } else { None }
 }
 
 #[cfg(test)]
@@ -58,6 +57,7 @@ mod tests {
             last = current.y;
         }
         assert_eq!(app_row(layout, 8, shown.x + 40, shown.y + 112), Some(2));
+        assert_eq!(app_row(layout, 8, shown.x + 40, shown.y + 128), Some(3));
         assert_eq!(app_row(layout, 0, shown.x + 40, shown.y + 112), None);
     }
     #[test]

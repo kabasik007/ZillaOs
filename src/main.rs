@@ -339,6 +339,7 @@ pub extern "C" fn _start() -> ! {
                         Some(App::Files) => serial::write("FILES\n"),
                         Some(App::Terminal) => serial::write("TERMINAL\n"),
                         Some(App::Settings) => serial::write("SETTINGS\n"),
+                        Some(App::AppCenter) => serial::write("APP_CENTER\n"),
                         None => serial::write("NONE\n"),
                     }
                 }

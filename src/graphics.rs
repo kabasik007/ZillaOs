@@ -9,6 +9,7 @@ use crate::limine::{self, Framebuffer};
 use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
 use zillaos_kernel::locale::{text as tr, TextId};
 use zillaos_kernel::fs::{self, NodeKind};
+use zillaos_kernel::apps;
 use zillaos_kernel::shell::start_menu;
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
@@ -546,17 +547,15 @@ impl Screen {
 
     fn desktop_shortcuts(&self, state: &Desktop, layout: &Layout) {
         if layout.width < 500 || layout.height < 440 { return; }
-        let labels = [TextId::Files, TextId::Terminal, TextId::Settings];
-        let icons = ["F", "T", "S"];
-        let colors = [0x18a9c1, 0x425d81, 0x7d6bd1];
-        for i in 0..3 {
+        for (i, descriptor) in apps::BUILTIN_APPS.iter().enumerate() {
+            let (label, icon, color) = (descriptor.title_key, descriptor.glyph, descriptor.color);
             let x = 30;
             let y = layout.top_bar + 145 + i * 78;
             self.round_rect(x, y, 100, 66, 11,
                 if state.dark { 0x1d3149 } else { 0xe1f0f8 });
-            self.round_rect(x + 35, y + 6, 30, 30, 9, colors[i]);
-            self.text(icons[i], x + 45, y + 14, 2, 0xffffff);
-            let title = tr(state.language, labels[i]);
+            self.round_rect(x + 35, y + 6, 30, 30, 9, color);
+            self.text(icon, x + 45, y + 14, 2, 0xffffff);
+            let title = tr(state.language, label);
             let txt_x = x + 50usize.saturating_sub(title.chars().count() * 3);
             self.text(title, txt_x, y + 47, 1,
                 if state.dark { 0xe6f2ff } else { 0x183144 });
@@ -595,14 +594,10 @@ impl Screen {
         self.round_rect(x, y, width, h, 17, background);
         let icon = h.saturating_sub(18).min(46);
         let spacing = icon + 14;
-        let base = x + width.saturating_sub(3 * spacing) / 2 + 7;
-        for i in 0..3 {
+        let base = x + width.saturating_sub(App::COUNT * spacing) / 2 + 7;
+        for (i, descriptor) in apps::BUILTIN_APPS.iter().enumerate() {
             let px = base + i * spacing;
-            let (app, color, letter) = match i {
-                0 => (App::Files, 0x18a9c1, "F"),
-                1 => (App::Terminal, 0x425d81, "T"),
-                _ => (App::Settings, 0x7d6bd1, "S"),
-            };
+            let (app, color, letter) = (descriptor.id, descriptor.color, descriptor.glyph);
             self.round_rect(px, y + 8, icon, icon, 11, color);
             self.text(letter, px + (icon.saturating_sub(10)) / 2, y + 17, 2, 0xffffff);
             if state.active() == Some(app) {
@@ -641,11 +636,7 @@ impl Screen {
         for (i, dot) in [0xfd6872, 0xffcb55, 0x45c784].iter().enumerate() {
             self.round_rect(x + 14 + i * 19, y + 13, 11, 11, 5, *dot);
         }
-        let title = match app {
-            App::Files => tr(state.language, TextId::Files),
-            App::Terminal => tr(state.language, TextId::Terminal),
-            App::Settings => tr(state.language, TextId::Settings),
-        };
+        let title = tr(state.language, apps::descriptor(app).title_key);
         self.text(title, x + 87, y + 14, if w >= 360 { 2 } else { 1 }, fg);
         if focused && w >= 310 {
             self.text(tr(state.language, TextId::Active), x + w.saturating_sub(70), y + 18, 1, 0x1bd5ba);
@@ -722,6 +713,28 @@ impl Screen {
                     self.text("> DEMO / NO SHELL", cx + 12, body + 77, 1, 0x1dd9b4);
                 }
             }
+            App::AppCenter => {
+                self.text(tr(state.language, TextId::AppCenter), cx, body + 9, 2, fg);
+                if content_h > 98 {
+                    self.text("INSTALLED BUILT-IN APPS", cx, body + 31, 1, secondary);
+                    for (index, entry) in apps::BUILTIN_APPS.iter().enumerate() {
+                        let py = body + 47 + index * 43;
+                        if py + 36 >= body + content_h.saturating_sub(25) { break; }
+                        self.round_rect(cx, py, cw, 36, 7,
+                                        if state.dark { 0x263d54 } else { 0xdceef4 });
+                        self.round_rect(cx + 7, py + 7, 23, 23, 5, entry.color);
+                        self.text(entry.glyph, cx + 15, py + 13, 1, 0xffffff);
+                        self.text(tr(state.language, entry.title_key),
+                                  cx + 40, py + 13, 1, fg);
+                    }
+                    if content_h > 290 {
+                        self.text("LINUX / WINDOWS / ANDROID: NO RUNTIME",
+                                  cx, body + 258, 1, 0xffc35a);
+                        self.text("NATIVE USER PROCESSES: NOT READY",
+                                  cx, body + 277, 1, secondary);
+                    }
+                }
+            }
             App::Settings => {
                 self.text(tr(state.language, TextId::Settings), cx, body + 9, 2, fg);
                 if content_h > 98 {
@@ -789,10 +802,12 @@ impl Screen {
                         if state.dark { 0x233850 } else { 0xf0faff });
         let fg = if state.dark { 0xffffff } else { 0x183144 };
         self.text(tr(state.language, TextId::Launcher), x + 18, y + 17, 2, fg);
-        if h >= 120 {
-            self.text(tr(state.language, TextId::Files), x + 38, y + 55, 2, fg);
-            self.text(tr(state.language, TextId::Terminal), x + 38, y + 79, 2, fg);
-            self.text(tr(state.language, TextId::Settings), x + 38, y + 103, 2, fg);
+        if h >= 110 {
+            for (index, entry) in apps::BUILTIN_APPS.iter().enumerate() {
+                let py = y + 55 + index * 24;
+                if py + 14 >= y + h { break; }
+                self.text(tr(state.language, entry.title_key), x + 38, py, 1, fg);
+            }
         }
     }
 

@@ -10,22 +10,9 @@ use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum App {
-    Files,
-    Terminal,
-    Settings,
-}
-
-impl App {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Files => "FILES",
-            Self::Terminal => "TERMINAL",
-            Self::Settings => "SETTINGS",
-        }
-    }
-}
+pub use crate::apps::App;
+use crate::services::app_manager::{ApplicationManager, LaunchTarget};
+use crate::apps::app_center;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -33,6 +20,7 @@ pub enum Key {
     Files,
     Terminal,
     Settings,
+    AppCenter,
     ToggleTheme,
     CycleLanguage,
     ShowDesktop,
@@ -162,6 +150,10 @@ impl Desktop {
     pub const fn active(&self) -> Option<App> {
         self.windows.focused()
     }
+    pub fn launch_app(&mut self, app: App) {
+        ApplicationManager::launch(&mut self.windows, LaunchTarget::Builtin(app))
+            .expect("installed built-in application");
+    }
 
     /// Read-only RTC update. The caller triggers repaint only for changed
     /// seconds; invalid CMOS readings do not erase the last valid time.
@@ -242,14 +234,11 @@ impl Desktop {
         let dock_y = layout.height.saturating_sub(layout.dock_height + 10);
         let icon = layout.dock_height.saturating_sub(18).min(46);
         let spacing = icon + 14;
-        let base = dock_x + width.saturating_sub(3 * spacing) / 2 + 7;
+        let base = dock_x + width.saturating_sub(App::COUNT * spacing) / 2 + 7;
         if y < dock_y + 8 || y >= dock_y + 8 + icon {
             return None;
         }
-        for (i, app) in [App::Files, App::Terminal, App::Settings]
-            .iter()
-            .enumerate()
-        {
+        for (i, app) in App::ALL.iter().enumerate() {
             let start = base + i * spacing;
             if x >= start && x < start + icon {
                 return Some(*app);
@@ -259,12 +248,8 @@ impl Desktop {
     }
 
     fn launcher_app_at(&self, x: usize, y: usize) -> Option<App> {
-        match start_menu::app_row(self.layout, self.launcher_step, x, y) {
-            Some(0) => Some(App::Files),
-            Some(1) => Some(App::Terminal),
-            Some(2) => Some(App::Settings),
-            _ => None,
-        }
+        start_menu::app_row(self.layout, self.launcher_step, x, y)
+            .and_then(|row| App::ALL.get(row).copied())
     }
 
     /// Mouse zones for the three visible desktop launcher cards.
@@ -276,12 +261,7 @@ impl Desktop {
         if y < start { return None; }
         let index = (y - start) / 78;
         if (y - start) % 78 >= 66 { return None; }
-        match index {
-            0 => Some(App::Files),
-            1 => Some(App::Terminal),
-            2 => Some(App::Settings),
-            _ => None,
-        }
+        App::ALL.get(index).copied()
     }
 
     /// The top panel menus are real desktop actions rather than mock labels.
@@ -316,17 +296,17 @@ impl Desktop {
             let y = self.pointer.y;
             if self.launcher {
                 if let Some(app) = self.launcher_app_at(x, y) {
-                    self.windows.open(app);
+                    self.launch_app(app);
                 }
                 self.launcher = false;
             } else if let Some(app) = Self::dock_app_at(self.layout, x, y) {
-                self.windows.open(app);
+                self.launch_app(app);
             } else if y < self.layout.top_bar && x < 46 {
                 self.launcher = true;
             } else if let Some(menu) = self.top_menu_at(x, y) {
                 match menu {
                     0 => self.launcher = !self.launcher,
-                    1 => self.windows.open(App::Files),
+                    1 => self.launch_app(App::Files),
                     2 => self.dark = !self.dark,
                     _ => self.windows.show_desktop(),
                 }
@@ -355,9 +335,13 @@ impl Desktop {
                     }
                 } else if app == App::Files {
                     self.files_click(rect, x, y);
+                } else if app == App::AppCenter {
+                    if let Some(chosen) = app_center::app_row_at(rect, x, y) {
+                        self.launch_app(chosen);
+                    }
                 }
             } else if let Some(app) = Self::desktop_shortcut_at(self.layout, x, y) {
-                self.windows.open(app);
+                self.launch_app(app);
             } else if let Some(icon) = self.icons.hit(x, y) {
                 self.icons.begin(icon);
             }
@@ -372,7 +356,7 @@ impl Desktop {
             if let Some(directory) = self.icons.finish() {
                 self.files.current = directory;
                 self.files.preview_file = None;
-                self.windows.open(App::Files);
+                self.launch_app(App::Files);
             }
         }
         self.pointer.left = packet.left;
@@ -388,16 +372,15 @@ impl Desktop {
         let before = (self.windows, self.launcher, self.dark, self.language, self.files);
         match key {
             Key::Launcher => self.launcher = !self.launcher,
-            Key::Files => {
-                self.windows.open(App::Files);
-                self.launcher = false;
-            }
-            Key::Terminal => {
-                self.windows.open(App::Terminal);
-                self.launcher = false;
-            }
-            Key::Settings => {
-                self.windows.open(App::Settings);
+            Key::Files | Key::Terminal | Key::Settings | Key::AppCenter => {
+                let app = match key {
+                    Key::Files => App::Files,
+                    Key::Terminal => App::Terminal,
+                    Key::Settings => App::Settings,
+                    Key::AppCenter => App::AppCenter,
+                    _ => unreachable!(),
+                };
+                self.launch_app(app);
                 self.launcher = false;
             }
             Key::ToggleTheme => self.dark = !self.dark,
@@ -496,6 +479,7 @@ impl ScancodeDecoder {
             0x41 => Some(Key::Maximize),     // F7
             0x42 => Some(Key::CycleLanguage), // F8
             0x43 => Some(Key::ShowDesktop),   // F9
+            0x44 => Some(Key::AppCenter),      // F10
             0x0f => Some(Key::NextApp),      // Tab
             0x01 => Some(Key::Escape),       // Escape
             0x1c => Some(Key::Confirm),      // Enter
@@ -566,6 +550,7 @@ mod tests {
         assert_eq!(decoder.feed(0x41), Some(Key::Maximize));
         assert_eq!(decoder.feed(0x42), Some(Key::CycleLanguage));
         assert_eq!(decoder.feed(0x43), Some(Key::ShowDesktop));
+        assert_eq!(decoder.feed(0x44), Some(Key::AppCenter));
         assert_eq!(decoder.feed(0x0f), Some(Key::NextApp));
         assert_eq!(decoder.feed(0x01), Some(Key::Escape));
         assert_eq!(decoder.feed(0xe0), None);
@@ -696,6 +681,21 @@ mod tests {
         state.pointer.y = 19;
         assert!(state.handle_mouse(test_packet(0, 0, true)));
         assert!(state.launcher);
+    }
+
+    #[test]
+    fn app_center_launches_terminal_through_application_manager() {
+        let mut desktop = Desktop::new();
+        assert!(desktop.handle(Key::AppCenter));
+        assert_eq!(desktop.active(), Some(App::AppCenter));
+        desktop.enable_pointer();
+        let rect = desktop.windows.rect(App::AppCenter);
+        let side = (rect.width / 4).clamp(70, 170);
+        desktop.pointer.x = rect.x + side + 38;
+        desktop.pointer.y = rect.y + 45 + 8 + 47 + 43 + 5;
+        assert!(desktop.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(desktop.active(), Some(App::Terminal));
+        assert_eq!(desktop.windows.visible_count(), 3);
     }
 
     #[test]

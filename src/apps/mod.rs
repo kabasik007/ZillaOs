@@ -1,49 +1,44 @@
-//! Built-in ZillaOS application catalogue.
-//!
-//! These entries identify kernel-embedded preview apps and reserve stable
-//! virtual installation directories. They are NOT native executables and do
-//! not claim process isolation, .exe loading or package installation.
-use crate::desktop::App;
-
+//! One installed-app registry for Start, Dock, App Center and launch service.
+pub mod id;
+pub mod app_center;
+pub use id::App;
+use crate::locale::TextId;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AppDescriptor {
     pub id: App,
     pub name: &'static str,
     pub install_path: &'static str,
+    pub title_key: TextId,
+    pub glyph: &'static str,
+    pub color: u32,
 }
-
-pub static BUILTIN_APPS: [AppDescriptor; 3] = [
-    AppDescriptor {
-        id: App::Files, name: "Zilla Files",
-        install_path: "/Program Files/Zilla Files",
-    },
-    AppDescriptor {
-        id: App::Terminal, name: "Zilla Terminal",
-        install_path: "/Program Files/Zilla Terminal",
-    },
-    AppDescriptor {
-        id: App::Settings, name: "Zilla Settings",
-        install_path: "/Program Files/Zilla Settings",
-    },
+pub static BUILTIN_APPS: [AppDescriptor; App::COUNT] = [
+    AppDescriptor { id: App::Files, name: "Zilla Files", install_path: "/Program Files/Zilla Files",
+                    title_key: TextId::Files, glyph: "F", color: 0x18a9c1 },
+    AppDescriptor { id: App::Terminal, name: "Zilla Terminal", install_path: "/Program Files/Zilla Terminal",
+                    title_key: TextId::Terminal, glyph: "T", color: 0x425d81 },
+    AppDescriptor { id: App::Settings, name: "Zilla Settings", install_path: "/Program Files/Zilla Settings",
+                    title_key: TextId::Settings, glyph: "S", color: 0x7d6bd1 },
+    AppDescriptor { id: App::AppCenter, name: "Zilla App Center", install_path: "/Program Files/Zilla App Center",
+                    title_key: TextId::AppCenter, glyph: "A", color: 0x419776 },
 ];
-
+pub fn descriptor(id: App) -> &'static AppDescriptor { &BUILTIN_APPS[id.index()] }
 pub fn find_by_path(path: &str) -> Option<&'static AppDescriptor> {
-    BUILTIN_APPS.iter().find(|app| app.install_path == path)
+    BUILTIN_APPS.iter().find(|x| x.install_path == path)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::fs::{lookup, node, NodeKind};
-
     #[test]
-    fn installed_app_paths_exist_in_guest_tree_not_on_host_disk() {
-        for app in BUILTIN_APPS.iter() {
-            assert_eq!(find_by_path(app.install_path).unwrap().id, app.id);
-            assert!(!app.name.is_empty());
-            let entry_id = lookup(app.install_path).expect("missing guest directory");
-            assert_eq!(node(entry_id).unwrap().kind, NodeKind::Directory);
+    fn every_registered_app_has_unique_identity_and_virtual_directory() {
+        for (i, app) in App::ALL.iter().enumerate() {
+            let d = descriptor(*app);
+            assert_eq!(d.id, *app);
+            assert_eq!(app.index(), i);
+            assert_eq!(find_by_path(d.install_path), Some(d));
+            assert_eq!(node(lookup(d.install_path).unwrap()).unwrap().kind, NodeKind::Directory);
         }
-        assert_eq!(find_by_path("/Users/Guest/Documents"), None);
+        assert_eq!(find_by_path("/Windows/unknown.exe"), None);
     }
 }
