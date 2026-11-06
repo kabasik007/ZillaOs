@@ -38,7 +38,7 @@ mod tests {
 
     #[test]
     fn installed_app_paths_exist_in_guest_tree_not_on_host_disk() {
-        for app in BUILTIN_APPS {
+        for app in BUILTIN_APPS.iter() {
             assert_eq!(find_by_path(app.install_path).unwrap().id, app.id);
             assert!(!app.name.is_empty());
             let entry_id = lookup(app.install_path).expect("missing guest directory");
