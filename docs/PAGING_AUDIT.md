@@ -61,8 +61,8 @@ Reference: https://github.com/limine-bootloader/limine-protocol/blob/trunk/PROTO
 An optional `vm-staging` feature (via `bash scripts/build.sh stage`)
 reuses the existing single `FrameAllocator` to reserve fresh RAM pages,
 zeros them through the validated HHDM and builds a 4-level page-table
-tree. Upper-half supervisor mappings are inherited read-only from the
-active Limine root. The lower half is new, with explicit U/S and NX:
+tree. Upper-half mappings are copied from the active Limine root into new
+PML4 entries with USER cleared (the Limine tables remain unchanged). The lower half is new, with explicit U/S and NX:
 
 - `0x400000`: one user executable, read-only page (RX).
 - `0x401000`: one user writable, non-executable page (RW + NX).

@@ -132,14 +132,16 @@ pub unsafe fn stage(
     let data = reserve_clean(allocator, hhdm)?;
     let stack = reserve_clean(allocator, hhdm)?;
 
-    // Mirror the upper half *only*. Every imported present PML4 entry must
-    // be supervisor-only. Do not copy lower half or make boot tables USER.
+    // Mirror the upper half *only*. Clear USER at the new root, even when
+    // Limine has USER on an ancestor but supervisor-only effective access
+    // through lower-level entries. Never alter the bootloader's own PML4.
     for index in 256..512 {
         let entry = read_verified(regions, snapshot.cr3, index, hhdm)?;
-        if entry & (PRESENT | USER) == (PRESENT | USER) {
+        let supervisor_entry = entry & !USER;
+        put(root.address, index, supervisor_entry, hhdm)?;
+        if read_verified(regions, root.address, index, hhdm)? & USER != 0 {
             return Err(StageError::UnsafeBootMapping);
         }
-        put(root.address, index, entry, hhdm)?;
     }
 
     let user_table = PRESENT | USER | WRITABLE;
