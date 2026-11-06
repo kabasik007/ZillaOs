@@ -41,13 +41,28 @@ if [[ "$MODE" == "--install" ]]; then
         echo "Ubuntu apt-get missing" >&2
         exit 2
     fi
-    echo "[ZillaOS] Installing Ubuntu ISO-build dependencies (sudo may ask for password)..."
-    sudo apt-get update
-    packages=(ca-certificates curl tar xz-utils git python3 xorriso)
+    # Rust host tests are native x86_64 Linux executables. They require the
+    # system C toolchain and the LLD linker, even though the OS ELF itself
+    # targets x86_64-unknown-none.
+    packages=(ca-certificates curl tar xz-utils git python3 xorriso build-essential lld)
     if [[ "$WITH_QEMU" -eq 1 ]]; then
         packages+=(qemu-system-x86 qemu-system-gui ovmf mtools qemu-utils)
     fi
-    sudo apt-get install -y --no-install-recommends "${packages[@]}"
+    needed=()
+    for package in "${packages[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null |
+            grep -qx 'install ok installed'; then
+            needed+=("$package")
+        fi
+    done
+    if (( ${#needed[@]} > 0 )); then
+        printf '[ZillaOS] Installing missing Ubuntu packages: %s\n' "${needed[*]}"
+        echo '[ZillaOS] sudo may ask for the Ubuntu account password.'
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends "${needed[@]}"
+    else
+        echo '[ZillaOS] All Ubuntu packages are already installed; skipping apt.'
+    fi
 fi
 
 # rustup's normal Ubuntu installation places cargo into ~/.cargo/bin,
@@ -75,7 +90,7 @@ fi
 
 echo "[ZillaOS] Dependency status:"
 missing=0
-for binary in bash python3 curl sha256sum tar find xorriso cargo rustc rustup; do
+for binary in bash python3 curl sha256sum tar find xorriso cargo rustc rustup cc ld.lld; do
     if command -v "$binary" >/dev/null 2>&1; then
         printf "  OK      %s\n" "$binary"
     else
@@ -83,6 +98,21 @@ for binary in bash python3 curl sha256sum tar find xorriso cargo rustc rustup; d
         missing=1
     fi
 done
+# The host Rust test binary links through cc with -fuse-ld=lld on the
+# pinned Linux toolchain. Check actual linkability, not just command names.
+if command -v cc >/dev/null 2>&1 && command -v ld.lld >/dev/null 2>&1; then
+    probe_dir="$(mktemp -d)"
+    if printf 'int main(void){return 0;}\n' |
+        cc -x c - -fuse-ld=lld -o "$probe_dir/zillaos-link-probe" 2>"$probe_dir/linker-stderr"; then
+        echo "  OK      native host link via cc -fuse-ld=lld"
+    else
+        echo "  FAILED  native host link via cc -fuse-ld=lld"
+        cat "$probe_dir/linker-stderr" >&2
+        echo "  FIX     Run -Action Setup (Ubuntu: build-essential + lld)" >&2
+        missing=1
+    fi
+    rm -rf -- "$probe_dir"
+fi
 if command -v rustup >/dev/null 2>&1; then
     if rustup toolchain list | grep -q '^1\.90\.0-'; then
         echo "  OK      Rust toolchain 1.90.0"
@@ -107,7 +137,7 @@ if [[ "$WITH_QEMU" -eq 1 ]]; then
     done
 fi
 if [[ "$missing" -ne 0 ]]; then
-    echo "[ZillaOS] Prerequisites incomplete. ISO build will not start yet."
+    echo "[ZillaOS] Prerequisites incomplete. ISO build will not start yet. On Windows run -Action Setup."
     exit 2
 fi
 echo "[ZillaOS] Ubuntu/WSL toolchain ready to build ISO."
