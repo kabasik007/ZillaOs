@@ -1,0 +1,51 @@
+name: ZillaOS framebuffer and desktop regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/ui/raster.rs'
+      - 'src/graphics.rs'
+      - 'src/main.rs'
+      - 'docs/GRAPHICS.md'
+      - '.github/workflows/graphics-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frame-buffered-desktop-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU/OVMF and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Test software framebuffer bounds and kernel algorithms
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Build graphical UEFI ISO
+        run: bash scripts/build.sh demo
+      - name: Verify graphical desktop boot, screenshots, keyboard and cursor
+        run: |
+          set -o pipefail
+          python3 scripts/desktop_smoke.py --iso dist/zillaos-0.0.2-dev-demo-uefi.iso --timeout 120 | tee desktop-regression.log
+          grep -qx 'ZILLAOS_SETUP_GRAPHICS_BUFFERED_READY' build/logs/desktop-qemu.log
+          grep -q '^ZILLAOS_FRAMEBUFFER_WIDTH=0x' build/logs/desktop-qemu.log
+          grep -qx 'ZILLAOS_GRAPHICS_BUFFERED_READY' build/logs/desktop-qemu.log
+          if grep -q 'ZILLAOS_SETUP_GRAPHICS_DIRECT_FALLBACK' build/logs/desktop-qemu.log; then exit 1; fi
+      - name: Archive GUI screenshot and serial evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-framebuffer-desktop-regression
+          path: |
+            desktop-regression.log
+            build/logs/desktop-qemu*.log
+            build/logs/desktop-qemu*.ppm
+            dist/*demo*.iso
+          if-no-files-found: warn

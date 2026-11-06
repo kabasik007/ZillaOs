@@ -119,3 +119,37 @@ boot and screenshot regression have passed.
    1280×800 fixed bootstrap bound.
 5. After process/IPC support, migrate the compositor into user space with
    capability-controlled surfaces, synchronization and fault isolation.
+
+
+## VMware Setup flicker fix — larger GOP modes (2026-11-06)
+
+A user reported repeated setup-window flicker, with a screenshot of a
+partially drawn panel. A credible root cause was identified in source:
+`supports_backbuffer` rejected every resolution above 1280x800, although
+`boot/limine.conf` advertises 1600x900 and 1920x1080. That made the
+Setup screen write every rectangle and glyph directly to visible GOP VRAM.
+Any redraw could therefore expose a partially composed frame.
+
+The static heap-free BSS backing capacity now covers all boot menu modes:
+**1920 × 1080 × 4 = 8,294,400 bytes**, with the backing stride set to
+**the actual visible width** (e.g. 1600 at 1600x900) to avoid writing
+unused columns. Supported GOP modes first finish the entire scene in
+memory, then copy it to the visible framebuffer. Pointer-only moves continue
+to use small damage rectangles after the first completed composition.
+
+COM1 now reports `ZILLAOS_FRAMEBUFFER_WIDTH`, `_HEIGHT`, `_PITCH` as
+hexadecimal values plus either `ZILLAOS_SETUP_GRAPHICS_BUFFERED_READY`
+or `ZILLAOS_SETUP_GRAPHICS_DIRECT_FALLBACK`. These are observable
+configuration facts, not an FPS measurement.
+
+**Remaining limitation:** the final front-buffer copy is still software,
+without a hardware flip or vsync. This change avoids visibly incomplete
+*composition* at the advertised resolutions; it does not guarantee tear-free
+output at arbitrary frame rates, GPU acceleration, or dynamic resolutions.
+For larger firmware GOP modes direct rendering remains a bounded fallback.
+
+**Verification:** pure `raster` unit tests for the 1600x900 and 1920x1080
+capacity boundaries, compact-stride clipping, host Rust tests, bare-metal
+`vm-demo` build and QEMU desktop smoke. VMware validation requires a new
+Windows `BuildRun` and COM1 log; the screenshot alone does not prove which
+GOP mode the guest selected.

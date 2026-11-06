@@ -17,9 +17,10 @@ use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
 
-// Fixed-size offscreen RGB32 surface: 1280 x 800 x 4 = 4,096,000 bytes.
+// Fixed-capacity offscreen RGB32 surface: 1920x1080x4 = 8,294,400 bytes.
 // It resides in the kernel's BSS, NEVER on the stack or a heap.
-// Larger Limine resolutions fall back to the original bounded direct renderer.
+// Frame rows use the actual visible GOP width as their stride, not 1920.
+// Only modes larger than 1920x1080 fall back to direct drawing.
 struct Backbuffer(UnsafeCell<[u32; raster::BACKBUFFER_PIXELS]>);
 
 // SAFETY: the preemptive scheduler/IRQ handler/SMP renderer does not exist.
@@ -55,7 +56,7 @@ impl Screen {
             let buffer = unsafe { &mut *BACKBUFFER.0.get() };
             raster::fill_rect(
                 buffer,
-                raster::BACKBUFFER_WIDTH,
+                self.fb.width,
                 self.fb.width,
                 self.fb.height,
                 region,
@@ -91,7 +92,10 @@ impl Screen {
         // Region indices are within the statically allocated backing buffer.
         let buffer = unsafe { &*BACKBUFFER.0.get() };
         for row in region.y..region.y + region.height {
-            let start = row * raster::BACKBUFFER_WIDTH + region.x;
+            // Backing rows are tightly packed for the current GOP mode.
+            // This avoids unused padded columns and keeps the 1600x900
+            // framebuffer layout independent of the 1920-wide capacity.
+            let start = row * self.fb.width + region.x;
             for col in 0..region.width {
                 let color = buffer[start + col];
                 let byte_offset = row * self.fb.pitch + (region.x + col) * 4;

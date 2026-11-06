@@ -2,8 +2,11 @@
 //! The boot demo uses this for clipping, RGB32 backbuffer decisions and
 //! restoring cursor-damaged rectangles without repainting the whole desktop.
 
-pub const BACKBUFFER_WIDTH: usize = 1280;
-pub const BACKBUFFER_HEIGHT: usize = 800;
+// Largest selectable Limine mode in boot/limine.conf. VMware may choose
+// 1600x900 or 1920x1080 automatically; never fall back to progressive
+// direct drawing for a mode the boot menu itself advertises.
+pub const BACKBUFFER_WIDTH: usize = 1920;
+pub const BACKBUFFER_HEIGHT: usize = 1080;
 pub const BACKBUFFER_PIXELS: usize = BACKBUFFER_WIDTH * BACKBUFFER_HEIGHT;
 pub const CURSOR_WIDTH: usize = 12;
 pub const CURSOR_HEIGHT: usize = 20;
@@ -113,6 +116,19 @@ mod tests {
     }
 
     #[test]
+    fn compact_stride_for_1600x900_does_not_touch_outside_frame() {
+        // A 1600x900 GOP framebuffer must not be indexed at an older fixed
+        // 1280-pixel stride. The renderer uses the current visible width.
+        let mut pixels = [0x55u32; 24];
+        assert_eq!(fill_rect(&mut pixels, 6, 4, 3,
+                              Region::new(2, 1, 2, 2), 0xaabbcc), 4);
+        for (i, value) in pixels.iter().enumerate() {
+            let modified = matches!(i, 8 | 9 | 14 | 15);
+            assert_eq!(*value, if modified { 0xaabbcc } else { 0x55 });
+        }
+    }
+
+    #[test]
     fn full_surface_fill_counts_correct_pixels() {
         let mut pixels = [0; 320];
         assert_eq!(fill_rect(&mut pixels, 32, 32, 10,
@@ -150,10 +166,13 @@ mod tests {
     fn backbuffer_has_explicit_capacity() {
         assert!(supports_backbuffer(1024, 768));
         assert!(supports_backbuffer(1280, 800));
-        assert!(!supports_backbuffer(1281, 800));
-        assert!(!supports_backbuffer(1280, 801));
-        assert_eq!(backing_index(799, 1279), Some(BACKBUFFER_PIXELS - 1));
-        assert_eq!(backing_index(800, 0), None);
-        assert_eq!(backing_index(0, 1280), None);
+        assert!(supports_backbuffer(1600, 900));
+        assert!(supports_backbuffer(1920, 1080));
+        assert!(!supports_backbuffer(1921, 1080));
+        assert!(!supports_backbuffer(1920, 1081));
+        assert_eq!(BACKBUFFER_PIXELS, 2_073_600);
+        assert_eq!(backing_index(1079, 1919), Some(BACKBUFFER_PIXELS - 1));
+        assert_eq!(backing_index(1080, 0), None);
+        assert_eq!(backing_index(0, 1920), None);
     }
 }

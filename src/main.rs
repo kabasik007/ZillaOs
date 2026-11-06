@@ -257,10 +257,28 @@ pub extern "C" fn _start() -> ! {
         serial::write("ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE\n");
         wizard.set_storage_inventory(storage);
 
+        // Log the actual Limine GOP dimensions for VMware diagnostics.
+        // The monitor's host refresh rate is not the source of this size.
+        if let Some(fb) = limine::framebuffer() {
+            serial::write("ZILLAOS_FRAMEBUFFER_WIDTH=");
+            serial::write_hex(fb.width as u64);
+            serial::write("\nZILLAOS_FRAMEBUFFER_HEIGHT=");
+            serial::write_hex(fb.height as u64);
+            serial::write("\nZILLAOS_FRAMEBUFFER_PITCH=");
+            serial::write_hex(fb.pitch as u64);
+            serial::write("\n");
+        }
         // The first thing a user sees is Setup, not the Desktop.
         // This is a volatile onboarding UI, NOT an installer that
         // partitions a disk, creates accounts or persists config.
         let setup_available = graphics::render_setup(&wizard);
+        if setup_available {
+            serial::write(if graphics::has_backbuffer() {
+                "ZILLAOS_SETUP_GRAPHICS_BUFFERED_READY\n"
+            } else {
+                "ZILLAOS_SETUP_GRAPHICS_DIRECT_FALLBACK\n"
+            });
+        }
         serial::write("ZILLAOS_SETUP_READY\n");
         if setup_available {
             serial::write("ZILLAOS_FRAMEBUFFER_READY\n");
