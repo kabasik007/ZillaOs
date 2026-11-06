@@ -1,166 +1,248 @@
 # ZillaOS
 
-**ZillaOS** is an experimental, independent Rust-first operating system. The goal is a small capability-oriented microkernel with isolated user-space services; the current graphical preview still draws from the early kernel.
+**ZillaOS** — незалежна експериментальна операційна система для **x86-64**,
+з власним ядром **Rust `no_std`**, завантаженням через **Limine / UEFI**
+і графічним робочим столом. Це **не** Linux-дистрибутив і **не** оболонка
+поверх Windows. Ubuntu у WSL2 потрібна лише для збірки та тестів.
 
-> **Verified on user's Windows/VMware (2026-11-06):** UEFI ISO booted into a graphical ZillaOS desktop with working mouse and windows. User screenshots and logs verified the graphical desktop, multilingual folders and RTC clock in VMware, with **122 Python and 122 Rust tests passing** for that build. App Center and Zilla Notepad are now verified by the user's VMware screenshot. The newer Windows PE32+ inspector and VMware PCI video detection passed GitHub CI; runtime EXE execution, video mode switching and GPU acceleration are not implemented yet.
+> **Поточний стан · 6 листопада 2026:** ZillaOS уже завантажувалася у
+> VMware Workstation, показувала Desktop, меню Start, вікна, мишу,
+> файловий менеджер, App Center і **Zilla Notepad**. Користувач
+> підтвердив роботу блокнота та запису в RAMFS скриншотом.
+>
+> **Важливо:** сучасний Windows EXE, Linux ELF чи Android APK **ще не
+> запускаються**. GPU acceleration, runtime зміна роздільної здатності,
+> ізольовані Ring 3 процеси та постійна файлова система — окремі
+> наступні етапи. Не плутати підготовлені структури даних із функціями,
+> перевіреними у VM.
 
-> **Scope:** this is a volatile development desktop, not yet a general-purpose OS, standalone installer, filesystem manager or command shell.
+[<u>Поточна архітектура</u>](docs/ARCHITECTURE_CURRENT.md) ·
+[<u>Правила агентів</u>](AGENTS.md) ·
+[<u>Координація паралельних чатів</u>](docs/AGENT_COORDINATION.md) ·
+[<u>Модель безпеки</u>](docs/SECURITY_ARCHITECTURE.md)
 
-For the desktop preview, languages, keyboard shortcuts and boot-time display modes,
-see [Desktop development guide](docs/DESKTOP.md),
-[Filesystem / source modules](docs/FILESYSTEM.md),
-[Application Manager and App Center](docs/APPLICATIONS.md),
-[Zilla Notepad](docs/NOTEPAD.md),
-[Compatibility roadmap](docs/COMPATIBILITY.md),
-[Windows PE + VMware graphics implementation status](docs/WINDOWS_GRAPHICS.md) and
-[Windows ISO build guide](docs/WINDOWS_ISO.md).
+## Навіщо ми створюємо ZillaOS
 
-## Mission / Мета
+Наша довгострокова мета — **Security-First, modular, multi-runtime OS**:
 
-Build a small, comprehensible, testable OS from scratch. A crash in an unprivileged service should not crash the kernel; each component should have only the resources and privileges it needs.
+- **Власне ядро:** керування пам'яттю, розподіл ресурсів, процеси,
+  системні виклики та згодом IPC/capabilities.
+- **Звичний Desktop:** вікна, файли, Notepad, Task Manager, Settings,
+  App Center та незалежні застосунки.
+- **Єдина система запуску:** Start, Dock, Files і App Center використовують
+  один `ApplicationManager`; реальне виконання буде делеговане
+  `ProcessManager` після реалізації ізоляції.
+- **Кілька runtime:** Zilla Native → Linux ABI/ELF → Windows PE/Win32 →
+  Android runtime/VM → емулятори окремих консолей. Ці середовища
+  **не** є взаємозамінними, у кожного власний ABI та залежності.
+- **Безпека за замовчуванням:** user-mode ізоляція, least privilege,
+  capabilities, W^X/NX, квоти, аудит, зрозумілий Task Manager. Це
+  інженерні вимоги, а не обіцянка «100% немає вірусів».
 
-**First engineering milestone (M1):** Boot a Rust kernel in QEMU/OVMF, sanity-check Limine memory-map metadata, emit a serial success marker and pass an automated exit-status smoke test. The isolated process, IPC and restart goals are separate later milestones (M3–M5).
+## Що вже є у коді
 
-## Architecture at a glance
+| Підсистема | Фактичний рівень | Ще немає |
+| --- | --- | --- |
+| **Boot** | Limine/UEFI ISO, графічний boot у VMware | production installer |
+| **Desktop** | Start, Dock, WindowManager, Settings, Files, UA/EN/RU, RTC, PS/2 ввід | user-space compositor/service |
+| **App Center** | один реєстр вбудованих програм і відкриття view через AppManager | встановлення/запуск сторонніх binary |
+| **Notepad** | введення ASCII, редагування й збереження `.TXT` у RAMFS | Unicode input, стале збереження |
+| **Файли** | `/Program Files`, `/Users/Guest/Documents`, базове immutable дерево + bounded RAMFS | реальний VFS із дисковим записом |
+| **Процеси** | PID, модель lifecycle/scheduler, плани адресного простору, validation-only syscalls | Ring 3, реальні CR3/syscall traps та ізоляція |
+| **Windows PE** | PE32+ x64 inspector, host `pe-inspect` | PE mapping/relocations/imports/Win32 execution |
+| **Відео** | RGB32 software renderer, GOP відеорежими, read-only VMware SVGA II PCI/BAR/register probe, FIFO-модель | runtime mode switch, FIFO commands, 2D/3D hardware acceleration |
 
-```text
-Applications / future graphical shell              [user space]
-           |
-     System services: init, console, VFS, net
-           |
-     Driver services: virtio-blk, virtio-net, input
-           |
-       Capability-based IPC / syscalls
-================ TRUST BOUNDARY ====================
-   ZillaOS microkernel: scheduler, address spaces,
-   memory ownership, IPC, IRQ routing, capabilities
-================ HARDWARE BOUNDARY ==================
-                 x86-64 + UEFI
-```
+Це **зріз стану**, а не автоматичний live status. Через паралельну роботу
+агентів дивіться актуальний HEAD і профільні документи:
+[ProcessManager](docs/PROCESSES.md),
+[SVGA](docs/VMWARE_SVGA_DRIVER.md),
+[Desktop](docs/DESKTOP.md),
+[Application Framework](docs/APPLICATIONS.md).
 
-*Language:* Rust `no_std` in the kernel; minimal audited `unsafe` at hardware and FFI boundaries.
+## Швидкий запуск у Windows / VMware
 
-*Bootstrap:* Limine bootloader and its boot protocol (not a custom UEFI implementation in v0.x), x86-64 ELF kernel, QEMU + OVMF. Boot components are third-party tooling, **not Linux**.
-
-*Scope:* single architecture (x86-64), one CPU initially, QEMU virtio devices first, framebuffer/serial console before GUI. Native hardware and GPU acceleration come much later.
-
-## Why this is not "Windows in a month"
-
-We are intentionally **not** targeting Win32/.exe compatibility, Linux ABI, Steam games, or general-purpose drivers for MVP. These are independent, enormous compatibility projects. A user-space filesystem, networking stack, window server, and package format only become in-scope after the kernel primitives work.
-
-## Milestones
-
-| Version | Demonstration / Evidence |
-| --- | --- |
-| 0.0.1 — Boot | Reproducible image boots in QEMU/OVMF; serial `ZILLAOS_BOOT_OK`; CI checks exit status |
-| 0.0.2 — Platform | Memory-map validation, physical allocator, page tables, exceptions, timer |
-| 0.0.3 — Isolation | Ring 3 process, separate address spaces, fault in user process does not panic kernel |
-| 0.0.4 — Microkernel | IPC endpoints, capability handles, grants/revocation, scheduler |
-| 0.0.5 — Services | init and console in user space; restart crashed console service |
-| 0.1.0 — Systems MVP | Minimal VFS, ramfs/initramfs, virtio-blk, deterministic end-to-end tests |
-| 0.2+ — Desktop research | input, compositor, GUI, network and driver roadmap |
-
-Each milestone has explicit **PASS / FAIL** acceptance tests, not just screenshots. Details: [ROADMAP](docs/ROADMAP.md).
-
-## Zilla Setup — first-run configuration
-
-The `vm-demo` ISO now opens a **graphical first-run setup wizard before the desktop**: Ukrainian/English language, Ukraine/Poland/USA region, Kyiv/Warsaw/New York/UTC time zone, validated PC name, dark/light style and a read-only PCI storage-controller inventory and installation-prerequisites page (no selectable disks). Keyboard and mouse navigation are implemented in source; the wizard uses native Cyrillic bitmap glyphs and a responsive progress/card layout. **This is an onboarding preview, not a disk installer.** Settings remain in RAM for the current session only and the wizard repeats after reboot; no user account, RTC change, formatting or disk writes occur. See [SETUP.md](docs/SETUP.md). Build/VMware boot remain unverified.
-
-## Zilla Desktop — graphical desktop preview
-
-ZillaOS now contains a **source-level experimental desktop shell** for the QEMU `demo` image. It combines a macOS-inspired menu bar and dock, three overlapping Windows-style sample Files/Terminal/Settings windows with focus/z-order/minimize/maximize, and a configurable dark/light theme. The GUI renders directly to the Limine RGB32 framebuffer and accepts QEMU PS/2 keyboard input (F1 launcher, F2 Files, F3 Terminal, F4 Settings, F5 theme, F6 minimize, F7 maximize, Tab focus, arrows move, Shift+arrows resize, Esc hide, plus optional PS/2 mouse cursor and Dock/title clicks). These are demonstration views **without** a real filesystem, terminal process or compositor. **Rust build, QEMU boot and interactive keyboard behavior remain NOT VERIFIED.** Source now includes a 4 MB offscreen compositor buffer and cursor-only damage restoration (up to 1280×800), with a safe direct-render fallback.
-
-[Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) · [Desktop roadmap](docs/DESKTOP_ROADMAP.md)
-
-## Documentation
-
-- [Build and QEMU smoke test](docs/BUILD.md) — first kernel source, pinned Limine archive and reproducible test commands.
-- [Run in VM on Windows and Linux](docs/VM.md) — WSL2 setup, graphical demo, host dependency checks.
-- [VMware Workstation UEFI runbook](docs/VMWARE.md) — Windows PowerShell VMX generator, WSL ISO build and COM1 diagnostics.
-- [Architecture](docs/ARCHITECTURE.md) — security boundaries, kernel components, memory model, IPC and interface contracts.
-- [Early physical memory manager](docs/MEMORY.md) — bounded Limine map copy, CPU physical limits, frame-readback experiments.
-- [Paging design](docs/PAGING.md) — canonical addresses and typed page-table metadata.
-- [CPU exception handlers](docs/EXCEPTIONS.md) — early IDT, diagnostic #UD/#GP/#PF, and UD2 negative QEMU test.
-- [Changelog](docs/CHANGELOG.md)
-- [Zilla Desktop architecture](docs/DESKTOP_ARCHITECTURE.md) — immediate framebuffer renderer, input, state, limitations.
-- [Zilla Desktop roadmap](docs/DESKTOP_ROADMAP.md) — from QEMU prototype to user-mode compositor and apps.
-- [PS/2 mouse bootstrap](docs/MOUSE.md) — mouse protocol, QEMU pointer interactions, tests and caveats.
-- [Installer V2.6 graphical disk boot test](docs/INSTALLER_ACCEPTANCE.md) — fixed all nine Setup transitions and added read-only no-ISO RAW-to-Desktop QEMU acceptance (runtime pending).
-- [Installer V2.5 acceptance](docs/INSTALLER_ACCEPTANCE.md) — independent FAT32 mtools readback and opt-in end-to-end QEMU test.
-- [Boot diagnostics and evidence](docs/BOOT_DIAGNOSTICS.md) — executable PE/ELF entry validation and serial COM1 JSON boot verification.
-- [UEFI boot artifact preflight](scripts/check_boot_assets.py) — strict PE32+/ELF64/Limine inspection before EFI disk creation; testable without VMware.
-- [VMware installed-disk launcher](docs/VMWARE_INSTALLED.md) — WSL RAW → isolated disposable VMDK and no-ISO UEFI VMX, with explicit confirmation.
-- [Installer V2.1: GPT + FAT32 UEFI boot disk](docs/EFI_BOOT_DISK.md) — staged Limine/kernel files, independent read-back and no-ISO boot test.
-- [ZillaOS Installer V2](docs/INSTALLER_V2.md) — nine-step native UI and actually tested safe sparse RAW GPT image creation lab.
-- [Executable GPT image verifier](scripts/gpt_image_verify.py) — Python host-only read-only check of raw .img files; five tests have run successfully, but not the Rust kernel.
-- [Read-only GPT parser](docs/GPT.md) — CRC-checked primary and backup GPT verification with synthetic Rust tests and no disk writes.
-- [Passive PCI storage discovery](docs/STORAGE.md) — VMware/QEMU storage-controller inventory, no disk operations and read-only wizard.
-- [Read-only installer plan](docs/INSTALLATION.md) — future GPT/EFI partition proposal with no disk access or writes.
-- [Zilla first-run setup (OOBE)](docs/SETUP.md) — multilingual configuration screens, device name, timezone and RAM-only limitation.
-- [Zilla Graphics Engine](docs/GRAPHICS.md) — bounded RGB32 software backbuffer, clipped drawing and cursor-only updates. — v0.0.2-dev details and release blockers.
-- [Roadmap and acceptance criteria](docs/ROADMAP.md).
-- [Architecture decisions](docs/DECISIONS.md).
-- [Threat model and testing](docs/VALIDATION.md).
-
-## Engineering rules
-
-1. Prefer a smaller verified vertical slice over prematurely designing all subsystems.
-2. No global unrestricted device access in user space. Use capability handles and explicit resource grants.
-3. Drivers are user-space **where technically feasible**; some bootstrap/platform support remains privileged.
-4. Treat DMA and hardware IOMMU boundaries explicitly; process isolation alone does not isolate unrestricted DMA.
-5. All system calls and IPC messages must validate lengths, permissions and ownership; no raw trusted user pointers.
-6. All ABI changes are versioned; no unreviewed breaking changes after first user process.
-7. Unit tests, QEMU smoke tests, panic-injection tests and regression tests are mandatory as milestones grow.
-8. No unverified claims of memory safety, fault tolerance or security.
-
-## References
-
-- [Rust bare-metal x86-64 target](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html)
-- [Limine boot protocol specification](https://github.com/limine-bootloader/limine-protocol/blob/trunk/PROTOCOL.md)
-- [Limine UEFI usage](https://github.com/limine-bootloader/limine/blob/v12.x/USAGE.md)
-- [seL4 concepts (inspiration, not reused code)](https://docs.sel4.systems/)
-
-## Project governance
-
-Canonical repository: [kabasik007/ZillaOs](https://github.com/kabasik007/ZillaOs). Development and reviewed changes are currently committed directly to `main` as requested. This can move to PR-based reviews when the repository workflow changes. License decision: **TBD before importing dependencies or accepting external contributions**.
-
-Methodology: [Be Ambitious Pro](https://app.notion.com/p/3fb91a1af397814782cac435379a82a7) — outcome-led engineering, independent validation, real PASS/FAIL evidence.
-
-## Windows one-click UEFI ISO builder (WSL2 + VMware)
-
-**Windows entry point:** double-click [`ZillaOS-Windows.cmd`](ZillaOS-Windows.cmd).
-The menu installs Ubuntu build prerequisites **only on explicit Setup**, builds
-the Rust/UEFI demo using pinned Limine and `xorriso`, verifies the output's
-SHA-256 and can open an isolated, diskless VMware Workstation VM.
-
-PowerShell shortcut from the repository root:
+**Середовище:** Windows 10/11, PowerShell 5.1+, WSL2 Ubuntu,
+Rust toolchain 1.90.0, VMware Workstation. Builder перевіряє
+залежності та генерує UEFI ISO.
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action Setup
+cd M:\projects\ZillaOs
+git pull --ff-only origin main
+
+# Перевірка WSL/Rust/xorriso та інших передумов
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action Check
+
+# Зібрати новий ISO і запустити VMware
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action BuildRun
 ```
 
-Output: `dist\ZillaOS-Desktop-UEFI.iso` (plus the original pinned-name ISO).
-This is a **desktop / graphical onboarding preview ISO**, not a working
-installer to physical disks. See [Windows ISO quickstart](docs/WINDOWS_ISO.md).
-Windows and VMware runtime verification is still pending.
+Якщо `Check` повідомив про відсутні залежності:
 
-## VMware Workstation (Windows)
-
-With VMware Workstation already installed, build the ISO in WSL Ubuntu using `bash scripts/build_vmware.sh`. Then, in **Windows PowerShell**, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\vmware.ps1 -Launch` from the repository root. The generated disposable UEFI VM has no hard disk or network and captures COM1 output to a host file. See [VMWARE.md](docs/VMWARE.md). VMware boot is **not yet verified**.
-
-## M1 development commands
-
-```bash
-python3 scripts/doctor.py
-python3 -m unittest discover -s tests -v
-cargo test --lib --target x86_64-unknown-linux-gnu --offline
-bash scripts/build.sh test
-python3 scripts/smoke_test.py --timeout 90
-bash scripts/build.sh fault
-python3 scripts/smoke_test.py --expect-fault --timeout 90
-bash scripts/build.sh demo
-python3 scripts/run_vm.py --display gtk
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action Setup
 ```
 
-This creates distinct test and graphical-demo UEFI images, and verifies test-mode boot in QEMU/OVMF when prerequisites are present. Demo mode draws a framebuffer splash and remains running. The [GitHub Actions workflow](.github/workflows/boot-smoke.yml) is **manual only** to avoid consuming CI minutes automatically. Source publication is not the same as a passing test. The M2 boot integration additionally requires `ZILLAOS_IDT_READY`, `ZILLAOS_CPU_READY`, `ZILLAOS_FRAME_PROBE_OK` and `ZILLAOS_MEMORY_READY`; none has been observed in a real emulator run yet.
+`Setup` може попросити **пароль користувача Ubuntu у WSL**, не
+Windows PIN. Перед повторною збіркою **повністю вимкніть** VM
+(`Power Off`, не Suspend).
+
+Готовий образ зазвичай: `dist/ZillaOS-Desktop-UEFI.iso`.
+`-Action Run` запускає **наявний образ** і не компілює новий:
+після змін коду потрібен саме `BuildRun`.
+
+### Перевірка ядра й тестів в Ubuntu/WSL
+
+```bash
+cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+cargo +1.90.0 fmt --all -- --check
+python3 -m unittest discover -s tests -v
+```
+
+Це **host tests + компіляція**, не доказ того, що нова функція
+працює всередині VM. Потрібна окрема runtime перевірка.
+
+### Діагностика Windows EXE (аналіз, не запуск)
+
+```bash
+cargo +1.90.0 run --offline --target x86_64-unknown-linux-gnu \
+  --features pe-inspector-cli --bin pe-inspect -- \
+  /mnt/c/Windows/System32/notepad.exe
+```
+
+`pe-inspect` лише перевіряє PE32+ x86-64 заголовки. Він не
+виконує `.exe`, не підвантажує DLL і не потрапляє до ISO за
+замовчуванням.
+
+## Організація репозиторію
+
+```text
+boot/                        Limine конфігурація / UEFI
+scripts/                     WSL/PowerShell builder, ISO, VMware, тестові утиліти
+src/
+  main.rs                    ранній bootstrap ядра та GUI event loop
+  lib.rs                     no_std API модулів
+  kernel/                    memory, paging, exceptions, process models
+  drivers/                   input, storage discovery, VMware SVGA probing
+  video/                     video-capability contracts
+  shell/                     desktop, windows, start, locale, icons
+  apps/                      Notepad, App Center та єдиний registry
+  services/                  ApplicationManager, ProcessManager gateway
+  fs/                        immutable guest tree, bounded RAMFS
+  compat/                    disabled foreign runtimes, Windows PE parser
+  graphics.rs                поточний software framebuffer renderer
+tests/                       host Python regression tests
+docs/                        архітектура, безпека, agent rules, runbooks
+.github/workflows/           GitHub CI для перевірок
+```
+
+Гостьові `/Program Files`, `/Users`, `/System` — **власні
+віртуальні каталоги ZillaOS**, не копія `C:\Program Files`
+Windows. Зараз користувацькі документи RAMFS зникають після reboot.
+
+## Архітектура: сьогодні й завтра
+
+```text
+Сьогодні (вбудоване GUI в ядрі):
+Desktop / Start / Dock / Files / Notepad / App Center
+       |                          |
+ApplicationManager          WindowManager
+       |                          |
+Built-in Rust views        RGB32 software renderer
+       \__________________________/
+                    |
+               ZillaOS kernel
+                    |
+      Limine / UEFI / x86-64 + GOP framebuffer
+
+Майбутня архітектура:
+Native / Linux / Windows / Android apps
+                   |
+             ApplicationManager
+                   |
+      ProcessManager + IPC + capabilities
+        |                         |
+ ELF / PE / runtime           Window surfaces
+        |                         |
+   Protected kernel        Compositor / GPU driver
+```
+
+**Принцип:** процес має **одне джерело стану** в ProcessManager,
+вікно — у WindowManager, запуск — через ApplicationManager,
+фізичний display mode — через майбутній DisplayManager.
+Не дублювати процеси, ресурси чи системні дозволи у GUI.
+
+## Security-First Roadmap
+
+1. **CPU isolation:** Ring 3, user address spaces, safe syscall
+   entry, kill/exit, containment для #PF/#GP/#UD без kernel panic.
+2. **Real ProcessManager:** PID/PPID, стан, runtime квоти,
+   контрольоване завершення та одна таблиця задач.
+3. **PermissionManager:** default-deny capabilities для файлів,
+   мережі, пристроїв, камери, мікрофона й IPC.
+4. **Task Manager / Security Center:** показувати реальні процеси,
+   служби, їхні дозволи та kernel audit events. Не малювати
+   вигадані CPU/RAM показники.
+5. **Native user apps:** Zilla ABI + ELF loader, окремі процеси,
+   потім Windows PE64 / DLL / Win32; після цього Linux ABI та
+   Android VM/runtime.
+6. **Graphics:** стабільний GOP fallback → безпечний SVGA FIFO →
+   2D update/mode setting → окрема робота над 3D.
+
+Наявність контролів у UI **не замінює** примусового захисту ядра.
+Повна гарантія «вірусів не існує» неможлива.
+
+Детальний план: [Security architecture](docs/SECURITY_ARCHITECTURE.md) ·
+[Current architecture](docs/ARCHITECTURE_CURRENT.md) ·
+[Compatibility](docs/COMPATIBILITY.md) ·
+[Roadmap](docs/ROADMAP.md).
+
+## Паралельна робота агентів
+
+У проєкті зараз **два активні чати розробки**:
+
+- **GPU/SVGA:** `src/drivers/gpu/**`, `src/video/**`, драйвер і
+  режими екрана. [Документація](docs/VMWARE_SVGA_DRIVER.md).
+- **Process/Windows:** `src/kernel/process/**`, `src/services/process_manager.rs`,
+  `src/compat/**`, Ring 3 та Windows compatibility.
+  [Документація](docs/PROCESSES.md).
+
+Редагування `src/main.rs`, `src/lib.rs`, `Cargo.toml`,
+`src/shell/desktop.rs` та інших спільних файлів допускається лише
+малими сумісними змінами поверх **актуального HEAD**.
+Force push, стирання змін іншого агента й дублювання системних
+менеджерів заборонені.
+
+**Агенте, почни з [AGENTS.md](AGENTS.md) і
+[AGENT_COORDINATION.md](docs/AGENT_COORDINATION.md).**
+
+## Документація
+
+| Тема | Файл |
+| --- | --- |
+| Структура й фактичний стан ядра | [ARCHITECTURE_CURRENT.md](docs/ARCHITECTURE_CURRENT.md) |
+| Довгостроковий дизайн мікроядра | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Рішення ADR | [DECISIONS.md](docs/DECISIONS.md) |
+| Threat model / Task Manager / дозволи | [SECURITY_ARCHITECTURE.md](docs/SECURITY_ARCHITECTURE.md) |
+| Правила кількох агентів | [AGENT_COORDINATION.md](docs/AGENT_COORDINATION.md) |
+| Застосунки та запуск | [APPLICATIONS.md](docs/APPLICATIONS.md) |
+| Вбудований блокнот | [NOTEPAD.md](docs/NOTEPAD.md) |
+| Файлова модель | [FILESYSTEM.md](docs/FILESYSTEM.md) |
+| Процеси та межі Ring 3 | [PROCESSES.md](docs/PROCESSES.md) |
+| Windows/Linux/Android сумісність | [COMPATIBILITY.md](docs/COMPATIBILITY.md) |
+| GPU/SVGA | [VMWARE_SVGA_DRIVER.md](docs/VMWARE_SVGA_DRIVER.md) |
+| Windows PE, графічний план | [WINDOWS_GRAPHICS.md](docs/WINDOWS_GRAPHICS.md) |
+| Windows Builder/VMware | [WINDOWS_ISO.md](docs/WINDOWS_ISO.md) |
+| Desktop | [DESKTOP.md](docs/DESKTOP.md) |
+| Build, tests, diagnostics | [BUILD.md](docs/BUILD.md), [VALIDATION.md](docs/VALIDATION.md) |
+
+## Статус і відповідальність
+
+ZillaOS — дослідницький проєкт, **не** готовий desktop OS та
+**не** інструмент для безпечного виконання невідомих EXE на поточній
+стадії. Не використовувати з реальними даними або на критичному
+обладнанні без перевіреного backup та ізоляції.
+
+**License:** у репозиторії поки немає кореневого `LICENSE` файла;
+це потребує окремого рішення власника, перш ніж робити твердження про
+open-source ліцензію.
