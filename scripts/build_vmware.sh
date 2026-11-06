@@ -5,11 +5,13 @@ set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 ROOT="$PWD"
 
-for tool in cargo rustc curl sha256sum tar find xorriso python3; do
+for tool in cargo rustc curl sha256sum tar find xorriso python3 cc ld.lld; do
     if ! command -v "$tool" >/dev/null 2>&1; then
         printf 'MISSING: %s\n' "$tool" >&2
         if [[ "$tool" == "cargo" || "$tool" == "rustc" ]]; then
             echo 'Install Rust via https://rustup.rs/ and run: source "$HOME/.cargo/env"' >&2
+        elif [[ "$tool" == "cc" || "$tool" == "ld.lld" ]]; then
+            echo 'Missing host test linker. Run Windows Builder -Action Setup (Ubuntu packages: build-essential lld).' >&2
         else
             echo 'On Ubuntu: sudo apt update && sudo apt install -y curl ca-certificates xorriso python3' >&2
         fi
