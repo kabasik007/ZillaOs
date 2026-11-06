@@ -17,6 +17,8 @@ mod limine;
 #[cfg(feature = "vm-demo")]
 mod drivers;
 mod memtest;
+#[cfg(feature = "paging-audit")]
+mod page_table_observer;
 mod serial;
 
 use core::panic::PanicInfo;
@@ -115,6 +117,36 @@ pub extern "C" fn _start() -> ! {
     }
     serial::write("ZILLAOS_FRAME_PROBE_OK\n");
     serial::write("ZILLAOS_MEMORY_READY\n");
+
+    // Experimental, read-only audit. No PTE changes, no privilege switch.
+    #[cfg(feature = "paging-audit")]
+    {
+        let snapshot = match unsafe {
+            page_table_observer::observe(
+                &map.regions[..map.count],
+                offset,
+                cpu.physical_address_bits,
+                first.address,
+            )
+        } {
+            Ok(snapshot) => snapshot,
+            Err(_) => {
+                serial::write("ZILLAOS_PAGING_AUDIT_FAILED\n");
+                return_boot_failure();
+            }
+        };
+        serial::write("ZILLAOS_PAGING_AUDIT_CR3=");
+        serial::write_hex(snapshot.cr3);
+        serial::write("\nZILLAOS_PAGING_AUDIT_VIRTUAL_BITS=");
+        serial::write_hex(snapshot.virtual_bits as u64);
+        serial::write("\nZILLAOS_PAGING_AUDIT_TEXT_PAGE_SIZE=");
+        serial::write_hex(snapshot.kernel_text.page_size);
+        serial::write("\nZILLAOS_PAGING_AUDIT_STACK_PAGE_SIZE=");
+        serial::write_hex(snapshot.kernel_stack.page_size);
+        serial::write("\nZILLAOS_PAGING_AUDIT_HHDM_PAGE_SIZE=");
+        serial::write_hex(snapshot.hhdm_page.page_size);
+        serial::write("\nZILLAOS_PAGING_AUDIT_OK\n");
+    }
 
     #[cfg(feature = "vm-demo")]
     {

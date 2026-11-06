@@ -59,3 +59,11 @@ cargo +1.90.0 fmt --all -- --check
 The existing boot + desktop QEMU workflow is manual; the new
 `process-foundation.yml` runs narrow compile/test checks on changes
 to process modules. It does not prove Ring 3 or VMware execution.
+
+## Milestone 1 — opt-in active paging observer
+
+A new read-only page-table walker and an opt-in Limine CR3 observer
+are documented in [PAGING_AUDIT.md](PAGING_AUDIT.md). They validate
+actual supervisor access to kernel text, stack and an owned RAM frame
+without changing mapping permissions. This is **not** a kernel-owned
+address space or an isolated Native Process; no Ring 3 entry exists yet.

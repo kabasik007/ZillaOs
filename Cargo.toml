@@ -22,6 +22,9 @@ vm-demo = []
 # Build the negative QEMU image which deliberately traps on UD2.
 exception-self-test = []
 
+# Explicit opt-in: read-only CR3 observation and verified page-table walk.
+paging-audit = []
+
 # Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
 pe-inspector-cli = []
 

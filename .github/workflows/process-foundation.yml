@@ -5,6 +5,13 @@ on:
     branches: [main]
     paths:
       - 'src/kernel/process/**'
+      - 'src/kernel/page_table_walk.rs'
+      - 'src/page_table_observer.rs'
+      - 'src/main.rs'
+      - 'Cargo.toml'
+      - 'scripts/build.sh'
+      - 'docs/PAGING_AUDIT.md'
+      - 'scripts/smoke_test.py'
       - 'src/services/process_manager.rs'
       - 'src/services/mod.rs'
       - 'src/lib.rs'
@@ -31,3 +38,36 @@ jobs:
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
       - name: Compile kernel with existing GUI
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+
+      - name: Compile read-only paging observer
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features paging-audit
+
+  paging-audit-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install Rust 1.90 target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build opt-in audit ISO
+        run: bash scripts/build.sh audit
+      - name: Boot audit image and require observer evidence
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-audit-uefi.iso --timeout 90 | tee audit-qemu.log
+          grep -qx 'ZILLAOS_PAGING_AUDIT_OK' audit-qemu.log
+          grep -q '^ZILLAOS_PAGING_AUDIT_CR3=0x' audit-qemu.log
+          if grep -q 'ZILLAOS_PAGING_AUDIT_FAILED' audit-qemu.log; then exit 1; fi
+      - name: Save audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-paging-audit-evidence
+          path: |
+            audit-qemu.log
+            dist/*audit*.iso
+          if-no-files-found: warn

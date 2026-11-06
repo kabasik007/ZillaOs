@@ -8,6 +8,9 @@ pub mod memory;
 #[path = "kernel/paging.rs"]
 pub mod paging;
 
+#[path = "kernel/page_table_walk.rs"]
+pub mod page_table_walk;
+
 #[path = "kernel/process/mod.rs"]
 pub mod process;
 
