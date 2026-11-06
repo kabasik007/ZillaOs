@@ -3,7 +3,7 @@
 use crate::apps::App;
 use crate::window_manager::Rect;
 
-pub const ROW_START: usize = 94;
+pub const ROW_START: usize = 112;
 pub const ROW_HEIGHT: usize = 37;
 pub const ROW_GAP: usize = 41;
 

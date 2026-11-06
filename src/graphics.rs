@@ -530,10 +530,21 @@ impl Screen {
         }
         // No microphone driver is initialized. Never show simulated activity.
         if layout.width >= 1050 {
-            let mic_x = layout.width.saturating_sub(341);
+            let mic_x = layout.width.saturating_sub(365);
             self.round_rect(mic_x, 9, 82, 25, 6,
                 if state.dark { 0x263a50 } else { 0xdce9ee });
             self.text("MIC N/A", mic_x + 11, 18, 1, 0x83adb9);
+        }
+        if layout.width >= 780 {
+            let date_x = layout.width.saturating_sub(260);
+            if let Some(date) = state.date {
+                let bytes = date.ascii();
+                if let Ok(label) = core::str::from_utf8(&bytes) {
+                    self.text(label, date_x, 17, 1, fg);
+                }
+            } else {
+                self.text("DATE N/A", date_x, 17, 1, 0x83a8ba);
+            }
         }
         let time_x = layout.width.saturating_sub(118);
         if let Some(clock) = state.clock {
@@ -989,17 +1000,30 @@ impl Screen {
     }
 
     fn draw_pointer(&self, x: usize, y: usize) {
-        // Draw directly, AFTER committing the background buffer. The cursor
-        // must never be saved into the backing pixels that will restore it.
-        for row in 0..17usize {
-            let width = if row < 12 { 2 + row / 2 } else { 3 };
-            self.write_direct(Region::new(x, y.saturating_add(row), width + 2, 1),
-                              self.rgb(0x092134));
-            self.write_direct(Region::new(x.saturating_add(1), y.saturating_add(row),
-                                          width, 1), self.rgb(0xf4fbff));
+        // Compact 12x20 pointer with a one-pixel dark outline, bright body and
+        // teal accent on the arrow stem. Transparent cells are never written.
+        // Cursor damage bounds in raster::Region remain exactly 12x20.
+        const SHAPE: [&[u8]; 20] = [
+            b"X", b"XX", b"XWX", b"XWWX", b"XWWWX",
+            b"XWWWWX", b"XWWWWWX", b"XWWWWWWX", b"XWWWWWWWX",
+            b"XWWWWWWWWX", b"XWWWWWXXXX", b"XWWXWWX",
+            b"XWX XTWX", b"XX  XTWX", b"X   XTWX",
+            b"    XTWX", b"     XX", b"", b"", b"",
+        ];
+        for (dy, row) in SHAPE.iter().enumerate() {
+            for (dx, pixel) in row.iter().enumerate() {
+                let color = match pixel {
+                    b'X' => 0x061622,
+                    b'W' => 0xf4fbff,
+                    b'T' => 0x19d9bd,
+                    _ => continue,
+                };
+                self.write_direct(
+                    Region::new(x.saturating_add(dx), y.saturating_add(dy), 1, 1),
+                    self.rgb(color),
+                );
+            }
         }
-        self.write_direct(Region::new(x.saturating_add(2), y.saturating_add(13),
-                                      3, 5), self.rgb(0x1dd9b4));
     }
 
 

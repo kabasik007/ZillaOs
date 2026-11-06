@@ -6,7 +6,7 @@ use crate::fs::{self, Browser};
 use crate::fs::ramfs::{RamFs, DOCUMENTS_DIR};
 use crate::apps::notepad::Notepad;
 use crate::apps::notepad_ui::{editor_action, EditorAction};
-use crate::shell::clock::ClockTime;
+use crate::shell::clock::{ClockTime, ClockDate};
 use crate::shell::desktop_icons::DesktopIcons;
 use crate::video::VideoAdapter;
 use crate::shell::{start_menu, taskbar, task_view};
@@ -113,6 +113,7 @@ pub struct Desktop {
     pub notepad: Notepad,
     pub icons: DesktopIcons,
     pub clock: Option<ClockTime>,
+    pub date: Option<ClockDate>,
     pub video: VideoAdapter,
     layout: Layout,
     pub launcher: bool,
@@ -141,6 +142,7 @@ impl Desktop {
             notepad: Notepad::new(),
             icons: DesktopIcons::new(layout),
             clock: None,
+            date: None,
             video: VideoAdapter::FirmwareOnly,
             hostname: DeviceName::new(),
             language: Language::Ukrainian,
@@ -184,6 +186,18 @@ impl Desktop {
             self.changes = self.changes.wrapping_add(1);
             true
         } else { false }
+    }
+
+    /// CMOS RTC calendar date; no timezone conversion is claimed.
+    pub fn update_date(&mut self, date: Option<ClockDate>) -> bool {
+        if let Some(date) = date {
+            if self.date != Some(date) {
+                self.date = Some(date);
+                self.changes = self.changes.wrapping_add(1);
+                return true;
+            }
+        }
+        false
     }
 
     pub fn update_clock(&mut self, time: Option<ClockTime>) -> bool {

@@ -92,3 +92,19 @@ and `cpu_mask` to prepare for future user task execution.
 
 This does not make GUI built-ins independent processes, start an AP, create
 an OS-level thread, enable multitasking or activate kernel preemption.
+
+## RTC date and microphone status
+
+The top bar adds a Gregorian `YYYY-MM-DD` readout from the x86 CMOS RTC
+day, month, year, and optional century registers. CMOS is sampled twice and
+validated, including leap days. When the optional century field is absent,
+it shows `DATE N/A` rather than guessing 20xx. This is **firmware RTC
+date**, not a timezone-adjusted calendar or NTP-synchronized value.
+
+Microphone indicators say `MIC N/A` / `MIC --`, because no microphone
+input or privacy permission handling is implemented. These status labels
+must not be interpreted as audio capture or hardware mute controls.
+
+The graphics CI uses normalized serial lines to tolerate QEMU CRLF and
+diagnoses which required markers are missing, while still requiring a
+real screenshot-driven boot of the graphical desktop.

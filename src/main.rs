@@ -375,6 +375,7 @@ pub extern "C" fn _start() -> ! {
         serial::write("\n");
         serial::write("ZILLAOS_GPU_ACCELERATION=NOT_IMPLEMENTED\n");
         desktop.update_clock(drivers::rtc::read_time());
+        desktop.update_date(drivers::rtc::read_date());
         if input.mouse_available() {
             desktop.enable_pointer();
         }
@@ -409,6 +410,7 @@ pub extern "C" fn _start() -> ! {
             let previous_ramfs_revision = desktop.ramfs.revision;
             let previous_icons = desktop.icons;
             let previous_clock = desktop.clock;
+            let previous_date = desktop.date;
             let previous_launcher = desktop.launcher;
             let previous_menu_step = desktop.launcher_step;
             let previous_theme = desktop.dark;
@@ -425,6 +427,7 @@ pub extern "C" fn _start() -> ! {
             if rtc_poll_counter >= 150_000 {
                 rtc_poll_counter = 0;
                 changed |= desktop.update_clock(drivers::rtc::read_time());
+                changed |= desktop.update_date(drivers::rtc::read_date());
             }
             menu_poll_counter += 1;
             if menu_poll_counter >= 40_000 {
@@ -482,7 +485,8 @@ pub extern "C" fn _start() -> ! {
                         || previous_notepad_revision != desktop.notepad.revision
                         || previous_ramfs_revision != desktop.ramfs.revision
                         || previous_icons != desktop.icons
-                        || previous_clock != desktop.clock;
+                        || previous_clock != desktop.clock
+                        || previous_date != desktop.date;
                     let cursor_damage_applied = mouse_event
                         && !scene_changed
                         && graphics::redraw_cursor(previous_pointer, &desktop);

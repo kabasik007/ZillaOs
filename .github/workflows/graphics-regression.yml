@@ -7,6 +7,11 @@ on:
       - 'src/ui/raster.rs'
       - 'src/graphics.rs'
       - 'src/main.rs'
+      - 'src/shell/**'
+      - 'src/apps/**'
+      - 'src/fs/mod.rs'
+      - 'src/drivers/rtc.rs'
+      - 'docs/TASK_MANAGER.md'
       - 'docs/GRAPHICS.md'
       - '.github/workflows/graphics-regression.yml'
   workflow_dispatch:
@@ -34,10 +39,26 @@ jobs:
         run: |
           set -o pipefail
           python3 scripts/desktop_smoke.py --iso dist/zillaos-0.0.2-dev-demo-uefi.iso --timeout 120 | tee desktop-regression.log
-          grep -qx 'ZILLAOS_SETUP_GRAPHICS_BUFFERED_READY' build/logs/desktop-qemu.log
-          grep -q '^ZILLAOS_FRAMEBUFFER_WIDTH=0x' build/logs/desktop-qemu.log
-          grep -qx 'ZILLAOS_GRAPHICS_BUFFERED_READY' build/logs/desktop-qemu.log
-          if grep -q 'ZILLAOS_SETUP_GRAPHICS_DIRECT_FALLBACK' build/logs/desktop-qemu.log; then exit 1; fi
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = [line.strip() for line in Path("build/logs/desktop-qemu.log").read_text(errors="replace").splitlines()]
+          required = (
+              "ZILLAOS_SETUP_GRAPHICS_BUFFERED_READY",
+              "ZILLAOS_GRAPHICS_BUFFERED_READY",
+              "ZILLAOS_DESKTOP_READY",
+          )
+          for marker in required:
+              count = lines.count(marker)
+              print(f"framebuffer marker {marker}: count={count}")
+              if count != 1:
+                  print("framebuffer diagnostics:", [line for line in lines if "ZILLAOS_" in line and ("GRAPHICS" in line or "FRAMEBUFFER" in line)][-40:])
+                  raise SystemExit(1)
+          if not any(line.startswith("ZILLAOS_FRAMEBUFFER_WIDTH=0x") for line in lines):
+              print("Missing framebuffer width diagnostic")
+              raise SystemExit(1)
+          if "ZILLAOS_SETUP_GRAPHICS_DIRECT_FALLBACK" in lines:
+              raise SystemExit("Unsupported direct framebuffer fallback")
+          PY
       - name: Archive GUI screenshot and serial evidence
         if: always()
         uses: actions/upload-artifact@v4
