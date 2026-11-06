@@ -33,6 +33,14 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn('rustup toolchain install 1.90.0', source)
         self.assertIn('--target x86_64-unknown-none', source)
         self.assertIn('xorriso', source)
+        # Host Rust unit tests link an actual Linux executable with cc/LLD.
+        # Both the install path and read-only diagnostic must cover them.
+        self.assertIn('build-essential lld', source)
+        self.assertIn('cc ld.lld', source)
+        self.assertIn('-fuse-ld=lld', source)
+        self.assertIn('needed=()', source)
+        self.assertIn("sudo apt-get install -y --no-install-recommends", source)
+        self.assertIn("skipping apt", source)
         self.assertNotIn("dd if=", source)
         self.assertNotIn("mkfs.", source)
         self.assertNotIn("diskpart", source.lower())
@@ -98,6 +106,8 @@ class WindowsEntrypointTests(unittest.TestCase):
         self.assertIn('--efi-boot boot/limine-uefi-cd.bin', builder)
         self.assertIn('bash scripts/build.sh demo', vm)
         self.assertIn('python3 scripts/check_boot_assets.py', vm)
+        self.assertIn('cc ld.lld', vm)
+        self.assertIn('Missing host test linker', vm)
 
 
 if __name__ == "__main__":
