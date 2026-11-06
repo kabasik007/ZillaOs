@@ -519,6 +519,25 @@ impl Screen {
         }
     }
 
+    fn desktop_shortcuts(&self, state: &Desktop, layout: &Layout) {
+        if layout.width < 500 || layout.height < 440 { return; }
+        let labels = [TextId::Files, TextId::Terminal, TextId::Settings];
+        let icons = ["F", "T", "S"];
+        let colors = [0x18a9c1, 0x425d81, 0x7d6bd1];
+        for i in 0..3 {
+            let x = 30;
+            let y = layout.top_bar + 145 + i * 78;
+            self.round_rect(x, y, 100, 66, 11,
+                if state.dark { 0x1d3149 } else { 0xe1f0f8 });
+            self.round_rect(x + 35, y + 6, 30, 30, 9, colors[i]);
+            self.text(icons[i], x + 45, y + 14, 2, 0xffffff);
+            let title = tr(state.language, labels[i]);
+            let txt_x = x + 50usize.saturating_sub(title.chars().count() * 3);
+            self.text(title, txt_x, y + 47, 1,
+                if state.dark { 0xe6f2ff } else { 0x183144 });
+        }
+    }
+
     fn dock(&self, state: &Desktop, layout: &Layout) {
         let width = layout.width.min(500).saturating_sub(22);
         let x = layout.width.saturating_sub(width) / 2;
@@ -612,6 +631,9 @@ impl Screen {
                     if content_h > 175 {
                         self.folder_card(cx, card_y + 47, cw, tr(state.language, TextId::Pictures), state.dark);
                         self.folder_card(cx, card_y + 94, cw, tr(state.language, TextId::Projects), state.dark);
+                    }
+                    if content_h > 224 {
+                        self.text(tr(state.language, TextId::NoDisk), cx, body + 202, 1, secondary);
                     }
                 }
             }
@@ -738,6 +760,7 @@ pub fn render(state: &Desktop) -> bool {
     let screen = Screen { fb, buffered };
     screen.background(state.dark);
     screen.wallpaper_label(state, &layout);
+    screen.desktop_shortcuts(state, &layout);
     screen.top_panel(state, &layout);
     for app in state.windows.back_to_front() {
         if state.windows.window(app).visible() {
