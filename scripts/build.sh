@@ -6,11 +6,11 @@ ROOT="$PWD"
 
 MODE="${1:-test}"
 case "$MODE" in
-    test|demo|demo-svga-id|fault|audit|stage|ring3) ;;
-    *) echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3]" >&2; exit 2 ;;
+    test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard) ;;
+    *) echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard]" >&2; exit 2 ;;
 esac
 if (( $# > 1 )); then
-    echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3]" >&2
+    echo "Usage: bash scripts/build.sh [test|demo|demo-svga-id|fault|audit|stage|ring3|ring3-guard]" >&2
     exit 2
 fi
 
@@ -73,6 +73,8 @@ elif [[ "$MODE" == "stage" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features vm-staging
 elif [[ "$MODE" == "ring3" ]]; then
     cargo build --release --target x86_64-unknown-none --offline --features native-ring3
+elif [[ "$MODE" == "ring3-guard" ]]; then
+    cargo build --release --target x86_64-unknown-none --offline --features native-ring3-guard-fault
 else
     cargo build --release --target x86_64-unknown-none --offline --no-default-features
 fi

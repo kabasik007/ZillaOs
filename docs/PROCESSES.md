@@ -93,3 +93,21 @@ no guarded TSS.RSP0 kernel stack, no multi-process isolation claims,
 no GUI integration and no arbitrary binary execution. The normal
 boot and Desktop stay unchanged. The console syscall uses software
 `INT 0x80`, not the x86-64 `SYSCALL` instruction.
+
+## Milestone 4 — guard-page negative test
+
+`native-ring3-guard-fault` changes only the controlled fixture's last
+instructions. Instead of `exit(0)` it attempts to read `0x7fe000`, the
+unmapped guard page below its user stack. The CPU should deliver #PF
+with CPL3. The Ring 0 trap records the fault and jumps back to the
+saved kernel continuation; no user instruction after the fault resumes.
+
+```bash
+bash scripts/build.sh ring3-guard
+python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-guard-uefi.iso --timeout 90
+```
+
+Expected serial evidence is `ZILLAOS_NATIVE_USER_FAULT_VECTOR=0x...0e`,
+`ZILLAOS_NATIVE_USER_GUARD_FAULT_OK`, and normal kernel
+`ZILLAOS_BOOT_OK`; no fatal kernel exception. This test does not prove
+every user/kernel permission boundary or general fault recovery.

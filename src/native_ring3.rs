@@ -17,6 +17,8 @@ use crate::{native_vm_staging::StagedSpace, serial};
 const KERNEL_CODE: u16 = 0x08;
 const CODE_VA: u64 = 0x400000;
 const DATA_VA: u64 = 0x401000;
+#[cfg(feature = "native-ring3-guard-fault")]
+const GUARD_VA: u64 = 0x7fe000;
 const STACK_TOP: u64 = 0x800000;
 const RSP0_STACK_BYTES: usize = 16 * 1024;
 const FAULT_IST_BYTES: usize = 8 * 1024;
@@ -366,6 +368,17 @@ fn copy_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     }
     program[23..27].copy_from_slice(&(HELLO.len() as u32).to_le_bytes());
 
+    // Negative isolation fixture: after writing from Ring 3, read the
+    // *unmapped* stack guard page. The CPU must raise user #PF; the kernel
+    // fault handler must return control without executing the trailing UD2.
+    #[cfg(feature = "native-ring3-guard-fault")]
+    program[29..40].copy_from_slice(&[
+        0xbe, 0x00, 0xe0, 0x7f, 0x00, // mov esi, 0x7fe000
+        0x8a, 0x06,                   // mov al, byte ptr [rsi] -> user #PF
+        0x0f, 0x0b,                   // ud2: should never be reached
+        0x90, 0x90,                   // padding
+    ]);
+
     let code_ptr = hhdm.checked_add(staged.code_frame).ok_or(Ring3Error::InvalidFixture)?;
     let data_ptr = hhdm.checked_add(staged.data_frame).ok_or(Ring3Error::InvalidFixture)?;
     // SAFETY: both frames are exclusively owned USABLE frames, initially
@@ -479,6 +492,15 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     table.mark_exited(pid, reason).map_err(|_| Ring3Error::UnexpectedExit)?;
     table.reap(pid).map_err(|_| Ring3Error::UnexpectedExit)?;
     match reason {
+        #[cfg(feature = "native-ring3-guard-fault")]
+        ExitReason::Fault(UserFault::PageFault { address, error })
+            if address == GUARD_VA && error & 0x7 == 0x4
+                && state.written == HELLO.len() as u64 =>
+        {
+            serial::write("ZILLAOS_NATIVE_USER_GUARD_FAULT_OK\n");
+            Ok(())
+        }
+        #[cfg(not(feature = "native-ring3-guard-fault"))]
         ExitReason::Normal(0) if state.written == HELLO.len() as u64 => {
             serial::write("ZILLAOS_NATIVE_EXIT_CODE=0x0000000000000000\n");
             Ok(())

@@ -32,6 +32,9 @@ vm-staging = ["paging-audit"]
 # No ELF/PE input, no desktop execution, no public process runtime.
 native-ring3 = ["vm-staging"]
 
+# Negative QEMU fixture: user read of unmapped stack guard must fault safely.
+native-ring3-guard-fault = ["native-ring3"]
+
 # Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
 pe-inspector-cli = []
 
