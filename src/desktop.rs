@@ -5,6 +5,7 @@ use crate::mouse::MousePacket;
 use crate::fs::Browser;
 use crate::shell::clock::ClockTime;
 use crate::shell::desktop_icons::DesktopIcons;
+use crate::shell::start_menu;
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
@@ -116,6 +117,7 @@ pub struct Desktop {
     pub clock: Option<ClockTime>,
     layout: Layout,
     pub launcher: bool,
+    pub launcher_step: u8,
     pub dark: bool,
     pub changes: u32,
 }
@@ -151,6 +153,7 @@ impl Desktop {
             },
             layout,
             launcher: false,
+            launcher_step: 0,
             dark: true,
             changes: 0,
         }
@@ -162,6 +165,21 @@ impl Desktop {
 
     /// Read-only RTC update. The caller triggers repaint only for changed
     /// seconds; invalid CMOS readings do not erase the last valid time.
+    /// Advance the slide-out panel one frame. Called on a separate throttle
+    /// from keyboard/mouse events; the kernel has no scheduler at this stage.
+    pub fn tick_launcher(&mut self) -> bool {
+        let old = self.launcher_step;
+        if self.launcher {
+            self.launcher_step = self.launcher_step.saturating_add(1).min(start_menu::STEPS);
+        } else {
+            self.launcher_step = self.launcher_step.saturating_sub(1);
+        }
+        if self.launcher_step != old {
+            self.changes = self.changes.wrapping_add(1);
+            true
+        } else { false }
+    }
+
     pub fn update_clock(&mut self, time: Option<ClockTime>) -> bool {
         if let Some(time) = time {
             if self.clock != Some(time) {
@@ -241,16 +259,10 @@ impl Desktop {
     }
 
     fn launcher_app_at(&self, x: usize, y: usize) -> Option<App> {
-        let width = self.layout.width.saturating_sub(40).min(410);
-        let start_x = self.layout.width.saturating_sub(width) / 2;
-        let start_y = self.layout.top_bar + 16;
-        if x < start_x || x >= start_x + width || y < start_y {
-            return None;
-        }
-        match y - start_y {
-            50..=77 => Some(App::Files),
-            78..=101 => Some(App::Terminal),
-            102..=131 => Some(App::Settings),
+        match start_menu::app_row(self.layout, self.launcher_step, x, y) {
+            Some(0) => Some(App::Files),
+            Some(1) => Some(App::Terminal),
+            Some(2) => Some(App::Settings),
             _ => None,
         }
     }
@@ -687,6 +699,19 @@ mod tests {
     }
 
     #[test]
+    fn launcher_animates_in_and_out_without_corrupting_windows() {
+        let mut desktop = Desktop::new();
+        assert!(desktop.handle(Key::Launcher));
+        for _ in 0..start_menu::STEPS { assert!(desktop.tick_launcher()); }
+        assert!(!desktop.tick_launcher());
+        assert_eq!(desktop.launcher_step, start_menu::STEPS);
+        assert!(desktop.handle(Key::Launcher));
+        for _ in 0..start_menu::STEPS { assert!(desktop.tick_launcher()); }
+        assert_eq!(desktop.launcher_step, 0);
+        assert_eq!(desktop.active(), Some(App::Files));
+    }
+
+    #[test]
     fn desktop_folder_click_opens_guest_documents_not_host_files() {
         let mut desktop = Desktop::new();
         desktop.enable_pointer();
@@ -751,11 +776,15 @@ mod tests {
         let mut state = Desktop::new();
         state.enable_pointer();
         state.handle(Key::Launcher);
-        state.pointer.x = 400;
-        state.pointer.y = 42 + 16 + 110;
+        for _ in 0..start_menu::STEPS { state.tick_launcher(); }
+        let rect = start_menu::panel(state.layout, state.launcher_step);
+        state.pointer.x = rect.x + 50;
+        state.pointer.y = rect.y + 110;
         assert!(state.handle_mouse(test_packet(0, 0, true)));
         assert_eq!(state.active(), Some(App::Settings));
         assert!(!state.launcher);
+        for _ in 0..start_menu::STEPS { state.tick_launcher(); }
+        assert_eq!(state.launcher_step, 0);
     }
 
     #[test]
