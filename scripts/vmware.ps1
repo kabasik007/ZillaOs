@@ -98,7 +98,111 @@ if (Test-Path -LiteralPath $vmxPath) {
     if (-not $Force) {
         Write-Host "[ZillaOS] Existing VMX preserved (use -Force ONLY when powered off):" -ForegroundColor Yellow
         Write-Host $vmxPath
-        Write-Host "[ZillaOS] ISO reference in VM settings should point to: $iso"
+        # Existing VMX files are user-owned. Never rewrite them implicitly.
+        # Read the actual CD/DVD mapping so a stale VM can be diagnosed
+        # without destroying EFI NVRAM, user settings or snapshots.
+        $vmxText = [IO.File]::ReadAllText($vmxPath)
+        $mapping = [regex]::Match($vmxText,
+            '(?m)^\s*sata0:0\.fileName\s*=\s*"([^"\r\n]+)"\s*
+            # Launch without changing any existing VMX, NVRAM or snapshots.
+            Open-ZillaVmware $vmxPath
+        }
+        return
+    }
+    # VMware creates *.lck directories while this virtual machine runs.
+    # Refuse any explicit -Force edit when a lock exists.
+    $activeLocks = @(Get-ChildItem -LiteralPath $vmFolder -Filter "*.lck" -ErrorAction SilentlyContinue)
+    if ($activeLocks.Count -gt 0) {
+        throw "VMware lock found in $vmFolder. Power off the VM before using -Force."
+    }
+    Write-Host "[ZillaOS] Replacing VMX configuration only; no other files are deleted." -ForegroundColor Yellow
+}
+
+New-Item -ItemType Directory -Force -Path $vmFolder | Out-Null
+$serialPath = Join-Path $vmFolder "zillaos-com1.log"
+
+# Keep VMX ASCII-only by using portable (ASCII) virtual device names.
+# Windows native absolute paths can be used for ISO and serial file names.
+$vmx = @'
+.encoding = "UTF-8"
+config.version = "8"
+virtualHW.version = "17"
+displayName = "ZillaOS Desktop (UEFI Development)"
+guestOS = "other-64"
+firmware = "efi"
+uefi.secureBoot.enabled = "FALSE"
+memsize = "1024"
+numvcpus = "1"
+cpuid.coresPerSocket = "1"
+mks.enable3d = "FALSE"
+svga.present = "TRUE"
+svga.autodetect = "TRUE"
+sata0.present = "TRUE"
+sata0:0.present = "TRUE"
+sata0:0.deviceType = "cdrom-image"
+sata0:0.startConnected = "TRUE"
+sata0:0.fileName = "@@ISO@@"
+scsi0.present = "FALSE"
+nvme0.present = "FALSE"
+ethernet0.present = "FALSE"
+usb.present = "FALSE"
+ehci.present = "FALSE"
+mouse.vusb.enable = "FALSE"
+keyboard.vusb.enable = "FALSE"
+vmmouse.present = "FALSE"
+serial0.present = "TRUE"
+serial0.fileType = "file"
+serial0.startConnected = "TRUE"
+serial0.fileName = "@@SERIAL@@"
+vmci0.present = "FALSE"
+floppy0.present = "FALSE"
+logging = "TRUE"
+tools.syncTime = "FALSE"
+'@
+$vmx = $vmx.Replace("@@ISO@@", $iso).Replace("@@SERIAL@@", $serialPath)
+[IO.File]::WriteAllText($vmxPath, $vmx + [Environment]::NewLine,
+    (New-Object System.Text.UTF8Encoding($false)))
+
+Write-Host ""
+Write-Host "[ZillaOS] VMware development VM created." -ForegroundColor Green
+Write-Host "VMX:        $vmxPath"
+Write-Host "ISO:        $iso"
+Write-Host "COM1 log:   $serialPath"
+Write-Host "Firmware:   UEFI (Secure Boot disabled)"
+Write-Host "Hardware:   1 CPU, 1024 MiB RAM, software SVGA"
+Write-Host "Isolation:  No disk, network, USB passthrough or shared folders"
+Write-Host "Input:      PS/2 emulation requested; VMware PS/2 support is not yet tested."
+Write-Host ""
+Write-Host "If VMware reports an unsupported virtual hardware version, create a custom"
+Write-Host "UEFI VM manually and attach the same ISO as a virtual CD/DVD."
+Write-Host ""
+
+if ($Launch) {
+    Open-ZillaVmware $vmxPath
+} else {
+    Write-Host "Next: Open the VMX in VMware Workstation and click Power on."
+}
+)
+        if (-not $mapping.Success) {
+            Write-Warning "[ZillaOS] Existing VMX has no recognized sata0:0.fileName mapping; inspect CD/DVD settings."
+            Write-Host "[ZillaOS] Expected ISO: $iso"
+        } else {
+            $assignedIso = $mapping.Groups[1].Value
+            if (-not [IO.Path]::IsPathRooted($assignedIso)) {
+                $assignedIso = Join-Path $vmFolder $assignedIso
+            }
+            $assignedIso = [IO.Path]::GetFullPath($assignedIso)
+            $sameIso = [string]::Equals($assignedIso, $iso,
+                [StringComparison]::OrdinalIgnoreCase)
+            if ($sameIso) {
+                Write-Host "[ZillaOS] Existing VMX CD/DVD mapping verified: $assignedIso" -ForegroundColor Green
+            } else {
+                Write-Warning "[ZillaOS] Existing VMX CD/DVD points to a DIFFERENT ISO: $assignedIso"
+                Write-Host "[ZillaOS] Newly built ISO: $iso"
+                Write-Host "[ZillaOS] Power off the VM and change CD/DVD ISO in VMware settings."
+                Write-Host "[ZillaOS] Or use scripts/vmware.ps1 -IsoPath ... -Force while VM is fully powered off."
+            }
+        }
         if ($Launch) {
             # Launch without changing any existing VMX, NVRAM or snapshots.
             Open-ZillaVmware $vmxPath
