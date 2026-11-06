@@ -14,6 +14,8 @@ mod input;
 mod pci_io;
 mod interrupts;
 mod limine;
+#[cfg(feature = "vm-demo")]
+mod drivers;
 mod memtest;
 mod serial;
 
@@ -247,6 +249,7 @@ pub extern "C" fn _start() -> ! {
         desktop.language = wizard.language;
         desktop.region = wizard.region;
         desktop.timezone = wizard.timezone;
+        desktop.update_clock(drivers::rtc::read_time());
         if input.mouse_available() {
             desktop.enable_pointer();
         }
@@ -268,21 +271,31 @@ pub extern "C" fn _start() -> ! {
         let mut first_mouse_motion_logged = false;
         let mut first_cursor_damage_logged = false;
 
+        // RTC is read periodically in the input poll loop (no scheduler yet).
+        // The cadence is an iteration throttle, not the source of time:
+        // displayed seconds come from the actual CMOS clock.
+        let mut rtc_poll_counter: u32 = 0;
         // Desktop stays an early single-core test environment.
         loop {
             let previous_windows = desktop.windows;
             let previous_files = desktop.files;
+            let previous_clock = desktop.clock;
             let previous_launcher = desktop.launcher;
             let previous_theme = desktop.dark;
             let previous_language = desktop.language;
             let previous_pointer = desktop.pointer;
             let event = input.poll();
             let mouse_event = matches!(&event, Some(input::InputEvent::Mouse(_)));
-            let changed = match event {
+            let mut changed = match event {
                 Some(input::InputEvent::Key(key)) => desktop.handle(key),
                 Some(input::InputEvent::Mouse(packet)) => desktop.handle_mouse(packet),
                 None => false,
             };
+            rtc_poll_counter += 1;
+            if rtc_poll_counter >= 150_000 {
+                rtc_poll_counter = 0;
+                changed |= desktop.update_clock(drivers::rtc::read_time());
+            }
             if changed {
                 if mouse_event {
                     if !first_mouse_motion_logged
@@ -325,7 +338,8 @@ pub extern "C" fn _start() -> ! {
                         || previous_launcher != desktop.launcher
                         || previous_theme != desktop.dark
                         || previous_language != desktop.language
-                        || previous_files != desktop.files;
+                        || previous_files != desktop.files
+                        || previous_clock != desktop.clock;
                     let cursor_damage_applied = mouse_event
                         && !scene_changed
                         && graphics::redraw_cursor(previous_pointer, &desktop);
