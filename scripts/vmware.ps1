@@ -37,22 +37,11 @@ if (-not $VmDir) {
 }
 
 if ($Build) {
-    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-        throw "WSL is missing. Install Ubuntu under WSL2 first."
-    }
-    Write-Host "[ZillaOS] Resolving repository path in WSL $Distro ..."
-    $linuxRepo = (& wsl.exe -d $Distro -- wslpath -a $RepoRoot)
-    if ($LASTEXITCODE -ne 0 -or -not $linuxRepo) {
-        throw "WSL cannot access $RepoRoot. Check the distribution and Windows drive mount."
-    }
-    $linuxRepo = ($linuxRepo | Select-Object -Last 1).Trim()
-    # Pass a quoted POSIX path to bash, escaping embedded apostrophes.
-    $safeLinuxRepo = $linuxRepo.Replace("'", "'\''")
-    $buildCommand = "cd '$safeLinuxRepo' && bash scripts/build_vmware.sh"
-    Write-Host "[ZillaOS] Building from WSL: $linuxRepo"
-    & wsl.exe -d $Distro -- bash -lc $buildCommand
-    if ($LASTEXITCODE -ne 0) {
-        throw "WSL build failed. Fix the Rust/ISO build error shown above; no VMX was changed."
+    # Reuse the repaired Windows/WSL builder instead of the old independent
+    # wslpath + bash -lc implementation (which corrupted backslashes).
+    & (Join-Path $PSScriptRoot "windows.ps1") -Action Build -Distro $Distro
+    if (-not $?) {
+        throw "ZillaOS Windows builder failed; no VM configuration was changed."
     }
 }
 
