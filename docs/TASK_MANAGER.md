@@ -77,3 +77,18 @@ ISO. COM1 can be inspected in
 5. Live process telemetry, real task termination, thread list and scheduler
    history, then dynamic CPU/memory charts.
 6. A separate graphics subsystem milestone for GPU FIFO and real vsync.
+
+## M2 — ThreadTable groundwork
+
+`src/kernel/process/thread.rs` introduces a separate TID namespace,
+fixed 64-record thread table, Created/Ready/Running/Blocked/Exited
+transitions, no reuse of live TIDs, parent PID checks and executable/stack
+mapping checks. It contains a deterministic Round Robin selection cursor
+per possible CPU, but defaults to `online_cpu_mask = 1` and rejects all
+CPU1+ affinity until a real CPU-online mechanism exists. All transitions
+are **metadata-only**. The production ProcessManager exposes
+`reserve_thread`, `prepare_thread`, `next_ready_thread`, `thread`,
+and `cpu_mask` to prepare for future user task execution.
+
+This does not make GUI built-ins independent processes, start an AP, create
+an OS-level thread, enable multitasking or activate kernel preemption.

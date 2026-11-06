@@ -1,12 +1,14 @@
 //! Process lifecycle and memory *plans* for ZillaOS.
 //!
 //! This module is safe, allocation-free groundwork. It does not provide
-//! hardware isolation, CR3 switching, Ring 3, scheduling or syscall entry.
-//! The runtime backend must not advertise execution before those exist.
+//! hardware isolation, CR3 switching, CPU context switching or syscall
+//! entry. A separate opt-in QEMU Ring3 fixture exists, but production
+//! ProcessManager cannot execute arbitrary tasks yet.
 pub mod address_space;
 pub mod context;
 pub mod scheduler;
 pub mod syscall;
+pub mod thread;
 
 use address_space::{Access, AddressSpacePlan, MapError, UserRegion, USER_MIN, USER_TOP};
 use context::InitialUserContext;

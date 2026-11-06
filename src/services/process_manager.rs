@@ -3,6 +3,7 @@
 use crate::process::address_space::UserRegion;
 use crate::process::scheduler::RoundRobin;
 use crate::process::{Pid, Process, ProcessError, ProcessTable};
+use crate::process::thread::{Thread, ThreadError, ThreadTable, Tid};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionError {
@@ -13,6 +14,7 @@ pub enum ExecutionError {
 pub struct ProcessManager {
     processes: ProcessTable,
     scheduler: RoundRobin,
+    threads: ThreadTable,
 }
 
 impl Default for ProcessManager {
@@ -21,7 +23,7 @@ impl Default for ProcessManager {
 
 impl ProcessManager {
     pub fn new() -> Self {
-        Self { processes: ProcessTable::new(), scheduler: RoundRobin::new() }
+        Self { processes: ProcessTable::new(), scheduler: RoundRobin::new(), threads: ThreadTable::new() }
     }
 
     pub const fn isolated_execution_available() -> bool {
@@ -58,6 +60,30 @@ impl ProcessManager {
         self.processes.process(pid)
     }
 
+    /// Reserve metadata for one thread owned by a previously created native
+    /// process. This does not spawn a CPU thread.
+    pub fn reserve_thread(
+        &mut self, pid: Pid, entry: u64, stack_top: u64, affinity_mask: u64,
+    ) -> Result<Tid, ThreadError> {
+        self.threads.create(&self.processes, pid, entry, stack_top, affinity_mask)
+    }
+
+    pub fn prepare_thread(&mut self, tid: Tid) -> Result<(), ThreadError> {
+        self.threads.prepare(&self.processes, tid)
+    }
+
+    pub fn next_ready_thread(&mut self, cpu: usize) -> Option<Tid> {
+        self.threads.next_ready(cpu)
+    }
+
+    pub fn thread(&self, tid: Tid) -> Option<&Thread> {
+        self.threads.get(tid)
+    }
+
+    pub const fn cpu_mask(&self) -> u64 {
+        self.threads.online_cpu_mask()
+    }
+
     /// Refuse execution until independent user page tables, GDT/TSS,
     /// Ring 3 entry/return and recoverable faults are all verified.
     pub fn execute_native(&mut self, _pid: Pid) -> Result<(), ExecutionError> {
@@ -82,5 +108,11 @@ mod tests {
         assert_eq!(service.next_ready(), Some(pid));
         assert_eq!(service.execute_native(pid), Err(ExecutionError::IsolationUnavailable));
         assert!(!ProcessManager::isolated_execution_available());
+        assert_eq!(service.cpu_mask(), 1);
+        let tid=service.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
+        service.prepare_thread(tid).unwrap();
+        assert_eq!(service.next_ready_thread(0), Some(tid));
+        assert_eq!(service.next_ready_thread(1), None);
+        assert_eq!(service.thread(tid).unwrap().pid, pid);
     }
 }
