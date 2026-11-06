@@ -50,34 +50,62 @@ Z:/                                    ZillaOS virtual root
 
 ## 2. Організація репозиторію (структура вихідного коду)
 
+Усі основні файли поступово переносимо в окремі підсистеми.
+Це реальна структура `main` після перенесення, а не лише план:
+
 ```text
 ZillaOs/
-├── boot/                 Limine і раннє UEFI-завантаження
-├── scripts/              Windows/WSL builder, ISO, VMware, tools
+├── boot/                    Limine + UEFI конфігурація
+├── scripts/                 Windows/WSL builder, ISO, VMware
 ├── src/
-│   ├── main.rs           вхід ядра, графічний bootstrap
-│   ├── lib.rs            no_std модулі, спільні з host-тестами
+│   ├── main.rs              ранній запуск ядра, RTC і GUI event loop
+│   ├── lib.rs               no_std API (стабільні назви модулів)
+│   ├── kernel/
+│   │   ├── memory.rs
+│   │   ├── paging.rs
+│   │   └── exceptions.rs
+│   ├── drivers/
+│   │   ├── mod.rs           драйвери раннього завантаження
+│   │   ├── rtc.rs           CMOS RTC, read-only
+│   │   ├── mouse.rs         PS/2 packet decoder
+│   │   └── storage_pci.rs
 │   ├── fs/
-│   │   └── mod.rs        структура віртуального root, вузли, Browser
-│   ├── apps/
-│   │   └── mod.rs        каталог вбудованих програм /Program Files
+│   │   ├── mod.rs           read-only virtual guest tree
+│   │   ├── gpt.rs
+│   │   └── install_plan.rs
+│   ├── ui/
+│   │   └── raster.rs        RGB32, clip/region/backbuffer алгоритми
 │   ├── shell/
-│   │   ├── mod.rs        API оболонки
-│   │   └── files_interaction.rs
-│   ├── desktop.rs        стан Desktop (буде перенесено в shell/)
-│   ├── window_manager.rs модуль вікон (буде перенесено в shell/)
-│   ├── graphics.rs       рендер boot-framebuffer (згодом compositor/)
-│   ├── setup.rs          майстер першого запуску
-│   ├── locale.rs         словник UI (згодом shell/locale/)
-│   ├── input.rs          PS/2 (згодом drivers/input/)
-│   ├── ...               memory, paging, interrupts, PCI тощо
-├── tests/                host-тести та захист boot-файлів
+│   │   ├── desktop.rs       Desktop state, input-driven events
+│   │   ├── window_manager.rs
+│   │   ├── locale.rs        UI переклади UA / EN / RU
+│   │   ├── clock.rs         перевірка RTC-даних
+│   │   ├── desktop_icons.rs рухомі ярлики каталогів
+│   │   ├── start_menu.rs    геометрія слайд-анімації
+│   │   ├── files_interaction.rs
+│   │   └── mod.rs
+│   ├── apps/
+│   │   └── mod.rs           каталог вбудованих програм
+│   ├── compat/
+│   │   └── mod.rs           ELF/PE/ZIP detector, backends disabled
+│   ├── setup.rs             майстер першого запуску
+│   ├── graphics.rs          bootstrap renderer (план: ui/)
+│   ├── input.rs             polling PS/2 (план: drivers/)
+│   └── ...                  решта boot-platform модулів
+├── tests/                   host-тести та захист boot-артефактів
 └── docs/
 ```
 
-Старі модулі не переносимо всі одразу, щоб не зламати працююче
-завантаження у VMware. Нові частини пишемо в окремих каталогах,
-а існуючі поступово переносимо після зелених тестів.
+Старі публічні Rust-модулі (`crate::desktop`, `crate::memory`,
+`crate::gpt` тощо) доступні під колишніми іменами через явні
+`#[path = "..."]` у `lib.rs`. Це дозволяє переносити вихідні файли,
+не змінюючи весь код одночасно.
+
+У Desktop додано **4 рухомі ярлики**:
+Documents, Pictures, Downloads, Program Files.
+Клік відкриває відповідний віртуальний каталог у Files;
+перетягування змінює лише положення значка у RAM.
+Ці координати та папки поки не зберігаються після вимкнення VM.
 
 ## 3. Наступні реальні кроки
 
