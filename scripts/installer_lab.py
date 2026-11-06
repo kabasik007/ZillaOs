@@ -185,10 +185,10 @@ def load_uefi_assets() -> dict[str, bytes]:
         raise UnsafeRequest('kernel is not an ELF image')
     config = result['LIMINE.CONF'].decode('utf-8')
     old = 'boot():/boot/zillaos-kernel'
-    # Legacy single entry and the explicit four-mode boot menu are accepted.
+    # Legacy single entry and the explicit six-entry boot menu are accepted.
     # Reject divergent paths and unknown entry counts before staging files.
     entry_count = sum(1 for line in config.splitlines() if line.startswith('/'))
-    if entry_count not in (1, 4) or config.count(old) != entry_count:
+    if entry_count not in (1, 6) or config.count(old) != entry_count:
         raise UnsafeRequest('unexpected Limine kernel path in boot/limine.conf')
     result['LIMINE.CONF'] = config.replace(
         old, 'boot():/boot/kernel.elf').encode('utf-8')

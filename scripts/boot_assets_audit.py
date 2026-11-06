@@ -115,7 +115,8 @@ def validate_limine_config(data: bytes) -> dict[str, str | int]:
     lines = config.splitlines()
     entries = [line[1:].strip() for line in lines if line.startswith('/')]
     allowed = ['ZillaOS', 'ZillaOS 800x600', 'ZillaOS 1024x768',
-               'ZillaOS 1280x800']
+               'ZillaOS 1280x800', 'ZillaOS 1600x900',
+               'ZillaOS 1920x1080']
     _require(entries == ['ZillaOS'] or entries == allowed,
              'Limine ZillaOS boot entry missing or unexpected entry')
     protocols = [line.split(':', 1)[1].strip() for line in lines
@@ -128,7 +129,8 @@ def validate_limine_config(data: bytes) -> dict[str, str | int]:
     resolutions = [line.split(':', 1)[1].strip() for line in lines
                    if line.strip().startswith('resolution:')]
     expected_modes = [] if len(entries) == 1 else [
-        '800x600x32', '1024x768x32', '1280x800x32']
+        '800x600x32', '1024x768x32', '1280x800x32',
+        '1600x900x32', '1920x1080x32']
     _require(resolutions == expected_modes, 'Limine resolution mismatch')
     return {'protocol': 'limine', 'kernel_path': paths[0], 'size_bytes': len(data)}
 

@@ -54,10 +54,11 @@ class AuditTests(unittest.TestCase):
         source = (root / 'boot/limine.conf').read_text(encoding='utf-8')
         config = source.replace('boot():/boot/zillaos-kernel',
                                 'boot():/boot/kernel.elf').encode('utf-8')
-        assert source.count('boot():/boot/zillaos-kernel') == 4
+        assert source.count('boot():/boot/zillaos-kernel') == 6
         info = validate_limine_config(config)
         self.assertEqual(info['protocol'], 'limine')
-        for mode in ('800x600x32', '1024x768x32', '1280x800x32'):
+        for mode in ('800x600x32', '1024x768x32', '1280x800x32',
+                     '1600x900x32', '1920x1080x32'):
             self.assertIn(mode, source)
         with self.assertRaisesRegex(BootAssetError, 'resolution'):
             validate_limine_config(config.replace(b'1280x800x32',
