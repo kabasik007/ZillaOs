@@ -562,6 +562,28 @@ impl Screen {
         }
     }
 
+    fn desktop_folders(&self, state: &Desktop, _layout: &Layout) {
+        // These icons represent paths inside the immutable ZillaOS RAMFS;
+        // dragging moves only the icon geometry, never files on host disks.
+        if !state.icons.visible() { return; }
+        let labels = [TextId::Documents, TextId::Pictures,
+                      TextId::Downloads, TextId::ProgramFiles];
+        let fg = if state.dark { 0xe8f5ff } else { 0x1d394e };
+        for (index, point) in state.icons.positions.iter().enumerate() {
+            let selected = state.icons.dragging == Some(index);
+            let background = if selected {
+                0x326178
+            } else if state.dark { 0x1e344d } else { 0xddecf7 };
+            self.round_rect(point.x, point.y, 92, 70, 10, background);
+            self.round_rect(point.x + 28, point.y + 13, 36, 27, 5, 0x31b8c3);
+            self.rectangle(point.x + 33, point.y + 9, 21, 8, 0x6be5e1);
+            let name = tr(state.language, labels[index]);
+            let width = name.chars().count().saturating_mul(6);
+            self.text(name, point.x + 46usize.saturating_sub(width / 2),
+                      point.y + 52, 1, fg);
+        }
+    }
+
     fn dock(&self, state: &Desktop, layout: &Layout) {
         let width = layout.width.min(500).saturating_sub(22);
         let x = layout.width.saturating_sub(width) / 2;
@@ -818,6 +840,7 @@ pub fn render(state: &Desktop) -> bool {
     screen.background(state.dark);
     screen.wallpaper_label(state, &layout);
     screen.desktop_shortcuts(state, &layout);
+    screen.desktop_folders(state, &layout);
     screen.top_panel(state, &layout);
     for app in state.windows.back_to_front() {
         if state.windows.window(app).visible() {
