@@ -67,6 +67,19 @@ class VMwareProfileTests(unittest.TestCase):
         self.assertNotIn('wsl.exe -d $Distro -- bash -lc', src)
         self.assertNotIn('wslpath -a $RepoRoot', src)
 
+    def test_preserved_vmx_checks_actual_cd_dvd_mapping_without_overwriting(self):
+        src = PS_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("[IO.File]::ReadAllText($vmxPath)", src)
+        self.assertIn("sata0:0", src)
+        self.assertIn("newly", src.lower().replace("newly built iso", "newly"))
+        self.assertIn("DIFFERENT ISO", src)
+        self.assertIn("Existing VMX CD/DVD mapping verified", src)
+        self.assertIn("[StringComparison]::OrdinalIgnoreCase", src)
+        self.assertIn("Power off the VM", src)
+        self.assertIn("if (-not $Force)", src)
+        # The pre-existing VMX branch must finish before the only VMX write.
+        self.assertLess(src.index("if (-not $Force)"), src.index("[IO.File]::WriteAllText($vmxPath"))
+
     def test_vmware_launcher_searches_32bit_and_64bit_install_paths(self):
         src = PS_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("function Get-ZillaVmwareExe", src)
