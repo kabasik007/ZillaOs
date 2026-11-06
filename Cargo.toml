@@ -21,3 +21,11 @@ vm-demo = []
 
 # Build the negative QEMU image which deliberately traps on UD2.
 exception-self-test = []
+
+# Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
+pe-inspector-cli = []
+
+[[bin]]
+name = "pe-inspect"
+path = "src/bin/pe_inspect.rs"
+required-features = ["pe-inspector-cli"]
