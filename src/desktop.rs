@@ -2,6 +2,7 @@
 //! Real processes and IPC-backed application surfaces are a later milestone.
 
 use crate::mouse::MousePacket;
+use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
 
@@ -220,6 +221,36 @@ impl Desktop {
         }
     }
 
+    /// Mouse zones for the three visible desktop launcher cards.
+    pub fn desktop_shortcut_at(layout: Layout, x: usize, y: usize) -> Option<App> {
+        if layout.width < 500 || layout.height < 440 || x < 30 || x >= 130 {
+            return None;
+        }
+        let start = layout.top_bar + 145;
+        if y < start { return None; }
+        let index = (y - start) / 78;
+        if (y - start) % 78 >= 66 { return None; }
+        match index {
+            0 => Some(App::Files),
+            1 => Some(App::Terminal),
+            2 => Some(App::Settings),
+            _ => None,
+        }
+    }
+
+    /// The top panel menus are real desktop actions rather than mock labels.
+    fn top_menu_at(&self, x: usize, y: usize) -> Option<usize> {
+        if y >= self.layout.top_bar || self.layout.width < 720 { return None; }
+        let mut start = 170;
+        for (index, id) in [TextId::Desktop, TextId::File,
+                             TextId::View, TextId::Windows].iter().enumerate() {
+            let end = start + tr(self.language, *id).chars().count() * 6 + 16;
+            if x >= start && x < end { return Some(index); }
+            start = end;
+        }
+        None
+    }
+
     /// Handle one decoded packet. The Y-axis is already screen-oriented.
     /// The pointer and all window coordinates stay inside the GUI viewport.
     pub fn handle_mouse(&mut self, packet: MousePacket) -> bool {
@@ -246,6 +277,13 @@ impl Desktop {
                 self.windows.open(app);
             } else if y < self.layout.top_bar && x < 46 {
                 self.launcher = true;
+            } else if let Some(menu) = self.top_menu_at(x, y) {
+                match menu {
+                    0 => self.launcher = !self.launcher,
+                    1 => self.windows.open(App::Files),
+                    2 => self.dark = !self.dark,
+                    _ => self.windows.show_desktop(),
+                }
             } else if let Some((app, title)) = self.windows.activate_at(x, y) {
                 let rect = self.windows.rect(app);
                 // The three QEMU demo traffic lights behave as close /
@@ -270,6 +308,8 @@ impl Desktop {
                         _ => {}
                     }
                 }
+            } else if let Some(app) = Self::desktop_shortcut_at(self.layout, x, y) {
+                self.windows.open(app);
             }
         } else if packet.left && self.pointer.left {
             if let Some(app) = self.pointer.dragging {
@@ -571,6 +611,23 @@ mod tests {
             state.handle_mouse(test_packet(-255, -255, false));
         }
         assert_eq!((state.pointer.x, state.pointer.y), (0, 0));
+    }
+
+    #[test]
+    fn desktop_shortcuts_and_top_menu_are_clickable() {
+        let mut state = Desktop::new();
+        state.enable_pointer();
+        assert_eq!(Desktop::desktop_shortcut_at(state.layout, 50,
+            state.layout.top_bar + 145 + 78 + 10), Some(App::Terminal));
+        state.pointer.x = 50;
+        state.pointer.y = state.layout.top_bar + 145 + 78 + 10;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(state.active(), Some(App::Terminal));
+        state.handle_mouse(test_packet(0, 0, false));
+        state.pointer.x = 170;
+        state.pointer.y = 19;
+        assert!(state.handle_mouse(test_packet(0, 0, true)));
+        assert!(state.launcher);
     }
 
     #[test]
