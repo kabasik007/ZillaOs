@@ -1,0 +1,3 @@
+# Bash and Limine are executed/parsed inside WSL; always check out with LF.
+*.sh text eol=lf
+boot/limine.conf text eol=lf
