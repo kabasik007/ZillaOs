@@ -86,8 +86,9 @@ impl WindowManager {
                 Window { app: App::Terminal, rect: shifted, mode: WindowMode::Hidden },
                 Window { app: App::Settings, rect: shifted_again, mode: WindowMode::Hidden },
                 Window { app: App::AppCenter, rect: shifted, mode: WindowMode::Hidden },
+                Window { app: App::Notepad, rect: shifted_again, mode: WindowMode::Hidden },
             ],
-            order: [App::AppCenter, App::Settings, App::Terminal, App::Files],
+            order: [App::Notepad, App::AppCenter, App::Settings, App::Terminal, App::Files],
             focus: Some(App::Files),
             viewport,
         }

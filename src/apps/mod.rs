@@ -1,6 +1,8 @@
 //! One installed-app registry for Start, Dock, App Center and launch service.
 pub mod id;
 pub mod app_center;
+pub mod notepad;
+pub mod notepad_ui;
 pub use id::App;
 use crate::locale::TextId;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -21,6 +23,8 @@ pub static BUILTIN_APPS: [AppDescriptor; App::COUNT] = [
                     title_key: TextId::Settings, glyph: "S", color: 0x7d6bd1 },
     AppDescriptor { id: App::AppCenter, name: "Zilla App Center", install_path: "/Program Files/Zilla App Center",
                     title_key: TextId::AppCenter, glyph: "A", color: 0x419776 },
+    AppDescriptor { id: App::Notepad, name: "Zilla Notepad", install_path: "/Program Files/Zilla Notepad",
+                    title_key: TextId::Notepad, glyph: "N", color: 0xb18a51 },
 ];
 pub fn descriptor(id: App) -> &'static AppDescriptor { &BUILTIN_APPS[id.index()] }
 pub fn find_by_path(path: &str) -> Option<&'static AppDescriptor> {

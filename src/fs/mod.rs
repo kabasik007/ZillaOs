@@ -18,10 +18,11 @@ pub struct Node {
 }
 
 pub const ROOT: usize = 0;
+pub mod ramfs;
 
 // Every parent index must refer to an existing directory. Root is its own
 // sentinel parent. These are virtual paths INSIDE ZillaOS, never Windows paths.
-pub static NODES: [Node; 25] = [
+pub static NODES: [Node; 26] = [
     Node { name: "ZillaOS", path: "/", parent: 0, kind: NodeKind::Directory, data: b"" },
     Node { name: "Program Files", path: "/Program Files", parent: 0, kind: NodeKind::Directory, data: b"" },
     Node { name: "Users", path: "/Users", parent: 0, kind: NodeKind::Directory, data: b"" },
@@ -49,6 +50,8 @@ pub static NODES: [Node; 25] = [
     Node { name: "ABOUT.TXT", path: "/System/ABOUT.TXT", parent: 3, kind: NodeKind::File,
            data: b"ZillaOS / Rust / x86-64 / UEFI\nExperimental RAM-only filesystem tree." },
     Node { name: "Zilla App Center", path: "/Program Files/Zilla App Center", parent: 1,
+           kind: NodeKind::Directory, data: b"" },
+    Node { name: "Zilla Notepad", path: "/Program Files/Zilla Notepad", parent: 1,
            kind: NodeKind::Directory, data: b"" },
 ];
 
