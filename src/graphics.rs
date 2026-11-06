@@ -271,8 +271,19 @@ impl Screen {
                 "REVIEW YOUR FIRST-RUN SETTINGS",
             ),
         };
-        let title = wizard.localized(uk_title, en_title);
-        let subtitle = wizard.localized(uk_sub, en_sub);
+        let (ru_title, ru_sub) = match wizard.step {
+            Step::Welcome => ("ДОБРО ПОЖАЛОВАТЬ", "ВАША НОВАЯ СИСТЕМА."),
+            Step::Language => ("ЯЗЫК СИСТЕМЫ", "ВЫБЕРИТЕ ЯЗЫК ИНТЕРФЕЙСА"),
+            Step::Region => ("РЕГИОН", "ВЫБЕРИТЕ СТРАНУ"),
+            Step::TimeZone => ("ЧАСОВОЙ ПОЯС", "ВЫБЕРИТЕ ЧАСОВОЙ ПОЯС"),
+            Step::Device => ("ИМЯ КОМПЬЮТЕРА", "БУКВЫ A-Z, ЦИФРЫ И ДЕФИС"),
+            Step::Appearance => ("ОФОРМЛЕНИЕ", "ВЫБЕРИТЕ СВЕТЛУЮ ИЛИ ТЁМНУЮ ТЕМУ"),
+            Step::Storage => ("НАКОПИТЕЛИ", "ПОКА ТОЛЬКО КОНТРОЛЛЕРЫ PCI"),
+            Step::InstallPlan => ("ПЛАН УСТАНОВКИ", "ТОЛЬКО ПРОСМОТР - БЕЗ ЗАПИСИ"),
+            Step::Review | Step::Finished => ("ГОТОВО", "ПРОВЕРЬТЕ НАСТРОЙКИ"),
+        };
+        let title = wizard.localized3(uk_title, en_title, ru_title);
+        let subtitle = wizard.localized3(uk_sub, en_sub, ru_sub);
         let scale = if g.body_width >= 465 { 3 } else if g.body_width >= 260 { 2 } else { 1 };
         self.text(title, bx, by + if g.height >= 400 { 92 } else { 67 }, scale, fg);
         if g.height >= 460 {
@@ -315,18 +326,18 @@ impl Screen {
                             _ => "РУССКИЙ",
                         },
                         Step::Region => match i {
-                            0 => wizard.localized("УКРАЇНА", "UKRAINE"),
-                            1 => wizard.localized("ПОЛЬЩА", "POLAND"),
-                            _ => wizard.localized("США", "UNITED STATES"),
+                            0 => wizard.localized3("УКРАЇНА", "UKRAINE", "УКРАИНА"),
+                            1 => wizard.localized3("ПОЛЬЩА", "POLAND", "ПОЛЬША"),
+                            _ => wizard.localized3("США", "UNITED STATES", "США"),
                         },
                         Step::TimeZone => match i {
                             0 => "EUROPE/KYIV", 1 => "EUROPE/WARSAW",
                             2 => "AMERICA/NEW YORK", _ => "UTC",
                         },
                         Step::Appearance => if i == 0 {
-                            wizard.localized("ТЕМНА ТЕМА", "DARK THEME")
+                            wizard.localized3("ТЕМНА ТЕМА", "DARK THEME", "ТЁМНАЯ ТЕМА")
                         } else {
-                            wizard.localized("СВІТЛА ТЕМА", "LIGHT THEME")
+                            wizard.localized3("СВІТЛА ТЕМА", "LIGHT THEME", "СВЕТЛАЯ ТЕМА")
                         },
                         _ => "",
                     };
