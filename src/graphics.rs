@@ -516,8 +516,20 @@ impl Screen {
                 self.text(title, menu_x, 18, 1, fg);
                 menu_x = menu_x.saturating_add(title.chars().count() * 6 + 16);
             }
-            self.text(state.hostname.as_str(), layout.width - 155, 17, 1, fg);
+            if layout.width >= 940 && state.hostname.as_str().chars().count() <= 12 {
+                self.text(state.hostname.as_str(), layout.width - 235, 17, 1, fg);
+            }
         }
+        let time_x = layout.width.saturating_sub(118);
+        if let Some(clock) = state.clock {
+            let bytes = clock.ascii();
+            if let Ok(time) = core::str::from_utf8(&bytes) {
+                self.text(time, time_x, 17, 1, fg);
+            }
+        } else {
+            self.text("--:--:--", time_x, 17, 1, fg);
+        }
+        self.text("RTC", layout.width.saturating_sub(54), 17, 1, 0x58c5ce);
     }
 
     fn wallpaper_label(&self, state: &Desktop, layout: &Layout) {
