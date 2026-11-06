@@ -273,6 +273,7 @@ pub extern "C" fn _start() -> ! {
             let previous_windows = desktop.windows;
             let previous_launcher = desktop.launcher;
             let previous_theme = desktop.dark;
+            let previous_language = desktop.language;
             let previous_pointer = desktop.pointer;
             let event = input.poll();
             let mouse_event = matches!(&event, Some(input::InputEvent::Mouse(_)));
@@ -299,7 +300,13 @@ pub extern "C" fn _start() -> ! {
                 if previous_windows != desktop.windows
                     || previous_launcher != desktop.launcher
                     || previous_theme != desktop.dark
+                    || previous_language != desktop.language
                 {
+                    if previous_language != desktop.language {
+                        serial::write("ZILLAOS_DESKTOP_LANGUAGE=");
+                        serial::write(desktop.language.code());
+                        serial::write("\n");
+                    }
                     serial::write("ZILLAOS_DESKTOP_STATE_CHANGED\n");
                     serial::write("ZILLAOS_DESKTOP_VISIBLE=");
                     serial::write_hex(desktop.windows.visible_count() as u64);
@@ -314,7 +321,8 @@ pub extern "C" fn _start() -> ! {
                 if desktop_available {
                     let scene_changed = previous_windows != desktop.windows
                         || previous_launcher != desktop.launcher
-                        || previous_theme != desktop.dark;
+                        || previous_theme != desktop.dark
+                        || previous_language != desktop.language;
                     let cursor_damage_applied = mouse_event
                         && !scene_changed
                         && graphics::redraw_cursor(previous_pointer, &desktop);
