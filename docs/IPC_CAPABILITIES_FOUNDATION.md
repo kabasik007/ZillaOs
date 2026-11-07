@@ -73,3 +73,57 @@ Each handle descriptor is 16 LE bytes: untrusted process-local handle `u64`, req
 7. Integration tests with independent processes in QEMU (one denied, one authorized), fuzz corpus for parser, crash/restart with leaked-handle and race injection.
 
 **Non-goals in this branch:** no `main.rs` changes, no changes to `src/kernel/process/**`, no fake syscall backend, no driver MMIO, no scheduler changes, no invented daemon PIDs, no production sandbox claim.
+
+
+## I-M1 — Process lifecycle and security integration bridge (PR #16, issue #21)
+
+**Implementation status:** models and negative tests only. The canonical `src/kernel/process/mod.rs` owns `Pid`, `ProcessTable`, `ProcessState`; PR #18 extends CPU-local scheduling and TID models. This branch does **not** import PR #18, invent an alternative PID allocator, install syscalls, or alter its scheduler. PR #19 must reconcile the exports and run combined tests before merge.
+
+### Trusted task identity
+
+`capabilities::process_binding::current_running(&ProcessTable)` obtains exactly one process marked `Running`. It never accepts a PID supplied in ZIPC bytes, a manifest, an application, or a syscall register. Zero/multiple active model entries fail closed. `ProcessHandleBook` associates one `HandleTable` with an existing canonical `Pid`, checks the record is not Exited when binding, and uses the current canonical process for `authorize_running`. It stores **only** bounded capability tables, not process metadata or runqueues. `kernel_grant()` is an issuer-only policy hook; it grants nothing automatically from declared labels.
+
+**Important:** `ProcessTable::Running` is still host-test metadata, **not** an authenticated current-CPU execution context. PR #18's `CpuSchedulerModel::snapshot(cpu).current()` identifies a modeled TID, with `ThreadTable::get(tid).pid` and parent state checks. At integration the Process agent must deliver a kernel-private `CurrentTask { cpu, tid, pid, generation }` from the verified trap/CPU-local state, and refuse desynchronized TID/PID or reaped tasks. Do not use `ProcessTable::Running` as a live multi-core syscall identity backend.
+
+### Lifecycle hook order
+
+1. ProcessManager records verified terminal Exited / Killed / Fault state and quiesces running CPU contexts.
+2. Under future kernel lock(s), call `ipc::lifecycle::process_exit_cleanup(processes, exiting_pid, book, registry, calls, queues)` **before** PID reap.
+3. For hosted endpoints, close the queue (pending calls -> `ServerGone`); for other queues, purge queued envelopes from the dead sender without disturbing FIFO.
+4. Remove exiting client correlations; revoke all process-owned registry objects (global generation invalidation); close/remove process-local handles.
+5. Driver/DeviceManager must independently quiesce IRQ/DMA/IOMMU/BAR claims **before device reuse**. This Rust model only invalidates references, not hardware.
+6. Reap the PID only after ThreadTable TIDs, stacks and other resources have been safely retired by the canonical ProcessManager (PR #18 model already has a TID-reap guard).
+
+`ExitCleanup` returns counts for host observability; it is not the live kernel audit log. A failed/not-Exited caller is rejected before changes. Callbacks are synchronous *models*: SMP/IRQ locking, in-flight leases, wakeups and fault handling remain P0 gates.
+
+### IPC model API
+
+| Entrypoint | Security condition | Notes |
+| --- | --- | --- |
+| `send_from_running` | current ProcessTable Running record + sender's typed Endpoint/SEND handle | source PID is not serialized or supplied |
+| `receive_for_running` | Endpoint/RECEIVE and endpoint ownership | skips messages from exited or reaped senders |
+| `deliver_to_running` | current receiver PID, live sender and globally valid grants | `accept_many` is all-or-none; no concurrent table mutation |
+| `reply_from_running` | current owner + Endpoint/RECEIVE + matching kernel-issued `CallToken` | nonce blocks duplicate/replayed token after request-ID reuse |
+| `register_owned_object` | canonical live PID with an existing handle binding | trusted kernel issuer only, no implicit user policy grant |
+| `process_exit_cleanup` | canonical Exited record and existing bound table | closes owner queues, drops sender messages, revokes owned objects |
+
+`CallTracker::reply(server_id, client_id, request_id)` is legacy test-only model convenience and MUST NOT be exposed as a syscall; use the authenticated `reply_from_running` token path. `CallToken` is a monotonically allocated generation **not a secret or cryptographic MAC**. The kernel must prevent foreign construction/injection via ABI, and authenticate endpoint ownership on each reply. Future sender identity must come from verified CPU/TID state.
+
+### Typed resource adapters and rights
+
+`capabilities::typed::TypedHandle<K>` is only a typed *view* over a raw handle. Its `authorize()` always validates table owner, current object generation/type and required rights. Available marker kinds: `EndpointResource`, `DeviceResource`, `ServiceResource`, `SurfaceResource`, `ProcessResource`. A wrong tag is rejected; tags and string permissions cannot mint any rights.
+
+- **DeviceRegistry / Platform**: canonical generation-safe DeviceId must be mapped by trusted kernel policy to an `ObjectKey` (`ObjectKind::Device`). Device observe/claim requires a live typed capability at every operation; BAR/IRQ/DMA require distinct object kinds, resource-owner synchronization, IOMMU and physical teardown. Never expose raw MMIO/DMA from ordinary apps.
+- **ServiceManager**: `ServiceId` != `Pid` != `ObjectId`. The ServiceManager requests authorized service-control actions; ProcessManager alone owns PID creation and exit notifications. Service restart must receive a fresh PID, a fresh Endpoint ObjectId, new explicit grants, and no old handles.
+- **DisplayManager**: `SurfaceResource`/typed surface handles authorize surface operations, but the DisplayManager alone validates mode/scanout/VRAM resource ownership. A surface capability cannot claim a GPU BAR or commit a physical mode.
+- **Rights matrix**: File/Surface, Device, Service, Process and Endpoint kinds reject nonsensical rights at grant time; a delegated grant can only attenuate rights using intersection. Types do not override issuer policy.
+
+### Model verification, adversarial cases and known limitations
+
+New host tests exercise forged sender PID in a binary payload, wrong/empty/unknown rights, typed-kind mismatch, reused object slot, revoked sender-owned resources, server crash with `ServerGone`, stale handle after service restart, message overflow with pending-call rollback, FIFO wrap-and-purge, duplicate reply, stale token after `request_id` reuse, and exit with unreaped child TID. Separate CI also compiles existing Ring3-thread/preempt feature binaries **without running them**.
+
+Missing security gates: production authenticated CPU-local PID/TID; checked user copies and pinning; real scheduling and unblocking; SMP/IRQ serialization/RCU; ObjectRegistry object destruction and memory lifetime; token confidentiality at kernel boundary; runtime audit/logging; actual DMA shutdown; fault injection and QEMU multi-process tests. `&mut` Rust guarantees only exclusive access within the model, not real kernel synchronization.
+
+**Important scope gap for issue #21:** ProcessTable does not currently track PPID/child-process trees. Tests exercise parent PID with dependent TID records, not real child processes. The Process agent must add authoritative PPID/orphan/exit ordering before a true parent-with-child-process teardown test can exist.
+
+**Memory note:** Fixed-size queue envelopes (4 KiB x depth 8) and a book of 16 x 64 handles are intentionally bounded but sizable. A future kernel must own static/heap allocations with memory quotas; do not instantiate these wholesale on a small kernel interrupt stack.
