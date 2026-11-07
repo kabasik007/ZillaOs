@@ -98,8 +98,9 @@ pub fn probe_address(
     }
     match inventory.identity_at(address) {
         None => AmdGpuProbeStatus::Absent,
-        Some(id) if id.address != address =>
-            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::AddressMismatch),
+        Some(id) if id.address != address => {
+            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::AddressMismatch)
+        }
         Some(id) => match_amd_display(id),
     }
 }
@@ -109,7 +110,12 @@ mod tests {
     use super::*;
     use core::cell::Cell;
 
-    const ADDRESS: PciAddress = PciAddress { segment: 0, bus: 12, device: 3, function: 1 };
+    const ADDRESS: PciAddress = PciAddress {
+        segment: 0,
+        bus: 12,
+        device: 3,
+        function: 1,
+    };
 
     fn make(vendor_id: u16, device_id: u16, class_code: u8, subclass: u8) -> PciIdentity {
         PciIdentity {
@@ -148,32 +154,68 @@ mod tests {
 
     #[test]
     fn rejects_chipset_cpu_audio_and_non_amd_vga() {
-        assert_eq!(match_amd_display(make(0x1022, 0x1234, 3, 0)), AmdGpuProbeStatus::NoMatch);
-        assert_eq!(match_amd_display(make(0x1002, 0x1234, 4, 3)), AmdGpuProbeStatus::NoMatch);
-        assert_eq!(match_amd_display(make(0x1002, 0x1234, 1, 6)), AmdGpuProbeStatus::NoMatch);
-        assert_eq!(match_amd_display(make(0x15ad, 0x0405, 3, 0)), AmdGpuProbeStatus::NoMatch);
-        assert_eq!(match_amd_display(make(0x8086, 0x1234, 3, 0)), AmdGpuProbeStatus::NoMatch);
+        assert_eq!(
+            match_amd_display(make(0x1022, 0x1234, 3, 0)),
+            AmdGpuProbeStatus::NoMatch
+        );
+        assert_eq!(
+            match_amd_display(make(0x1002, 0x1234, 4, 3)),
+            AmdGpuProbeStatus::NoMatch
+        );
+        assert_eq!(
+            match_amd_display(make(0x1002, 0x1234, 1, 6)),
+            AmdGpuProbeStatus::NoMatch
+        );
+        assert_eq!(
+            match_amd_display(make(0x15ad, 0x0405, 3, 0)),
+            AmdGpuProbeStatus::NoMatch
+        );
+        assert_eq!(
+            match_amd_display(make(0x8086, 0x1234, 3, 0)),
+            AmdGpuProbeStatus::NoMatch
+        );
     }
 
     #[test]
     fn accepts_3d_and_other_display_only_as_unsupported_candidates() {
         unsupported(make(0x1002, 0x731f, 3, 2));
         unsupported(make(0x1002, 0x731f, 3, 0x80));
-        assert_eq!(match_amd_display(make(0x1002, 0x731f, 3, 1)), AmdGpuProbeStatus::NoMatch);
+        assert_eq!(
+            match_amd_display(make(0x1002, 0x731f, 3, 1)),
+            AmdGpuProbeStatus::NoMatch
+        );
     }
 
     #[test]
     fn rejects_absent_and_malformed_pci_data() {
-        assert_eq!(match_amd_display(make(0xffff, 0xffff, 0xff, 0xff)), AmdGpuProbeStatus::Absent);
-        assert_eq!(match_amd_display(make(0, 0, 3, 0)), AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidVendor));
-        assert_eq!(match_amd_display(make(0x1002, 0xffff, 3, 0)), AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidDevice));
-        assert_eq!(match_amd_display(make(0x1002, 0x73bf, 0xff, 0)), AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidClass));
+        assert_eq!(
+            match_amd_display(make(0xffff, 0xffff, 0xff, 0xff)),
+            AmdGpuProbeStatus::Absent
+        );
+        assert_eq!(
+            match_amd_display(make(0, 0, 3, 0)),
+            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidVendor)
+        );
+        assert_eq!(
+            match_amd_display(make(0x1002, 0xffff, 3, 0)),
+            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidDevice)
+        );
+        assert_eq!(
+            match_amd_display(make(0x1002, 0x73bf, 0xff, 0)),
+            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidClass)
+        );
         let mut invalid = make(0x1002, 0x73bf, 3, 0);
         invalid.address.device = 32;
-        assert_eq!(match_amd_display(invalid), AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidAddress));
+        assert_eq!(
+            match_amd_display(invalid),
+            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidAddress)
+        );
         invalid.address = ADDRESS;
         invalid.subsystem_device_id = None;
-        assert_eq!(match_amd_display(invalid), AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::IncompleteSubsystem));
+        assert_eq!(
+            match_amd_display(invalid),
+            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::IncompleteSubsystem)
+        );
     }
 
     struct MockPci {
@@ -184,26 +226,52 @@ mod tests {
     impl ReadOnlyPciInventory for MockPci {
         fn identity_at(&self, address: PciAddress) -> Option<PciIdentity> {
             self.calls.set(self.calls.get() + 1);
-            self.entries.iter().flatten().copied().find(|id| id.address == address)
+            self.entries
+                .iter()
+                .flatten()
+                .copied()
+                .find(|id| id.address == address)
         }
     }
 
     #[test]
     fn fake_backend_queries_only_one_address_and_no_scanner() {
-        let other = PciAddress { function: 0, ..ADDRESS };
+        let other = PciAddress {
+            function: 0,
+            ..ADDRESS
+        };
         let mock = MockPci {
-            entries: [Some(make(0x1002, 0x73bf, 3, 0)), Some(PciIdentity {
-                address: other, ..make(0x15ad, 0x0405, 3, 0)
-            })],
+            entries: [
+                Some(make(0x1002, 0x73bf, 3, 0)),
+                Some(PciIdentity {
+                    address: other,
+                    ..make(0x15ad, 0x0405, 3, 0)
+                }),
+            ],
             calls: Cell::new(0),
         };
-        assert!(matches!(probe_address(&mock, ADDRESS), AmdGpuProbeStatus::DetectedUnsupported(_)));
+        assert!(matches!(
+            probe_address(&mock, ADDRESS),
+            AmdGpuProbeStatus::DetectedUnsupported(_)
+        ));
         assert_eq!(mock.calls.get(), 1);
         assert_eq!(probe_address(&mock, other), AmdGpuProbeStatus::NoMatch);
         assert_eq!(mock.calls.get(), 2);
-        assert_eq!(probe_address(&mock, PciAddress { bus: 99, ..ADDRESS }), AmdGpuProbeStatus::Absent);
+        assert_eq!(
+            probe_address(&mock, PciAddress { bus: 99, ..ADDRESS }),
+            AmdGpuProbeStatus::Absent
+        );
         assert_eq!(mock.calls.get(), 3);
-        assert_eq!(probe_address(&mock, PciAddress { function: 8, ..ADDRESS }), AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidAddress));
+        assert_eq!(
+            probe_address(
+                &mock,
+                PciAddress {
+                    function: 8,
+                    ..ADDRESS
+                }
+            ),
+            AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidAddress)
+        );
         assert_eq!(mock.calls.get(), 3);
     }
 
@@ -218,9 +286,14 @@ mod tests {
     fn mismatched_registry_identity_fails_closed() {
         struct WrongBdf(PciIdentity);
         impl ReadOnlyPciInventory for WrongBdf {
-            fn identity_at(&self, _: PciAddress) -> Option<PciIdentity> { Some(self.0) }
+            fn identity_at(&self, _: PciAddress) -> Option<PciIdentity> {
+                Some(self.0)
+            }
         }
-        let requested = PciAddress { segment: 1, ..ADDRESS };
+        let requested = PciAddress {
+            segment: 1,
+            ..ADDRESS
+        };
         assert_eq!(
             probe_address(&WrongBdf(make(0x1002, 0x73bf, 3, 0)), requested),
             AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::AddressMismatch)
