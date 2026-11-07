@@ -37,6 +37,8 @@ pub enum BackendFailure {
     Unavailable,
     Rejected,
     ReadbackFailed,
+    /// The previously connected output vanished or cannot be trusted.
+    LostOutput,
 }
 
 /// Backend is responsible for proving the mode is actually supported; merely
@@ -50,6 +52,15 @@ pub trait ModeBackend {
     fn set_mode(&mut self, mode: Mode) -> Result<(), BackendFailure>;
     fn read_mode(&mut self) -> Result<Mode, BackendFailure>;
     fn can_restore(&self, previous: Mode) -> bool;
+
+    /// Hardware-free atomic test gate. Existing ModeBackend implementations
+    /// retain source compatibility through a conservative legacy default
+    /// which checks advertised support only. A real hardware backend MUST
+    /// override this with complete resource/connector validation and must
+    /// not write hardware in the test phase.
+    fn test_mode(&mut self, mode: Mode) -> Result<(), BackendFailure> {
+        if self.supports_mode(mode) { Ok(()) } else { Err(BackendFailure::Rejected) }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +72,8 @@ pub enum DisplayError {
     NoPendingMode,
     Poisoned,
     PreparationFailed,
+    AtomicTestFailed,
+    OutputLost,
     ApplyFailed,
     ReadbackMismatch,
     RollbackFailed,
@@ -125,11 +138,33 @@ impl DisplayManager {
         modes
     }
 
+    fn verify_current(&mut self, backend: &mut impl ModeBackend) -> Result<(), DisplayError> {
+        match backend.read_mode() {
+            Ok(observed) if observed == self.current => Ok(()),
+            Err(BackendFailure::LostOutput) => {
+                self.poisoned = true;
+                Err(DisplayError::OutputLost)
+            }
+            _ => {
+                // A stale manager snapshot must never authorize a modeset.
+                self.poisoned = true;
+                Err(DisplayError::ReadbackMismatch)
+            }
+        }
+    }
+
     fn rollback(
         &mut self,
         backend: &mut impl ModeBackend,
         previous: Mode,
     ) -> Result<(), DisplayError> {
+        // A disconnected output cannot be restored by blindly writing its
+        // previous mode. Do not attempt hardware writes after a lost readback.
+        if backend.read_mode() == Err(BackendFailure::LostOutput) {
+            self.poisoned = true;
+            self.pending_previous = None;
+            return Err(DisplayError::OutputLost);
+        }
         // If restoration cannot be proved safe, fail closed rather than
         // guessing that GOP or the prior SVGA mode survived a mode write.
         if !backend.can_restore(previous)
@@ -168,22 +203,51 @@ impl DisplayManager {
         if !backend.supports_mode(requested) {
             return Err(DisplayError::Unsupported);
         }
+        self.verify_current(backend)?;
         if requested == self.current {
-            return if backend.read_mode() == Ok(self.current) {
-                Ok(Apply::AlreadyCurrent)
-            } else {
-                Err(DisplayError::ReadbackMismatch)
-            };
+            return Ok(Apply::AlreadyCurrent);
         }
-        backend.prepare_mode(requested).map_err(|_| DisplayError::PreparationFailed)?;
+        // Order is invariant: current hardware readback -> TEST_ONLY
+        // -> prepare resources -> commit hardware -> final readback.
+        // No mode or FIFO writes are permitted during test_mode.
+        match backend.test_mode(requested) {
+            Ok(()) => {}
+            Err(BackendFailure::LostOutput) => {
+                self.poisoned = true;
+                return Err(DisplayError::OutputLost);
+            }
+            Err(_) => return Err(DisplayError::AtomicTestFailed),
+        }
+        match backend.prepare_mode(requested) {
+            Ok(()) => {}
+            Err(BackendFailure::LostOutput) => {
+                self.poisoned = true;
+                return Err(DisplayError::OutputLost);
+            }
+            Err(_) => return Err(DisplayError::PreparationFailed),
+        }
         let prior = self.current;
-        if backend.set_mode(requested).is_err() {
-            self.rollback(backend, prior)?;
-            return Err(DisplayError::ApplyFailed);
+        match backend.set_mode(requested) {
+            Ok(()) => {}
+            Err(BackendFailure::LostOutput) => {
+                self.poisoned = true;
+                return Err(DisplayError::OutputLost);
+            }
+            Err(_) => {
+                self.rollback(backend, prior)?;
+                return Err(DisplayError::ApplyFailed);
+            }
         }
-        if backend.read_mode() != Ok(requested) {
-            self.rollback(backend, prior)?;
-            return Err(DisplayError::ReadbackMismatch);
+        match backend.read_mode() {
+            Ok(observed) if observed == requested => {}
+            Err(BackendFailure::LostOutput) => {
+                self.poisoned = true;
+                return Err(DisplayError::OutputLost);
+            }
+            _ => {
+                self.rollback(backend, prior)?;
+                return Err(DisplayError::ReadbackMismatch);
+            }
         }
         self.current = requested;
         self.pending_previous = Some(prior);
@@ -198,9 +262,17 @@ impl DisplayManager {
         if self.poisoned {
             return Err(DisplayError::Poisoned);
         }
-        if backend.read_mode() != Ok(self.current) {
-            self.rollback(backend, prior)?;
-            return Err(DisplayError::ReadbackMismatch);
+        match backend.read_mode() {
+            Ok(mode) if mode == self.current => {}
+            Err(BackendFailure::LostOutput) => {
+                self.poisoned = true;
+                self.pending_previous = None;
+                return Err(DisplayError::OutputLost);
+            }
+            _ => {
+                self.rollback(backend, prior)?;
+                return Err(DisplayError::ReadbackMismatch);
+            }
         }
         self.confirmed = self.current;
         self.pending_previous = None;
@@ -232,6 +304,10 @@ mod tests {
         prepared: usize,
         writes: usize,
         fail_prepare: bool,
+        fail_atomic_test: bool,
+        lost_output: bool,
+        lose_after_set: bool,
+        tested: usize,
     }
 
     impl MockDisplay {
@@ -245,6 +321,10 @@ mod tests {
                 prepared: 0,
                 writes: 0,
                 fail_prepare: false,
+                fail_atomic_test: false,
+                lost_output: false,
+                lose_after_set: false,
+                tested: 0,
             }
         }
     }
@@ -257,6 +337,12 @@ mod tests {
             matches!((m.width, m.height, m.bpp),
                 (800, 600, 32) | (1024, 768, 32) | (1280, 800, 32))
         }
+        fn test_mode(&mut self, mode: Mode) -> Result<(), BackendFailure> {
+            self.tested += 1;
+            if self.lost_output { return Err(BackendFailure::LostOutput); }
+            if self.fail_atomic_test { return Err(BackendFailure::Rejected); }
+            if self.supports_mode(mode) { Ok(()) } else { Err(BackendFailure::Rejected) }
+        }
         fn prepare_mode(&mut self, _: Mode) -> Result<(), BackendFailure> {
             self.prepared += 1;
             if self.fail_prepare { Err(BackendFailure::Rejected) } else { Ok(()) }
@@ -267,9 +353,11 @@ mod tests {
                 return Err(BackendFailure::Rejected);
             }
             self.current = m;
+            if self.lose_after_set && m.width == 1280 { self.lost_output = true; }
             Ok(())
         }
         fn read_mode(&mut self) -> Result<Mode, BackendFailure> {
+            if self.lost_output { return Err(BackendFailure::LostOutput); }
             if self.wrong_readback && self.current.width == 1280 {
                 Ok(Mode::new(800, 600))
             } else {
@@ -380,6 +468,59 @@ mod tests {
             mgr.apply(&mut gpu, Mode::new(1024, 768)),
             Err(DisplayError::ReadbackMismatch)
         );
+        assert_eq!(gpu.writes, 0);
+    }
+
+    #[test]
+    fn atomic_test_denial_never_prepares_or_writes() {
+        let mut gpu = MockDisplay::new();
+        gpu.fail_atomic_test = true;
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::AtomicTestFailed));
+        assert_eq!(gpu.tested, 1);
+        assert_eq!(gpu.prepared, 0);
+        assert_eq!(gpu.writes, 0);
+        assert_eq!(mgr.current_mode(), Mode::new(1024, 768));
+        assert!(!mgr.is_poisoned());
+    }
+
+    #[test]
+    fn disappearing_output_before_commit_poison_without_writes() {
+        let mut gpu = MockDisplay::new();
+        gpu.lost_output = true;
+        let mut mgr = DisplayManager::new(Mode::new(1024, 768)).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::OutputLost));
+        assert!(mgr.is_poisoned());
+        assert_eq!(gpu.tested, 0);
+        assert_eq!(gpu.prepared, 0);
+        assert_eq!(gpu.writes, 0);
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(800, 600)),
+            Err(DisplayError::Poisoned));
+    }
+
+    #[test]
+    fn disappearing_output_after_commit_never_attempts_blind_rollback() {
+        let mut gpu = MockDisplay::new();
+        gpu.lose_after_set = true;
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::OutputLost));
+        assert!(mgr.is_poisoned());
+        assert_eq!(gpu.writes, 1);
+        assert_eq!(mgr.confirmed_mode(), Mode::new(1024, 768));
+    }
+
+    #[test]
+    fn stale_initial_readback_poison_before_atomic_test() {
+        let mut gpu = MockDisplay::new();
+        let mut mgr = DisplayManager::new(gpu.current).unwrap();
+        gpu.current = Mode::new(800, 600);
+        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::ReadbackMismatch));
+        assert!(mgr.is_poisoned());
+        assert_eq!(gpu.tested, 0);
         assert_eq!(gpu.writes, 0);
     }
 
