@@ -57,6 +57,15 @@ impl Envelope {
         }
         Ok(())
     }
+    /// Atomic model delivery: receiver gets all requested handles or none.
+    /// Must be executed under the future kernel endpoint/capability lock.
+    pub fn deliver(
+        &self, receiver: u64, receiver_table: &mut HandleTable,
+        objects: &ObjectRegistry,
+    ) -> Result<[Option<crate::capabilities::Handle>; MAX_MESSAGE_HANDLES], QueueError> {
+        self.validate_transfers(objects)?;
+        Ok(receiver_table.accept_many(receiver, objects, &self.grants)?)
+    }
     /// Callers must validate this grant again during target HandleTable::accept.
     pub fn delegation(&self, index: usize, objects: &ObjectRegistry)
         -> Result<Option<Delegation>, QueueError>
@@ -306,6 +315,31 @@ mod tests {
         objects.revoke(key).unwrap();
         let msg = q.recv(0).unwrap().unwrap();
         assert_eq!(msg.validate_transfers(&objects), Err(QueueError::BadCapability(CapError::Revoked)));
+    }
+    #[test]
+    fn queued_transfer_delivery_attenuates_then_revoke_invalidates_receiver() {
+        let mut reg = ObjectRegistry::new();
+        let key = reg.create(ObjectKind::Endpoint).unwrap();
+        let mut from = HandleTable::new(2);
+        let mut into = HandleTable::new(3);
+        let source = from.grant(2, &reg, key, Rights::SEND.union(Rights::TRANSFER)).unwrap();
+        let mut wire = [0u8; HEADER_BYTES + 16];
+        wire[..HEADER_BYTES].copy_from_slice(&parsed_header());
+        wire[28..30].copy_from_slice(&1u16.to_le_bytes());
+        wire[HEADER_BYTES..HEADER_BYTES + 8].copy_from_slice(&source.raw().to_le_bytes());
+        wire[HEADER_BYTES + 8..].copy_from_slice(&Rights::SEND.bits().to_le_bytes());
+        let parsed = parse(&wire).unwrap();
+        let staged = Envelope::stage(2, &parsed, &from, &reg, None).unwrap();
+        let installed = staged.deliver(3, &mut into, &reg).unwrap()[0].unwrap();
+        assert_eq!(into.authorize(3, &reg, installed, ObjectKind::Endpoint, Rights::SEND), Ok(key.id()));
+        assert_eq!(into.authorize(3, &reg, installed, ObjectKind::Endpoint, Rights::CONTROL),
+            Err(CapError::AccessDenied));
+        reg.revoke(key).unwrap();
+        assert_eq!(into.authorize(3, &reg, installed, ObjectKind::Endpoint, Rights::SEND),
+            Err(CapError::Revoked));
+        assert_eq!(staged.deliver(3, &mut into, &reg).err(),
+            Some(QueueError::BadCapability(CapError::Revoked)));
+        assert_eq!(into.count(), 1); // failed delivery did not install a second handle
     }
     #[test]
     fn enqueue_and_dequeue_expiry_is_deterministic() {
