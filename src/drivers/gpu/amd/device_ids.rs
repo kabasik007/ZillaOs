@@ -22,9 +22,18 @@ pub struct DiagnosticId {
 /// subsystem/revision may still require a different board policy. No entry
 /// grants access to an AMD device.
 pub const DIAGNOSTIC_IDS: &[DiagnosticId] = &[
-    DiagnosticId { device_id: 0x67df, family: AsicFamily::Polaris10 },
-    DiagnosticId { device_id: 0x731f, family: AsicFamily::Navi10 },
-    DiagnosticId { device_id: 0x73bf, family: AsicFamily::Navi21 },
+    DiagnosticId {
+        device_id: 0x67df,
+        family: AsicFamily::Polaris10,
+    },
+    DiagnosticId {
+        device_id: 0x731f,
+        family: AsicFamily::Navi10,
+    },
+    DiagnosticId {
+        device_id: 0x73bf,
+        family: AsicFamily::Navi21,
+    },
 ];
 
 /// Strict enablement evidence gate reserved for later physical validation.
@@ -41,7 +50,8 @@ pub struct SupportedBoard {
 pub const SUPPORTED_BOARDS: &[SupportedBoard] = &[];
 
 pub fn diagnostic_family(device_id: u16) -> AsicFamily {
-    DIAGNOSTIC_IDS.iter()
+    DIAGNOSTIC_IDS
+        .iter()
         .find(|entry| entry.device_id == device_id)
         .map_or(AsicFamily::Unknown, |entry| entry.family)
 }
