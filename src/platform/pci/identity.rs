@@ -14,14 +14,24 @@ pub enum AddressError {
 }
 
 impl PciAddress {
-    pub const fn new(segment: u16, bus: u8, device: u8, function: u8) -> Result<Self, AddressError> {
+    pub const fn new(
+        segment: u16,
+        bus: u8,
+        device: u8,
+        function: u8,
+    ) -> Result<Self, AddressError> {
         if device >= 32 {
             return Err(AddressError::InvalidDevice);
         }
         if function >= 8 {
             return Err(AddressError::InvalidFunction);
         }
-        Ok(Self { segment, bus, device, function })
+        Ok(Self {
+            segment,
+            bus,
+            device,
+            function,
+        })
     }
 
     pub const fn is_valid(self) -> bool {
@@ -60,7 +70,9 @@ pub struct PciClass {
 }
 
 impl PciClass {
-    pub const fn is_display(self) -> bool { self.base == 0x03 }
+    pub const fn is_display(self) -> bool {
+        self.base == 0x03
+    }
     pub const fn is_pci_bridge(self) -> bool {
         self.base == 0x06 && self.subclass == 0x04
     }
@@ -113,18 +125,36 @@ mod tests {
         let a = PciAddress::new(0xabcd, 255, 31, 7).unwrap();
         assert_eq!(a.segment, 0xabcd);
         assert_eq!(a.legacy_location(), None);
-        assert_eq!(PciAddress::new(0, 0, 32, 0), Err(AddressError::InvalidDevice));
-        assert_eq!(PciAddress::new(0, 0, 0, 8), Err(AddressError::InvalidFunction));
-        let old = crate::storage_pci::PciLocation { bus: 4, device: 9, function: 1 };
+        assert_eq!(
+            PciAddress::new(0, 0, 32, 0),
+            Err(AddressError::InvalidDevice)
+        );
+        assert_eq!(
+            PciAddress::new(0, 0, 0, 8),
+            Err(AddressError::InvalidFunction)
+        );
+        let old = crate::storage_pci::PciLocation {
+            bus: 4,
+            device: 9,
+            function: 1,
+        };
         assert_eq!(PciAddress::from(old).legacy_location(), Some(old));
     }
     #[test]
     fn amd_and_vmware_identity_contract_is_strict() {
         let address = PciAddress::new(0, 0, 2, 0).unwrap();
         let mut i = PciIdentity {
-            address, vendor_id: 0x1002, device_id: 0x73bf, revision: 0,
-            class: PciClass { base: 3, subclass: 0, programming_interface: 0 },
-            subsystem_vendor_id: None, subsystem_device_id: None,
+            address,
+            vendor_id: 0x1002,
+            device_id: 0x73bf,
+            revision: 0,
+            class: PciClass {
+                base: 3,
+                subclass: 0,
+                programming_interface: 0,
+            },
+            subsystem_vendor_id: None,
+            subsystem_device_id: None,
         };
         assert!(i.is_amd_display_candidate());
         assert!(!i.is_vmware_svga_ii());

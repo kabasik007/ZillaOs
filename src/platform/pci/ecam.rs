@@ -13,10 +13,16 @@ pub struct EcamReadPlan {
 }
 
 pub fn plan_read<const CAP: usize>(
-    table: &McfgTable<CAP>, address: PciAddress, offset: u16
+    table: &McfgTable<CAP>,
+    address: PciAddress,
+    offset: u16,
 ) -> Result<EcamReadPlan, McfgError> {
     let physical_address = table.ecam_address(address, offset)?;
-    Ok(EcamReadPlan { address, register_offset: offset, physical_address })
+    Ok(EcamReadPlan {
+        address,
+        register_offset: offset,
+        physical_address,
+    })
 }
 
 /// This adapter validates offsets, but NEVER dereferences an ECAM address.
@@ -40,7 +46,13 @@ mod tests {
     fn unmapped_ecam_is_denied_even_for_valid_address() {
         let table = McfgTable::<0>::empty();
         let mut backend = DisabledEcam { mcfg: &table };
-        assert_eq!(backend.read32(PciAddress::new(0,0,0,0).unwrap(),0), Err(ConfigError::Unavailable));
-        assert_eq!(backend.read32(PciAddress::new(0,0,0,0).unwrap(),1), Err(ConfigError::UnalignedOffset));
+        assert_eq!(
+            backend.read32(PciAddress::new(0, 0, 0, 0).unwrap(), 0),
+            Err(ConfigError::Unavailable)
+        );
+        assert_eq!(
+            backend.read32(PciAddress::new(0, 0, 0, 0).unwrap(), 1),
+            Err(ConfigError::UnalignedOffset)
+        );
     }
 }

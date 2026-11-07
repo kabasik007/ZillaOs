@@ -27,7 +27,11 @@ pub enum DeviceState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DriverMatch {
     /// Exact model and optional exact class. Vendor-only GPU claiming is not allowed.
-    Exact { vendor_id: u16, device_id: u16, class: Option<PciClass> },
+    Exact {
+        vendor_id: u16,
+        device_id: u16,
+        class: Option<PciClass>,
+    },
     /// Generic class drivers must be explicitly registered and reviewed.
     Class(PciClass),
 }
@@ -35,13 +39,20 @@ pub enum DriverMatch {
 impl DriverMatch {
     pub const fn matches(self, info: PciDeviceInfo) -> bool {
         match self {
-            Self::Exact { vendor_id, device_id, class } => {
+            Self::Exact {
+                vendor_id,
+                device_id,
+                class,
+            } => {
                 info.identity.vendor_id == vendor_id
                     && info.identity.device_id == device_id
                     && match class {
-                        Some(c) => c.base == info.identity.class.base
-                            && c.subclass == info.identity.class.subclass
-                            && c.programming_interface == info.identity.class.programming_interface,
+                        Some(c) => {
+                            c.base == info.identity.class.base
+                                && c.subclass == info.identity.class.subclass
+                                && c.programming_interface
+                                    == info.identity.class.programming_interface
+                        }
                         None => true,
                     }
             }
@@ -110,12 +121,17 @@ pub struct DeviceRegistry<const DEVICES: usize, const CLAIMS: usize> {
 }
 
 impl<const DEVICES: usize, const CLAIMS: usize> Default for DeviceRegistry<DEVICES, CLAIMS> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> {
     pub const fn new() -> Self {
-        Self { slots: [None; DEVICES], claims: [None; CLAIMS] }
+        Self {
+            slots: [None; DEVICES],
+            claims: [None; CLAIMS],
+        }
     }
 
     fn slot(&self, id: DeviceId) -> Result<DeviceSlot, RegistryError> {
@@ -126,7 +142,10 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
     }
 
     fn slot_mut(&mut self, id: DeviceId) -> Result<&mut DeviceSlot, RegistryError> {
-        let slot = self.slots.get_mut(id.slot).ok_or(RegistryError::StaleHandle)?;
+        let slot = self
+            .slots
+            .get_mut(id.slot)
+            .ok_or(RegistryError::StaleHandle)?;
         match slot {
             Some(slot) if slot.generation == id.generation && slot.info.is_some() => Ok(slot),
             _ => Err(RegistryError::StaleHandle),
@@ -147,8 +166,13 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
         self.slots.iter().enumerate().find_map(|(index, slot)| {
             let slot = (*slot)?;
             if slot.info?.identity.address == address {
-                Some(DeviceId { slot: index, generation: slot.generation })
-            } else { None }
+                Some(DeviceId {
+                    slot: index,
+                    generation: slot.generation,
+                })
+            } else {
+                None
+            }
         })
     }
 
@@ -156,12 +180,14 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
         if self.find(info.identity.address).is_some() {
             return Err(RegistryError::DuplicateAddress);
         }
-        let index = self.slots.iter().position(|slot| {
-            match slot {
+        let index = self
+            .slots
+            .iter()
+            .position(|slot| match slot {
                 None => true,
                 Some(s) => s.info.is_none() && !s.retired,
-            }
-        }).ok_or(RegistryError::Full)?;
+            })
+            .ok_or(RegistryError::Full)?;
         let generation = self.slots[index].map_or(1, |slot| slot.generation);
         self.slots[index] = Some(DeviceSlot {
             generation,
@@ -170,7 +196,10 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
             driver: None,
             retired: false,
         });
-        Ok(DeviceId { slot: index, generation })
+        Ok(DeviceId {
+            slot: index,
+            generation,
+        })
     }
 
     /// Import a complete scan transactionally: reject truncation, collision
@@ -179,12 +208,20 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
         &mut self,
         inventory: &PciInventory<CAP>,
     ) -> Result<(), RegistryError> {
-        if inventory.truncated { return Err(RegistryError::InventoryTruncated); }
-        let vacant = self.slots.iter().filter(|slot| match slot {
-            None => true,
-            Some(s) => s.info.is_none() && !s.retired,
-        }).count();
-        if vacant < inventory.count { return Err(RegistryError::Full); }
+        if inventory.truncated {
+            return Err(RegistryError::InventoryTruncated);
+        }
+        let vacant = self
+            .slots
+            .iter()
+            .filter(|slot| match slot {
+                None => true,
+                Some(s) => s.info.is_none() && !s.retired,
+            })
+            .count();
+        if vacant < inventory.count {
+            return Err(RegistryError::Full);
+        }
         for (i, info) in inventory.iter().enumerate() {
             if self.find(info.identity.address).is_some() {
                 return Err(RegistryError::DuplicateAddress);
@@ -202,10 +239,15 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
     }
 
     pub fn match_driver(
-        &mut self, id: DeviceId, driver: DriverId, rule: DriverMatch
+        &mut self,
+        id: DeviceId,
+        driver: DriverId,
+        rule: DriverMatch,
     ) -> Result<(), RegistryError> {
         let slot = self.slot_mut(id)?;
-        if slot.state != DeviceState::Discovered { return Err(RegistryError::WrongState); }
+        if slot.state != DeviceState::Discovered {
+            return Err(RegistryError::WrongState);
+        }
         if !rule.matches(slot.info.ok_or(RegistryError::StaleHandle)?) {
             return Err(RegistryError::NoDriverMatch);
         }
@@ -217,27 +259,42 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
     /// Atomic metadata-only exclusive claims. All requests are validated first.
     /// No BAR sizing/mapping or IRQ/DMA programming happens.
     pub fn claim(
-        &mut self, id: DeviceId, driver: DriverId, requested: &[ResourceRange]
+        &mut self,
+        id: DeviceId,
+        driver: DriverId,
+        requested: &[ResourceRange],
     ) -> Result<(), RegistryError> {
         let slot = self.slot(id)?;
-        if slot.state != DeviceState::Matched { return Err(RegistryError::WrongState); }
-        if slot.driver != Some(driver) { return Err(RegistryError::DriverMismatch); }
+        if slot.state != DeviceState::Matched {
+            return Err(RegistryError::WrongState);
+        }
+        if slot.driver != Some(driver) {
+            return Err(RegistryError::DriverMismatch);
+        }
         if requested.len() > self.claims.iter().filter(|c| c.is_none()).count() {
             return Err(RegistryError::NoResourceSlots);
         }
         for (i, range) in requested.iter().copied().enumerate() {
-            range.valid_for_claim().map_err(RegistryError::ResourceInvalid)?;
+            range
+                .valid_for_claim()
+                .map_err(RegistryError::ResourceInvalid)?;
             for earlier in requested.iter().take(i) {
-                if range.overlaps(*earlier) { return Err(RegistryError::ResourceBusy); }
+                if range.overlaps(*earlier) {
+                    return Err(RegistryError::ResourceBusy);
+                }
             }
             for active in self.claims.iter().flatten() {
-                if range.overlaps(active.range) { return Err(RegistryError::ResourceBusy); }
+                if range.overlaps(active.range) {
+                    return Err(RegistryError::ResourceBusy);
+                }
             }
         }
 
         let mut next = 0usize;
         for range in requested.iter().copied() {
-            while self.claims[next].is_some() { next += 1; }
+            while self.claims[next].is_some() {
+                next += 1;
+            }
             self.claims[next] = Some(Claim { device: id, range });
             next += 1;
         }
@@ -245,17 +302,27 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
         Ok(())
     }
 
-    pub fn mark_probed_read_only(&mut self, id: DeviceId, driver: DriverId) -> Result<(), RegistryError> {
+    pub fn mark_probed_read_only(
+        &mut self,
+        id: DeviceId,
+        driver: DriverId,
+    ) -> Result<(), RegistryError> {
         let slot = self.slot_mut(id)?;
-        if slot.driver != Some(driver) { return Err(RegistryError::DriverMismatch); }
-        if slot.state != DeviceState::Claimed { return Err(RegistryError::WrongState); }
+        if slot.driver != Some(driver) {
+            return Err(RegistryError::DriverMismatch);
+        }
+        if slot.state != DeviceState::Claimed {
+            return Err(RegistryError::WrongState);
+        }
         slot.state = DeviceState::ProbedReadOnly;
         Ok(())
     }
 
     fn release_claims(&mut self, id: DeviceId) {
         for claim in &mut self.claims {
-            if claim.is_some_and(|entry| entry.device == id) { *claim = None; }
+            if claim.is_some_and(|entry| entry.device == id) {
+                *claim = None;
+            }
         }
     }
 
@@ -263,18 +330,25 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
     /// No live MMIO/DMA can exist in this model; real driver teardown is future work.
     pub fn mark_faulted(&mut self, id: DeviceId) -> Result<DeviceId, RegistryError> {
         let slot = self.slot(id)?;
-        if slot.generation == u32::MAX { return Err(RegistryError::GenerationExhausted); }
+        if slot.generation == u32::MAX {
+            return Err(RegistryError::GenerationExhausted);
+        }
         self.release_claims(id);
         let slot = self.slot_mut(id)?;
         slot.generation += 1;
         slot.state = DeviceState::Faulted;
         slot.driver = None;
-        Ok(DeviceId { slot: id.slot, generation: slot.generation })
+        Ok(DeviceId {
+            slot: id.slot,
+            generation: slot.generation,
+        })
     }
 
     pub fn reset_fault(&mut self, id: DeviceId) -> Result<(), RegistryError> {
         let slot = self.slot_mut(id)?;
-        if slot.state != DeviceState::Faulted { return Err(RegistryError::WrongState); }
+        if slot.state != DeviceState::Faulted {
+            return Err(RegistryError::WrongState);
+        }
         slot.state = DeviceState::Discovered;
         Ok(())
     }
@@ -303,7 +377,10 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
             if let Some(slot) = slot {
                 if let Some(info) = slot.info {
                     devices[index] = Some(DeviceView {
-                        id: DeviceId { slot: index, generation: slot.generation },
+                        id: DeviceId {
+                            slot: index,
+                            generation: slot.generation,
+                        },
                         info,
                         state: slot.state,
                         driver: slot.driver,
@@ -319,25 +396,44 @@ impl<const DEVICES: usize, const CLAIMS: usize> DeviceRegistry<DEVICES, CLAIMS> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::pci::{PciIdentity, PciAddress};
+    use crate::platform::pci::{PciAddress, PciIdentity};
     use crate::platform::resources::{ResourceKind, ResourceSource};
 
     fn sample(bus: u8, device: u8, vendor: u16, model: u16) -> PciDeviceInfo {
         PciDeviceInfo {
             identity: PciIdentity {
                 address: PciAddress::new(0, bus, device, 0).unwrap(),
-                vendor_id: vendor, device_id: model, revision: 0,
-                class: PciClass { base: 3, subclass: 0, programming_interface: 0 },
-                subsystem_vendor_id: None, subsystem_device_id: None,
+                vendor_id: vendor,
+                device_id: model,
+                revision: 0,
+                class: PciClass {
+                    base: 3,
+                    subclass: 0,
+                    programming_interface: 0,
+                },
+                subsystem_vendor_id: None,
+                subsystem_device_id: None,
             },
-            header_type: 0, multifunction: false, bridge: None,
+            header_type: 0,
+            multifunction: false,
+            bridge: None,
         }
     }
     fn match_rule(vendor: u16, device: u16) -> DriverMatch {
-        DriverMatch::Exact { vendor_id: vendor, device_id: device, class: None }
+        DriverMatch::Exact {
+            vendor_id: vendor,
+            device_id: device,
+            class: None,
+        }
     }
     fn mmio(base: u64) -> ResourceRange {
-        ResourceRange::new(ResourceKind::Mmio, base, 4096, ResourceSource::FirmwareValidated).unwrap()
+        ResourceRange::new(
+            ResourceKind::Mmio,
+            base,
+            4096,
+            ResourceSource::FirmwareValidated,
+        )
+        .unwrap()
     }
 
     #[test]
@@ -360,23 +456,40 @@ mod tests {
         let amd = r.insert(sample(0, 2, 0x1002, 0x73bf)).unwrap();
         let vmware = r.insert(sample(0, 3, 0x15ad, 0x0405)).unwrap();
         let owner = DriverId(7);
-        assert_eq!(r.match_driver(amd, owner, match_rule(0x1002, 0x1234)), Err(RegistryError::NoDriverMatch));
-        r.match_driver(amd, owner, match_rule(0x1002, 0x73bf)).unwrap();
-        assert_eq!(r.claim(amd, DriverId(8), &[mmio(0x1000)]), Err(RegistryError::DriverMismatch));
-        assert_eq!(r.claim(amd, owner, &[mmio(0x1000), mmio(0x1800)]), Err(RegistryError::ResourceBusy));
+        assert_eq!(
+            r.match_driver(amd, owner, match_rule(0x1002, 0x1234)),
+            Err(RegistryError::NoDriverMatch)
+        );
+        r.match_driver(amd, owner, match_rule(0x1002, 0x73bf))
+            .unwrap();
+        assert_eq!(
+            r.claim(amd, DriverId(8), &[mmio(0x1000)]),
+            Err(RegistryError::DriverMismatch)
+        );
+        assert_eq!(
+            r.claim(amd, owner, &[mmio(0x1000), mmio(0x1800)]),
+            Err(RegistryError::ResourceBusy)
+        );
         assert_eq!(r.get(amd).unwrap().state, DeviceState::Matched);
         r.claim(amd, owner, &[mmio(0x1000)]).unwrap();
         r.mark_probed_read_only(amd, owner).unwrap();
 
-        r.match_driver(vmware, DriverId(8), match_rule(0x15ad, 0x0405)).unwrap();
-        assert_eq!(r.claim(vmware, DriverId(8), &[mmio(0x1000)]), Err(RegistryError::ResourceBusy));
+        r.match_driver(vmware, DriverId(8), match_rule(0x15ad, 0x0405))
+            .unwrap();
+        assert_eq!(
+            r.claim(vmware, DriverId(8), &[mmio(0x1000)]),
+            Err(RegistryError::ResourceBusy)
+        );
         r.claim(vmware, DriverId(8), &[mmio(0x2000)]).unwrap();
         let old_snapshot = r.snapshot();
         let new_id = r.mark_faulted(amd).unwrap();
         assert_eq!(r.get(amd), Err(RegistryError::StaleHandle));
         assert_eq!(r.get(new_id).unwrap().state, DeviceState::Faulted);
         assert_eq!(old_snapshot.count, 2);
-        assert_eq!(old_snapshot.iter().next().unwrap().state, DeviceState::ProbedReadOnly);
+        assert_eq!(
+            old_snapshot.iter().next().unwrap().state,
+            DeviceState::ProbedReadOnly
+        );
         r.reset_fault(new_id).unwrap();
     }
 
@@ -384,10 +497,19 @@ mod tests {
     fn malformed_unverified_resources_and_capacity_fail_closed() {
         let mut r = DeviceRegistry::<1, 0>::new();
         let id = r.insert(sample(0, 0, 0x1002, 0xbeef)).unwrap();
-        r.match_driver(id, DriverId(1), match_rule(0x1002, 0xbeef)).unwrap();
-        assert_eq!(r.claim(id, DriverId(1), &[mmio(0x1000)]), Err(RegistryError::NoResourceSlots));
-        let invalid = ResourceRange::new(ResourceKind::Mmio, 0x1000, 4096, ResourceSource::Unverified).unwrap();
-        assert_eq!(r.claim(id, DriverId(1), &[invalid]), Err(RegistryError::NoResourceSlots));
+        r.match_driver(id, DriverId(1), match_rule(0x1002, 0xbeef))
+            .unwrap();
+        assert_eq!(
+            r.claim(id, DriverId(1), &[mmio(0x1000)]),
+            Err(RegistryError::NoResourceSlots)
+        );
+        let invalid =
+            ResourceRange::new(ResourceKind::Mmio, 0x1000, 4096, ResourceSource::Unverified)
+                .unwrap();
+        assert_eq!(
+            r.claim(id, DriverId(1), &[invalid]),
+            Err(RegistryError::NoResourceSlots)
+        );
         r.claim(id, DriverId(1), &[]).unwrap(); // metadata-only read-only claim
         assert_eq!(r.get(id).unwrap().state, DeviceState::Claimed);
     }

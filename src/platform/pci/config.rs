@@ -21,7 +21,9 @@ pub struct MockConfig<F> {
 }
 
 impl<F> MockConfig<F> {
-    pub const fn new(read: F) -> Self { Self { read } }
+    pub const fn new(read: F) -> Self {
+        Self { read }
+    }
 }
 
 impl<F> PciConfigRead for MockConfig<F>
@@ -41,7 +43,9 @@ pub struct LegacyConfig<F> {
 }
 
 impl<F> LegacyConfig<F> {
-    pub const fn new(read: F) -> Self { Self { read } }
+    pub const fn new(read: F) -> Self {
+        Self { read }
+    }
 }
 
 impl<F> PciConfigRead for LegacyConfig<F>
@@ -50,12 +54,18 @@ where
 {
     fn read32(&mut self, address: PciAddress, offset: u16) -> Result<u32, ConfigError> {
         check_config_request(address, offset, 256)?;
-        let location = address.legacy_location().ok_or(ConfigError::UnsupportedSegment)?;
+        let location = address
+            .legacy_location()
+            .ok_or(ConfigError::UnsupportedSegment)?;
         Ok((self.read)(location, offset as u8))
     }
 }
 
-pub fn check_config_request(address: PciAddress, offset: u16, length: u16) -> Result<(), ConfigError> {
+pub fn check_config_request(
+    address: PciAddress,
+    offset: u16,
+    length: u16,
+) -> Result<(), ConfigError> {
     if !address.is_valid() {
         return Err(ConfigError::InvalidAddress);
     }
@@ -74,7 +84,10 @@ mod tests {
     #[test]
     fn legacy_rejects_other_segment_before_port_read() {
         let calls = core::cell::Cell::new(0);
-        let mut config = LegacyConfig::new(|_, _| { calls.set(calls.get() + 1); 0x0405_15ad });
+        let mut config = LegacyConfig::new(|_, _| {
+            calls.set(calls.get() + 1);
+            0x0405_15ad
+        });
         assert_eq!(
             config.read32(PciAddress::new(1, 0, 1, 0).unwrap(), 0),
             Err(ConfigError::UnsupportedSegment)
@@ -98,7 +111,15 @@ mod tests {
     fn mock_checks_invalid_address_and_extended_offset() {
         let mut mock = MockConfig::new(|_, _| Ok(0));
         assert_eq!(
-            mock.read32(PciAddress { segment: 0, bus: 0, device: 35, function: 0 }, 0),
+            mock.read32(
+                PciAddress {
+                    segment: 0,
+                    bus: 0,
+                    device: 35,
+                    function: 0
+                },
+                0
+            ),
             Err(ConfigError::InvalidAddress)
         );
         assert_eq!(

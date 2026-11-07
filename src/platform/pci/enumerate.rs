@@ -53,7 +53,9 @@ impl<const CAP: usize> PciInventory<CAP> {
 }
 
 impl<const CAP: usize> Default for PciInventory<CAP> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn read(
@@ -104,25 +106,47 @@ pub fn scan_topology<const CAP: usize>(
         front += 1;
         inventory.report.visited_buses += 1;
         for device in 0..32u8 {
-            let address0 = PciAddress { segment, bus, device, function: 0 };
-            let Some(id0) = read(config, address0, 0, &mut inventory.report) else { continue; };
-            if !is_present(id0) { continue; }
+            let address0 = PciAddress {
+                segment,
+                bus,
+                device,
+                function: 0,
+            };
+            let Some(id0) = read(config, address0, 0, &mut inventory.report) else {
+                continue;
+            };
+            if !is_present(id0) {
+                continue;
+            }
 
-            let Some(header0) = read(config, address0, 0x0c, &mut inventory.report) else { continue; };
+            let Some(header0) = read(config, address0, 0x0c, &mut inventory.report) else {
+                continue;
+            };
             let function_count = if header0 & 0x0080_0000 != 0 { 8 } else { 1 };
             for function in 0..function_count {
-                let address = PciAddress { segment, bus, device, function };
+                let address = PciAddress {
+                    segment,
+                    bus,
+                    device,
+                    function,
+                };
                 let id = if function == 0 {
                     id0
                 } else {
-                    let Some(value) = read(config, address, 0, &mut inventory.report) else { continue; };
+                    let Some(value) = read(config, address, 0, &mut inventory.report) else {
+                        continue;
+                    };
                     value
                 };
-                if !is_present(id) { continue; }
+                if !is_present(id) {
+                    continue;
+                }
                 let header = if function == 0 {
                     header0
                 } else {
-                    let Some(value) = read(config, address, 0x0c, &mut inventory.report) else { continue; };
+                    let Some(value) = read(config, address, 0x0c, &mut inventory.report) else {
+                        continue;
+                    };
                     value
                 };
                 let header_type = ((header >> 16) as u8) & 0x7f;
@@ -130,7 +154,10 @@ pub fn scan_topology<const CAP: usize>(
                     inventory.report.malformed_headers += 1;
                     continue;
                 }
-                let Some(class_register) = read(config, address, 0x08, &mut inventory.report) else { continue; };
+                let Some(class_register) = read(config, address, 0x08, &mut inventory.report)
+                else {
+                    continue;
+                };
                 let class = PciClass {
                     base: (class_register >> 24) as u8,
                     subclass: (class_register >> 16) as u8,
@@ -153,12 +180,17 @@ pub fn scan_topology<const CAP: usize>(
                 if class.is_pci_bridge() {
                     if header_type != 1 {
                         inventory.report.malformed_bridges += 1;
-                    } else if let Some(bus_numbers) = read(config, address, 0x18, &mut inventory.report) {
+                    } else if let Some(bus_numbers) =
+                        read(config, address, 0x18, &mut inventory.report)
+                    {
                         let primary = bus_numbers as u8;
                         let secondary = (bus_numbers >> 8) as u8;
                         let subordinate = (bus_numbers >> 16) as u8;
-                        if primary != bus || secondary <= primary || secondary > subordinate
-                            || subordinate > last_bus || secondary < root_bus
+                        if primary != bus
+                            || secondary <= primary
+                            || secondary > subordinate
+                            || subordinate > last_bus
+                            || secondary < root_bus
                         {
                             inventory.report.malformed_bridges += 1;
                         } else {
@@ -204,7 +236,9 @@ mod tests {
     use crate::platform::pci::config::{ConfigError, MockConfig};
 
     fn fixture(address: PciAddress, offset: u16) -> Result<u32, ConfigError> {
-        if address.segment != 0 { return Err(ConfigError::UnsupportedSegment); }
+        if address.segment != 0 {
+            return Err(ConfigError::UnsupportedSegment);
+        }
         match (address.bus, address.device, address.function, offset) {
             (0, 1, 0, 0) => Ok(0x1234_15ad),
             (0, 1, 0, 0x0c) => Ok(0x0080_0000), // multi
@@ -263,7 +297,9 @@ mod tests {
                     0x18 => 0x0001_0001, // primary 1, secondary 0: invalid
                     _ => u32::MAX,
                 })
-            } else { Ok(u32::MAX) }
+            } else {
+                Ok(u32::MAX)
+            }
         });
         let inv = scan_topology::<8>(&mut mock, 0, 0, 5).unwrap();
         assert_eq!(inv.report.malformed_bridges, 1);
@@ -275,10 +311,19 @@ mod tests {
     fn bad_range_and_bad_headers_fail_closed() {
         let mut mock = MockConfig::new(|a: PciAddress, o: u16| {
             if a.bus == 0 && a.device == 3 {
-                Ok(match o { 0 => 0x1234_1002, 0x0c => 0x007f_0000, _ => 0 })
-            } else { Ok(u32::MAX) }
+                Ok(match o {
+                    0 => 0x1234_1002,
+                    0x0c => 0x007f_0000,
+                    _ => 0,
+                })
+            } else {
+                Ok(u32::MAX)
+            }
         });
-        assert_eq!(scan_topology::<3>(&mut mock, 0, 10, 9), Err(ScanError::InvalidBusRange));
+        assert_eq!(
+            scan_topology::<3>(&mut mock, 0, 10, 9),
+            Err(ScanError::InvalidBusRange)
+        );
         let inv = scan_topology::<3>(&mut mock, 0, 0, 1).unwrap();
         assert_eq!(inv.report.malformed_headers, 1);
         assert_eq!(inv.count, 0);

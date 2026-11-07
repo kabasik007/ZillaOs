@@ -3,7 +3,11 @@
 use super::device::DeviceId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ResourceKind { Mmio, IoPort, Irq }
+pub enum ResourceKind {
+    Mmio,
+    IoPort,
+    Irq,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ResourceSource {
@@ -33,16 +37,32 @@ pub enum ResourceError {
 
 impl ResourceRange {
     pub const fn new(
-        kind: ResourceKind, base: u64, length: u64, source: ResourceSource
+        kind: ResourceKind,
+        base: u64,
+        length: u64,
+        source: ResourceSource,
     ) -> Result<Self, ResourceError> {
-        if length == 0 { return Err(ResourceError::Empty); }
-        if base.checked_add(length).is_none() { return Err(ResourceError::Overflow); }
-        Ok(Self { kind, base, length, source })
+        if length == 0 {
+            return Err(ResourceError::Empty);
+        }
+        if base.checked_add(length).is_none() {
+            return Err(ResourceError::Overflow);
+        }
+        Ok(Self {
+            kind,
+            base,
+            length,
+            source,
+        })
     }
 
     pub const fn valid_for_claim(self) -> Result<(), ResourceError> {
-        if self.length == 0 { return Err(ResourceError::Empty); }
-        if self.base.checked_add(self.length).is_none() { return Err(ResourceError::Overflow); }
+        if self.length == 0 {
+            return Err(ResourceError::Empty);
+        }
+        if self.base.checked_add(self.length).is_none() {
+            return Err(ResourceError::Overflow);
+        }
         if !matches!(self.source, ResourceSource::FirmwareValidated) {
             return Err(ResourceError::NotVerified);
         }
@@ -50,15 +70,24 @@ impl ResourceRange {
     }
 
     pub const fn overlaps(self, other: Self) -> bool {
-        if self.kind as u8 != other.kind as u8 { return false; }
-        let Some(end) = self.base.checked_add(self.length) else { return true; };
-        let Some(other_end) = other.base.checked_add(other.length) else { return true; };
+        if self.kind as u8 != other.kind as u8 {
+            return false;
+        }
+        let Some(end) = self.base.checked_add(self.length) else {
+            return true;
+        };
+        let Some(other_end) = other.base.checked_add(other.length) else {
+            return true;
+        };
         self.base < other_end && other.base < end
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CachePolicy { Uncached, WriteCombining }
+pub enum CachePolicy {
+    Uncached,
+    WriteCombining,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MmioMapping {
@@ -70,7 +99,9 @@ pub struct MmioMapping {
 impl MmioMapping {
     pub fn preflight(self) -> Result<(), ResourceError> {
         self.resource.valid_for_claim()?;
-        if !matches!(self.resource.kind, ResourceKind::Mmio) { return Err(ResourceError::InvalidPolicy); }
+        if !matches!(self.resource.kind, ResourceKind::Mmio) {
+            return Err(ResourceError::InvalidPolicy);
+        }
         if self.resource.base & 4095 != 0 || self.resource.length & 4095 != 0 {
             return Err(ResourceError::Unaligned);
         }
@@ -93,14 +124,23 @@ pub trait IrqAllocator {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DmaDirection { ToDevice, FromDevice, Bidirectional }
+pub enum DmaDirection {
+    ToDevice,
+    FromDevice,
+    Bidirectional,
+}
 
 /// DMA CPU-physical and bus/IOVA addresses must never be assumed identical.
 /// No bus mastering or IOMMU domains are created by these declarations.
 pub trait DmaIommu {
     type Handle;
-    fn map_pinned(&mut self, device: DeviceId, physical: u64, length: u64, direction: DmaDirection)
-        -> Result<Self::Handle, ResourceError>;
+    fn map_pinned(
+        &mut self,
+        device: DeviceId,
+        physical: u64,
+        length: u64,
+        direction: DmaDirection,
+    ) -> Result<Self::Handle, ResourceError>;
     fn unmap(&mut self, handle: Self::Handle) -> Result<(), ResourceError>;
 }
 
@@ -129,8 +169,13 @@ impl IrqAllocator for DisabledHardware {
 
 impl DmaIommu for DisabledHardware {
     type Handle = ();
-    fn map_pinned(&mut self, _: DeviceId, _: u64, _: u64, _: DmaDirection)
-        -> Result<(), ResourceError> {
+    fn map_pinned(
+        &mut self,
+        _: DeviceId,
+        _: u64,
+        _: u64,
+        _: DmaDirection,
+    ) -> Result<(), ResourceError> {
         Err(ResourceError::NotEnabled)
     }
     fn unmap(&mut self, _: ()) -> Result<(), ResourceError> {
@@ -143,25 +188,77 @@ mod tests {
     use super::*;
     #[test]
     fn unverified_or_overflowed_resources_are_rejected() {
-        assert_eq!(ResourceRange::new(ResourceKind::Mmio, u64::MAX, 8, ResourceSource::FirmwareValidated), Err(ResourceError::Overflow));
-        let r = ResourceRange::new(ResourceKind::Mmio, 0x1000, 0x1000, ResourceSource::Unverified).unwrap();
+        assert_eq!(
+            ResourceRange::new(
+                ResourceKind::Mmio,
+                u64::MAX,
+                8,
+                ResourceSource::FirmwareValidated
+            ),
+            Err(ResourceError::Overflow)
+        );
+        let r = ResourceRange::new(
+            ResourceKind::Mmio,
+            0x1000,
+            0x1000,
+            ResourceSource::Unverified,
+        )
+        .unwrap();
         assert_eq!(r.valid_for_claim(), Err(ResourceError::NotVerified));
-        let id = DeviceId { slot: 0, generation: 1 };
-        assert_eq!(MmioMapping { device: id, resource: r, cache: CachePolicy::Uncached }.preflight(), Err(ResourceError::NotVerified));
+        let id = DeviceId {
+            slot: 0,
+            generation: 1,
+        };
+        assert_eq!(
+            MmioMapping {
+                device: id,
+                resource: r,
+                cache: CachePolicy::Uncached
+            }
+            .preflight(),
+            Err(ResourceError::NotVerified)
+        );
     }
     #[test]
     fn exclusive_ranges_use_half_open_intervals() {
-        let r = |base, length| ResourceRange::new(ResourceKind::Mmio, base, length, ResourceSource::FirmwareValidated).unwrap();
-        assert!(!r(0x1000,0x1000).overlaps(r(0x2000,0x1000)));
-        assert!(r(0x1000,0x1000).overlaps(r(0x1fff,0x1000)));
+        let r = |base, length| {
+            ResourceRange::new(
+                ResourceKind::Mmio,
+                base,
+                length,
+                ResourceSource::FirmwareValidated,
+            )
+            .unwrap()
+        };
+        assert!(!r(0x1000, 0x1000).overlaps(r(0x2000, 0x1000)));
+        assert!(r(0x1000, 0x1000).overlaps(r(0x1fff, 0x1000)));
     }
     #[test]
     fn disabled_hardware_rejects_every_operation() {
         let mut hw = DisabledHardware;
-        let id = DeviceId { slot: 0, generation: 1 };
-        let r = ResourceRange::new(ResourceKind::Mmio, 0x1000, 0x1000, ResourceSource::FirmwareValidated).unwrap();
-        assert_eq!(hw.map(MmioMapping { device: id, resource: r, cache: CachePolicy::Uncached }), Err(ResourceError::NotEnabled));
+        let id = DeviceId {
+            slot: 0,
+            generation: 1,
+        };
+        let r = ResourceRange::new(
+            ResourceKind::Mmio,
+            0x1000,
+            0x1000,
+            ResourceSource::FirmwareValidated,
+        )
+        .unwrap();
+        assert_eq!(
+            hw.map(MmioMapping {
+                device: id,
+                resource: r,
+                cache: CachePolicy::Uncached
+            }),
+            Err(ResourceError::NotEnabled)
+        );
         assert_eq!(hw.reserve(id, 50), Err(ResourceError::NotEnabled));
-        assert_eq!(hw.map_pinned(id, 0x2000, 4096, DmaDirection::ToDevice), Err(ResourceError::NotEnabled));
+        assert_eq!(
+            hw.map_pinned(id, 0x2000, 4096, DmaDirection::ToDevice),
+            Err(ResourceError::NotEnabled)
+        );
     }
 }
