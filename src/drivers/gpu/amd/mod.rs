@@ -49,8 +49,10 @@ impl AmdGpuProbeStatus {
         }
     }
 
+    /// No A0/A1 status authorizes hardware initialization, even if a
+    /// caller constructs a status variant by hand.
     pub const fn may_initialize_hardware(self) -> bool {
-        matches!(self, Self::SupportedByExplicitTable(_))
+        false
     }
 }
 
@@ -58,6 +60,9 @@ impl AmdGpuProbeStatus {
 /// Class 0x03 and subclasses VGA (00), 3D (02) and other display (80)
 /// indicate *candidates*, never operational support.
 pub fn match_amd_display(pci: PciIdentity) -> AmdGpuProbeStatus {
+    if !pci.address.is_valid() {
+        return AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidAddress);
+    }
     if pci.vendor_id == 0xffff {
         return AmdGpuProbeStatus::Absent;
     }
@@ -200,6 +205,13 @@ mod tests {
         assert_eq!(mock.calls.get(), 3);
         assert_eq!(probe_address(&mock, PciAddress { function: 8, ..ADDRESS }), AmdGpuProbeStatus::InvalidPciIdentity(PciIdentityError::InvalidAddress));
         assert_eq!(mock.calls.get(), 3);
+    }
+
+    #[test]
+    fn even_forged_supported_status_is_not_an_init_permission() {
+        let info = unsupported(make(0x1002, 0x73bf, 3, 0));
+        let forged = AmdGpuProbeStatus::SupportedByExplicitTable(info);
+        assert!(!forged.may_initialize_hardware());
     }
 
     #[test]
