@@ -1,5 +1,7 @@
 # ZillaOS — threat model, tests, and delivery gates
 
+> **HISTORICAL VALIDATION NOTE (2026-11-07):** Old checkboxes are not the present CI state. Current proven tests are listed in [EVIDENCE_MATRIX](verification/EVIDENCE_MATRIX.md) and [STATUS](STATUS.md).
+
 **State:** M1 plus v0.0.2-dev M2 CPU/physical/HHDM integration source committed in main; **Rust compile, host tests and QEMU smoke checks have NOT RUN** in this environment. Do not mark these gates PASS without actual recorded evidence.
 
 ## 1. Assets and trusted boundaries

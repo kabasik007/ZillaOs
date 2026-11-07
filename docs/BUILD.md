@@ -1,5 +1,7 @@
 # Build / run ZillaOS v0.0.2-dev
 
+> **BUILD STATUS NOTE (2026-11-07):** Commands may still apply, but older NOT RUN claims are historical. PR #26 full format/build/QEMU CI passed. See [DEVELOPMENT](DEVELOPMENT.md), [STATUS](STATUS.md).
+
 **Status:** code committed; runtime build and QEMU boot require a suitable toolchain and **have not been independently verified** merely by committing source files.
 
 ## Requirements (Linux host or WSL2)

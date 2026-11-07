@@ -1,0 +1,25 @@
+name: ZillaOS canonical docs links
+
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'AGENTS.md'
+      - 'docs/**'
+      - 'scripts/check_docs.py'
+      - '.github/workflows/docs-quality.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-links:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile documentation link checker
+        run: python3 -m py_compile scripts/check_docs.py
+      - name: Check canonical documentation targets
+        run: python3 scripts/check_docs.py --verbose

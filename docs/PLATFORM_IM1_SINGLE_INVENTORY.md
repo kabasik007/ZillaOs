@@ -1,5 +1,7 @@
 # Platform I-M1 — one runtime PCI authority
 
+> **HISTORICAL BRANCH REFERENCE:** Feature branch named below is merged and deleted. See current [STATUS](STATUS.md), [architecture](ARCHITECTURE_CURRENT.md) and [PCI spec](specs/features/single-pci-inventory.md).
+
 **Branch:** `feat/platform-im1-single-inventory` (branched from integration PR #19).
 **Review chain:** #17 Platform foundation, #12 architecture, #19 cross-workstream integration, #20 acceptance issue.
 **Implementation state:** boot-time PCI model with a **single** segment-0 hardware inventory read pass

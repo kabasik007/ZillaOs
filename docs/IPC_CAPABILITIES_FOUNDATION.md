@@ -1,5 +1,7 @@
 # ZillaOS — IPC + Capability Foundation (I0–I3)
 
+> **HISTORICAL PR REFERENCE:** PR #16 merged; old branches mentioned below are history. For present production gaps read [STATUS](STATUS.md) and [trusted-exit spec](specs/features/trusted-process-exit.md).
+
 > **Status: host-testable, kernel-only models; not a production syscall/security boundary.**
 > Branch `feat/ipc-capabilities-foundation`. Target is independent process/service isolation, not an alternative ProcessManager. Architecture context: [PR #12](https://github.com/kabasik007/ZillaOs/pull/12).
 

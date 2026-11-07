@@ -77,3 +77,14 @@ Propose a replacement ADR in a PR with measurable evidence, migration implicatio
 **Status:** Accepted · **2026-10-19**  
 **Decision:** v0.0.2-dev artifacts remain explicitly pre-release. `main` may receive source development commits on user request, but no project milestone is labelled VERIFIED without compilation, executed tests and recorded emulator evidence.  
 **Reason:** a repository update, passing static source checks and a visual demo are insufficient evidence of a functioning kernel.  
+
+## ADR-0017 — Evidence-first docs and behavior specifications
+
+**Status:** Accepted for documentation workflow · **2026-11-07**  
+**Decision:** Root README explains project; docs/README.md routes to one current STATUS, ARCHITECTURE_CURRENT, DEVELOPMENT and normative docs/specs/features. Significant API, process, IPC, rights, device and GUI behavior requires a reviewed source-backed spec with negative cases; pure formatting does not.
+
+**Rationale:** Six agents previously generated dated, overlapping design notes; distinguish product behavior, current architecture, plans, decisions and CI evidence. Adapt principles from [our fork](https://github.com/kabasik007/spec-first-bootstrap) of [Potapenko Bootstrap](https://github.com/potapenko/spec-first-bootstrap) without blindly running its auto-generator.
+
+**Tradeoffs:** A huge README duplicates facts; moving all legacy documentation breaks links. Preserve historic docs in place and introduce navigation first.
+
+**Follow-up:** Revisit after one complete I-M2 spec-to-PR integration wave. Host model PASS never substitutes for physical hardware or protected runtime evidence.

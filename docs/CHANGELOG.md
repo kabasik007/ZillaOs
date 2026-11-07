@@ -1,5 +1,7 @@
 # Changelog
 
+> **HISTORICAL LOG:** Entries describe their original dates. The old NOT RUN introduction predates merged [PR #19](https://github.com/kabasik007/ZillaOs/pull/19) and verified [PR #26](https://github.com/kabasik007/ZillaOs/pull/26); current [STATUS](STATUS.md) is authoritative.
+
 ## Unreleased — ZillaOS v0.0.2-dev (2026-10-19)
 
 **State:** sources committed in `main`; cross-compile and QEMU/OVMF execution have **NOT RUN** in the current environment. This is not a release.
