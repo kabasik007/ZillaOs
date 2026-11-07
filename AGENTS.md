@@ -1,87 +1,67 @@
-# AGENTS.md — правила роботи AI-агентів у ZillaOS
+# AGENTS.md — ZillaOS development contract (I-M2)
 
-> **Прочитай перед будь-якою зміною коду.** Це експериментальна самостійна ОС на Rust `no_std`, x86-64/UEFI/Limine. Ubuntu/WSL — лише середовище збірки, **не** ядро ZillaOS.
->
-> **I-M2 після інтеграції 2026-11-07:** `main` — єдине канонічне джерело коду. Шість агентів починають **нові окремі feature-гілки** від актуального `main` і відкривають PR; тільки Chief Architect виконує інтеграцію. Актуальна матриця власників і правила — [`docs/NEXT_WAVE_I_M2.md`](docs/NEXT_WAVE_I_M2.md). Стара схема двох агентів і прямих записів до `main` більше не застосовується.
+**Last coordinated reset:** 2026-11-07.  
+**Canonical repository:** https://github.com/kabasik007/ZillaOs  
+**Canonical code branch:** `main`. Always fetch the **current main HEAD**, not a SHA remembered from a previous chat.  
+**Handoff for fresh chats:** [docs/NEW_CHAT_START_I_M2.md](docs/NEW_CHAT_START_I_M2.md).  
+**Owner matrix and next milestones:** [docs/NEXT_WAVE_I_M2.md](docs/NEXT_WAVE_I_M2.md).
 
-## 1. Перед початком роботи
+## Non-negotiable workflow
 
-1. Прочитай `README.md`, `docs/AGENT_COORDINATION.md`, `docs/ARCHITECTURE_CURRENT.md` та `docs/SECURITY_ARCHITECTURE.md`.
-2. Перед змінами у своїй підсистемі переглянь її актуальні файли **саме з HEAD `main`**, відповідні тести й документацію. Старий контекст чату — не джерело істини.
-3. Переконайся, що розумієш межу між **host unit test**, **bare-metal build**, **UEFI boot у VMware** та **реальною роботою функції**. Це різні рівні підтвердження.
-4. Працюй малими, логічними комітами з обов'язковим read-back. Не переписуй чужу роботу заради «вирівнювання» структури.
+1. Read current `main`, `README.md`, this file, `docs/AGENT_COORDINATION.md`, `docs/ARCHITECTURE_CURRENT.md`, `docs/SECURITY_ARCHITECTURE.md` and your subsystem docs **before** modifying code.
+2. Each engineering agent creates its **own new** `agent/<domain>-im2-<task>` branch from current `main`, opens a draft PR and confines writes to its owned source. No direct agent commits to `main`.
+3. Chief Architect alone owns cross-module reconciliation, shared kernel exports and integration PRs. Changes to shared files require an explicit contract, latest-blob read and minimal diff.
+4. Use normal, non-force updates; read back returned SHA. No force push, losing reset/rebase, blind overwrite, copy of stale full file, or deletion of other agents' work.
+5. For a substantial tranche, provide code, negative/adversarial tests, documentation and CI evidence. Do not stop at a plan if safe implementation is possible.
+6. Never claim host unit tests, compile success or QEMU mock fixtures prove a real hardware driver, running daemon, general process isolation or SMP.
 
-## 2. Межі володіння кодом
+## Single-writer source ownership
 
-**Пріоритет для I-M2:** матриця шести власників у `docs/NEXT_WAVE_I_M2.md`. Нижче — історичні межі двох попередніх потоків; при конфлікті новий документ має пріоритет. Жоден агент не може напряму переписувати спільні файли іншого власника.
+| Agent | Exclusive primary code | Must consume | Do not duplicate |
+|---|---|---|---|
+| A — Platform / PCI | `src/platform/**`, `src/pci_io.rs` (except shared `src/platform/amd_bridge.rs`) | canonical PCI/DeviceId state, bounded inventory, read-only device snapshot | second PCI enumerator/DeviceManager |
+| B — Process / Scheduler | `src/kernel/process/**`, `src/services/process_manager.rs` | trusted task identity, process/thread exit lifecycle | capability or service registry |
+| C — IPC / Capabilities | `src/kernel/ipc/**`, `src/kernel/capabilities/**` | PID/TID identity exclusively from ProcessManager, rights and revocation | own PID table; user message as trusted PID |
+| D — ServiceManager | `src/services/service_manager.rs`, `src/services/service_supervisor.rs`, `src/services/service_manifests.rs` | authenticated process events; capability-cleanup proof | launcher or synthetic working zillad |
+| E — Graphics / Display / VMware | `src/video/**`, `src/drivers/gpu/vmware_svga/**` | Platform DeviceId, output/surface ownership | WindowManager, PCI scan |
+| F — AMD Radeon | `src/drivers/gpu/amd/**` | Platform PCI registry read-only identity | MMIO/DMA/ASIC enablement without lab proof |
 
+**Chief Architect owns:** `src/main.rs`, `src/lib.rs`, `Cargo.toml`, `src/services/mod.rs`, `src/platform/amd_bridge.rs`, `src/shell/**`, `src/services/app_manager.rs`, `src/graphics.rs`, shared workflows, build and architecture documentation. Shared ownership may be explicitly delegated for one task, never silently assumed.
 
-**Graphics/SVGA agent (дисплей):**
-- Основна зона: `src/drivers/gpu/`, `src/video/`, документація `docs/VMWARE_SVGA_DRIVER.md`, `docs/GRAPHICS.md`.
-- Задачі: PCI/SVGA discovery, безпечна ідентифікація ресурсів, FIFO, DisplayManager, compositor, runtime mode switching, графічні тести.
-- **Не торкайся** `src/kernel/process/`, PE loader, Win32 API або ProcessManager без погодженої інтеграції.
+## Architectural invariants
 
-**Process/Windows Runtime agent (виконання):**
-- Основна зона: `src/kernel/process/`, `src/services/process_manager.rs`, `src/compat/`, майбутні `src/loaders/` та `src/runtimes/`, документація `docs/PROCESSES.md`, `docs/COMPATIBILITY.md`.
-- Задачі: адресні простори, Ring 3, GDT/TSS, syscall/trap, fault isolation, native ELF, потім PE64 і Win32 API.
-- **Не торкайся** GPU BAR, FIFO, framebuffer, SVGA-драйвера або DisplayManager.
+- `ApplicationManager` routes application launches; `ProcessManager` owns PID/TID; `WindowManager` owns windows; `DeviceRegistry` owns device handles; `DisplayManager` owns display output contracts. Exactly one owner of each.
+- Current Rust `no_std` x86-64 kernel is not Linux. Limine / UEFI and Windows/WSL builder are infrastructure, not dependencies in the kernel runtime.
+- Ring 3 QEMU fixtures demonstrate specific isolated experimental paths, **not** arbitrary ELF/PE execution or production user processes.
+- ServiceManager supervisor and IPC/capability lifetime models exist; actual user-space `zillad`, syscall IPC kernel binding, safe hardware resource grants and SMP runtime require future evidence.
+- AMD A0 read-only candidate diagnostics do **not** authorize GPU initialization or acceleration.
+- Never execute untrusted PE/ELF/APK in Ring 0. Fail-closed memory, length/pointer validation, quotas, W^X/NX, rights checking at every access.
+- No physical PCI device writes, BAR sizing, GPU MMIO, DMA, IRQ or firmware loading; no writes to physical disks, host firmware or NVRAM without separate reviewed permission. Hardware experiments only under explicit documented lab safeguards.
 
-**Documentation/architecture agent (цей потік):**
-- Основна зона: `README.md`, `AGENTS.md`, `docs/AGENT_COORDINATION.md`, `docs/ARCHITECTURE_CURRENT.md`, `docs/SECURITY_ARCHITECTURE.md`.
-- Не вносить зміни в Rust/boot/скрипти, якщо немає окремого запиту користувача.
-
-**Спільні файли** (`src/main.rs`, `src/lib.rs`, `Cargo.toml`, `src/shell/desktop.rs`, `src/graphics.rs`, `src/services/app_manager.rs`, workflows): тільки мінімальні сумісні правки з повторним читанням поточної версії перед записом. Не проводь широких рефакторингів у цих файлах паралельно.
-
-## 3. Конкурентні коміти й інтеграція
-
-**I-M2 правило:** звичайні агенти не пушать у `main` напряму. Вони створюють `agent/<domain>-im2-<topic>` від поточного `main`, відкривають окремий PR, а Chief Architect зливає перевірені зміни. Наведені нижче CAS-вимоги застосовуються до власних feature-гілок і до інтеграційного PR.
-
-
-- Перед кожним записом перевір актуальний HEAD і версію/ SHA файла, який змінюєш.
-- Використовуй **non-force** update з очікуваним попереднім HEAD (compare-and-swap) або GitHub Contents API з актуальним blob SHA. Якщо HEAD змінився — перечитай, перезастосуй **лише свій diff**, перевір і повтори.
-- **Заборонено:** force push, reset/checkout із втратою чужих змін, автоматичний overwrite, видалення чужих модулів, тривалий локальний snapshot як основа запису без оновлення.
-- У разі конфлікту в спільному API: спершу документуй мінімальний контракт, погоджуй черговість змін; не створюй власний дубль ProcessManager, WindowManager, AppManager, frame allocator або framebuffer.
-- Не запускай одночасно два процеси редагування того самого файла. **Коміт не є автоматично підтвердженням працездатності.**
-
-## 4. Архітектурні інваріанти та безпека
-
-- Жоден сторонній ELF/PE/APK не виконується в Ring 0. Неперевірені завантажувачі fail-closed.
-- `ProcessManager` зберігає процеси; `ApplicationManager` маршрутизує запуск; `WindowManager` володіє станом вікон. Це **різні** обов'язки.
-- PID metadata і таблиця регіонів пам'яті **не доводять** наявність Ring 3, реального CR3, syscall trap або ізоляції.
-- Read-only PE inspection **не дорівнює** виконанню EXE; PCI probe **не дорівнює** GPU acceleration.
-- Kernel/user межа, перевірка довжин/адрес, W^X/NX, відсутність несанкціонованого доступу до файлів/пристроїв — обов'язкові для майбутнього запуску чужих програм.
-- Жодного запису на реальні диски або зміни VM firmware/NVRAM без окремого схвалення; випробування дискових операцій тільки на disposable images.
-- `unsafe`, MMIO, port I/O, page-table writes і trap handlers вимагають документованих інваріантів, негативних тестів і безпечного fallback.
-
-## 5. Перевірки й критерії готовності
-
-Для змін Rust за наявності toolchain:
+## Required checks and evidence
 
 ```bash
-cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
-cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
 cargo +1.90.0 fmt --all -- --check
+cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
 python3 -m unittest discover -s tests -v
 ```
 
-Windows/WSL збірка у користувача:
+Depending on owner: feature-specific bare-metal builds, ServiceManager host-model tests, QEMU Ring3/guard/kernel-fault and PCI/desktop smoke. Link to real CI run **on the exact tested commit**. Record PASS, FAIL, NOT RUN separately.
 
+Development baseline I-M1 PR [#19](https://github.com/kabasik007/ZillaOs/pull/19) and repository Rustfmt repair PR [#26](https://github.com/kabasik007/ZillaOs/pull/26) are merged. All nine specialized/combined PR workflows were green on the PR #26 formatting head; new commits require their own validation. Ten prior I-M1 remote branches were pruned with commit ancestry preserved.
+
+Windows/WSL end-user check:
 ```powershell
 cd M:\projects\ZillaOs
+git switch main
 git pull --ff-only origin main
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\windows.ps1 -Action BuildRun
 ```
 
-Не стверджуй, що `fmt`, CI, Windows збірка чи запуск VMware пройшли, якщо цього не перевіряли. CI, який тригериться тільки на `src/**`, може **не запускатися** після суто документаційного коміту — це нормально, але не називай його «зеленим для цього коміту».
+Do not claim VMware GUI boot or physical AMD validation without direct user/CI evidence.
 
-## 6. Формат звіту агента
+## Completion report (mandatory)
 
-У кінці кожного етапу вкажи:
-- зміни і точні шляхи файлів;
-- commit SHA/посилання у `main`;
-- що перевірено (тести, compile, VM) з доказом;
-- чого **ще немає**;
-- ризики/блокери, взаємодію з другим агентом;
-- 1–3 конкретні наступні кроки.
-
-**Посилання:** [координація](docs/AGENT_COORDINATION.md) · [поточна архітектура](docs/ARCHITECTURE_CURRENT.md) · [безпека](docs/SECURITY_ARCHITECTURE.md) · [запуск програм](docs/APPLICATIONS.md) · [процеси](docs/PROCESSES.md) · [SVGA](docs/VMWARE_SVGA_DRIVER.md).
+Provide: (1) base/head SHA and PR link; (2) files changed; (3) implementation and API contracts; (4) exact tests and CI URLs; (5) negative tests/security claims; (6) known blockers and next wave handoff. Do not merge into main without Chief Architect integration/explicit owner approval.

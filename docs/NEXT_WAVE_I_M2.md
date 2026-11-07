@@ -1,7 +1,8 @@
 # ZillaOS — Clean Baseline & Next Work Wave (I-M2)
 
-**Date:** 2026-11-07  
+**Date:** 2026-11-07 · I-M1 merged, Rustfmt repaired, legacy refs pruned  
 **Canonical development branch:** `main` (after merge of integration PR #19).  
+**Restart instructions:** [`NEW_CHAT_START_I_M2.md`](NEW_CHAT_START_I_M2.md).  
 **Previous gate:** [Integration PR #19](https://github.com/kabasik007/ZillaOs/pull/19) + `docs/INTEGRATION_AUDIT_IM1.md`.
 
 ## What is actually integrated
@@ -19,7 +20,7 @@
 Run [42334822081](https://github.com/kabasik007/ZillaOs/actions/runs/42334822081) on integrated source `abc0d09c2adcd7df48adc1202604eb2d6b9f1f99`:
 **385 Rust lib + 20 Services + 14 ServiceSupervisor + 34 canonical PID + 127 Python tests PASS (580 total)**; 4 bare-metal feature builds PASS; Ring3, guard-fault, supervisor-access QEMU smoke PASS. Dedicated process, platform (including QEMU), PCI, AMD, IPC, Graphics, Services and Windows Builder workflows PASS on that code revision.
 
-**Known blocking quality debt:** repository-wide `cargo +1.90.0 fmt --all -- --check` FAILS due to formatting differences across existing and new files. Narrow Platform rustfmt issues were repaired. This merge is a development **baseline**, not a stable release or security claim. Track #23 and do not suppress the failing check.
+**I-M2-0 COMPLETE:** [formatting-only PR #26](https://github.com/kabasik007/ZillaOs/pull/26) normalized 86 Rust files using pinned Rustfmt 1.90.0. [Integration gate 42336227902](https://github.com/kabasik007/ZillaOs/actions/runs/42336227902) now passes **all four jobs**, including repository-wide `cargo +1.90.0 fmt --all -- --check`, host, four bare-metal builds and real disposable QEMU faults. Eight additional specialized workflows passed on the same PR head. Issue #23 closed after merge. Still **not** a stable release or physical AMD/VMware validation.
 
 ## Single-source ownership for I-M2
 
@@ -36,13 +37,13 @@ Run [42334822081](https://github.com/kabasik007/ZillaOs/actions/runs/42334822081
 
 ## I-M2 tasks in priority order
 
-**M2-0 / CI quality (blocking):** close issue #23 by committing owner-reviewed, mechanics-only rustfmt fixes in small sections and making `cargo +1.90.0 fmt --all -- --check` green. No mixing semantic refactors with format changes. Retain equivalent host/bare-metal/QEMU evidence.
+**M2-0 / CI quality — DONE:** PR #26 merged; full Rustfmt 1.90 baseline, integrated host/bare-metal/QEMU green. Every subsequent agent must preserve this gate. Do not introduce formatting drift.
 
 **M2-1 / Trusted lifecycle (B+C first):** bind one kernel-authoritative current task identity to process-scoped capability handles and IPC queues. Hook genuine exit/fault events into idempotent revoke → IPC cleanup → service notice. Reject forged sender/stale handles/double reap. Keep user-facing syscalls disabled until independently vetted paging and trap boundaries are in place (#21).
 
 **M2-2 / Service supervision (D):** consume B/C typed contracts with real authenticated metadata events; improve restart and dependency cleanup ordering. No synthetic launch success, no daemon until a safely isolated execution backend exists (#22).
 
-**M2-3 / Device and graphics integration (A+E+F):** verify canonical DeviceId across startup, VMware and AMD, avoid a second PCI scan; expose view-only device diagnostics; ensure DisplayManager mode transactions fail closed and software Desktop fallback is preserved. Physical VMware workstation/AMD labs are separately labeled NOT RUN if unavailable (#20/#22).
+**M2-3 / Device and graphics integration (A+E+F):** verify canonical DeviceId across startup, VMware and AMD, avoid a second PCI scan; expose view-only device diagnostics; ensure DisplayManager mode transactions fail closed and software Desktop fallback is preserved. Physical VMware workstation/AMD labs are separately labeled NOT RUN if unavailable (#22); #20 read-only inventory scope is complete.
 
 **M2-4 / Kernel execution correctness (B):** extend negative Ring3 and scheduler stress tests, quiescent kernel stacks, bounded CPU-local ordering. Design SMP contracts but do not claim running AP cores.
 
@@ -59,7 +60,7 @@ Run [42334822081](https://github.com/kabasik007/ZillaOs/actions/runs/42334822081
 
 The complete commit graph was preserved through the multi-parent integration staging history. The old `fix/windows-wsl-path-build` branch included seven unique historical commits that are retained as a separate **ancestry parent**, but its old file versions intentionally do not replace newer Windows/WSL implementation on main. This is a history-preserving merge, not a fresh cherry-pick of obsolete code.
 
-`scripts/cleanup-i-m1-branches.ps1` provides an explicitly gated, **dry-run by default** deletion of the ten I-M1 branches after their tips are proven ancestors of merged main. No force push or `git reset` is used.
+**CLEANUP COMPLETED:** 10 retired I-M1 remote branches were deleted using a one-shot GitHub Actions job with SHA pinning and `git merge-base --is-ancestor` verification. The temporary cleanup branch deleted itself. All source commits are reachable from `main`; no force push or hard reset. `scripts/cleanup-i-m1-branches.ps1` remains an optional idempotent local verification tool and normally has nothing left to delete.
 
 ## Security gates before production claims
 
