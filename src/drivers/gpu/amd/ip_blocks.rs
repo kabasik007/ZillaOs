@@ -110,7 +110,6 @@ impl AsicIpInventory {
     }
 }
 
-
 /// Explicit per-IP diagnostic contracts. These are metadata only: no register
 /// addresses, firmware parser, queue or display scanout is available at A1.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -172,7 +171,10 @@ impl AsicIpInventory {
             if block.kind != IP_KINDS[index] {
                 return Err(IpContractError::IncorrectBlockOrder);
             }
-            if matches!(block.discovery, IpDiscovery::PresentVerified(IpVersion { major: 0, .. })) {
+            if matches!(
+                block.discovery,
+                IpDiscovery::PresentVerified(IpVersion { major: 0, .. })
+            ) {
                 return Err(IpContractError::InvalidVersion);
             }
         }
@@ -188,12 +190,24 @@ impl AsicIpInventory {
         Ok(TypedIpContracts {
             family_hint: self.family_hint,
             display,
-            gmc: GmcContract { version: self.blocks[2].discovery },
-            psp: PspContract { version: self.blocks[3].discovery },
-            smu: SmuContract { version: self.blocks[4].discovery },
-            ih: IhContract { version: self.blocks[5].discovery },
-            sdma: SdmaContract { version: self.blocks[6].discovery },
-            gfx: GfxContract { version: self.blocks[7].discovery },
+            gmc: GmcContract {
+                version: self.blocks[2].discovery,
+            },
+            psp: PspContract {
+                version: self.blocks[3].discovery,
+            },
+            smu: SmuContract {
+                version: self.blocks[4].discovery,
+            },
+            ih: IhContract {
+                version: self.blocks[5].discovery,
+            },
+            sdma: SdmaContract {
+                version: self.blocks[6].discovery,
+            },
+            gfx: GfxContract {
+                version: self.blocks[7].discovery,
+            },
         })
     }
 }
@@ -231,8 +245,12 @@ mod tests {
 
     #[test]
     fn independent_ip_contracts_keep_unknown_values_for_every_asic() {
-        for family in [AsicFamily::Unknown, AsicFamily::Polaris10,
-                       AsicFamily::Navi10, AsicFamily::Navi21] {
+        for family in [
+            AsicFamily::Unknown,
+            AsicFamily::Polaris10,
+            AsicFamily::Navi10,
+            AsicFamily::Navi21,
+        ] {
             let typed = AsicIpInventory::unknown(family).typed_contracts().unwrap();
             assert_eq!(typed.family_hint, family);
             assert_eq!(typed.display.dce, IpDiscovery::Unknown);
@@ -251,19 +269,29 @@ mod tests {
     fn malformed_ip_metadata_cannot_become_a_valid_asic_profile() {
         let mut ip = AsicIpInventory::unknown(AsicFamily::Navi21);
         ip.blocks.swap(0, 2);
-        assert_eq!(ip.typed_contracts(), Err(IpContractError::IncorrectBlockOrder));
+        assert_eq!(
+            ip.typed_contracts(),
+            Err(IpContractError::IncorrectBlockOrder)
+        );
         let mut ip = AsicIpInventory::unknown(AsicFamily::Navi21);
         ip.blocks[2].discovery = IpDiscovery::PresentVerified(IpVersion {
-            major: 0, minor: 1, revision: 0,
+            major: 0,
+            minor: 1,
+            revision: 0,
         });
         assert_eq!(ip.typed_contracts(), Err(IpContractError::InvalidVersion));
         let mut ip = AsicIpInventory::unknown(AsicFamily::Navi21);
         let version = IpDiscovery::PresentVerified(IpVersion {
-            major: 3, minor: 0, revision: 0,
+            major: 3,
+            minor: 0,
+            revision: 0,
         });
         ip.blocks[0].discovery = version;
         ip.blocks[1].discovery = version;
-        assert_eq!(ip.typed_contracts(), Err(IpContractError::ConflictingDisplayEngines));
+        assert_eq!(
+            ip.typed_contracts(),
+            Err(IpContractError::ConflictingDisplayEngines)
+        );
     }
 
     #[test]
