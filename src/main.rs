@@ -25,6 +25,8 @@ mod native_vm_staging;
 mod native_ring3;
 #[cfg(feature = "native-ring3-threads")]
 mod native_ring3_threads;
+#[cfg(feature = "native-ring3-preempt")]
+mod native_ring3_preempt;
 mod serial;
 
 use core::panic::PanicInfo;

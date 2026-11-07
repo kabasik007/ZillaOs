@@ -131,3 +131,14 @@ The VM must be fully powered off rather than suspended when replacing
 the mounted development ISO. The QEMU GUI CI captures serial logs and
 screenshots; the real VMware video and input paths must still be checked
 on the Windows host.
+
+## Timer preemption experiment (not enabled in VMware Desktop)
+
+After the cooperative `ring3-threads` trace passed real QEMU,
+the optional `native-ring3-preempt` fixture tests forced CPU0 context
+switching by real PIT IRQ0, with 15 saved GP registers and 5-entry user
+IRETQ frame. Read `docs/PROCESSES.md` for its exact test markers.
+This is a **single-CPU disposable experiment**, not the production APIC
+clock or a claim of real multi-core scheduling. The next milestones need
+guarded per-task kernel stacks, safe IRQ synchronization, APIC, real
+thread/process ownership, and eventually fully SMP-aware scheduling.

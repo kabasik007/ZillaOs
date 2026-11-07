@@ -42,6 +42,10 @@ native-ring3-kernel-fault = ["native-ring3"]
 # Never enabled for the Desktop or the other Ring3 regression ISOs.
 native-ring3-threads = ["native-ring3"]
 
+# Disposable QEMU experiment: real 8254/PIC IRQ0 preempts a busy Ring3 task.
+# Deliberately off in normal GUI Desktop/VMware images.
+native-ring3-preempt = ["native-ring3-threads"]
+
 # Explicit opt-in: host-only PE inspector, never bundled into bare-metal ISO.
 pe-inspector-cli = []
 

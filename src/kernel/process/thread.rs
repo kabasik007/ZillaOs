@@ -177,6 +177,22 @@ impl ThreadTable {
         Ok(())
     }
 
+    /// Mark a CPU0 timer-preempted task ready after saving its full trap
+    /// frame. This only changes metadata; the IRQ backend owns the register
+    /// switch and interrupt acknowledgement.
+    pub fn preempt_running(&mut self, cpu: usize, tid: Tid) -> Result<(), ThreadError> {
+        let thread = *self.get(tid).ok_or(ThreadError::UnknownThread)?;
+        if cpu >= MAX_CPUS || thread.state != ThreadState::Running
+            || thread.assigned_cpu != Some(cpu)
+        {
+            return Err(ThreadError::InvalidState);
+        }
+        let thread = self.get_mut(tid)?;
+        thread.state = ThreadState::Ready;
+        thread.assigned_cpu = None;
+        Ok(())
+    }
+
     pub fn yield_running(&mut self, tid: Tid) -> Result<(), ThreadError> {
         let t = self.get_mut(tid)?;
         if t.state != ThreadState::Running { return Err(ThreadError::InvalidState); }
@@ -262,6 +278,22 @@ mod tests {
         table.exit(tid).unwrap();
         assert_eq!(table.reap(tid),Ok(()));
         assert_eq!(table.get(tid),None);
+    }
+
+    #[test]
+    fn preemption_requires_current_cpu_ownership() {
+        let (processes, pid) = parent();
+        let mut threads = ThreadTable::new();
+        let tid = threads.create(&processes,pid,0x400000,0x800000,1).unwrap();
+        threads.prepare(&processes,tid).unwrap();
+        assert_eq!(threads.preempt_running(0,tid),Err(ThreadError::InvalidState));
+        threads.mark_running(0,tid).unwrap();
+        assert_eq!(threads.preempt_running(1,tid),Err(ThreadError::InvalidState));
+        assert_eq!(threads.preempt_running(0,tid),Ok(()));
+        assert_eq!(threads.get(tid).unwrap().state,ThreadState::Ready);
+        assert_eq!(threads.get(tid).unwrap().assigned_cpu,None);
+        threads.mark_running(0,tid).unwrap();
+        assert_eq!(threads.get(tid).unwrap().assigned_cpu,Some(0));
     }
 
     #[test]

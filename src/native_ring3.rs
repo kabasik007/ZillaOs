@@ -125,7 +125,7 @@ struct RunState {
 static RUN_STATE: SingleCpuCell<Option<RunState>> = SingleCpuCell(UnsafeCell::new(None));
 
 unsafe extern "C" {
-    fn zilla_native_enter(new_cr3: u64, entry: u64, user_rsp: u64);
+    fn zilla_native_enter(new_cr3: u64, entry: u64, user_rsp: u64, rflags: u64);
     fn zilla_native_interrupt();
     fn zilla_native_fault_ud();
     fn zilla_native_fault_gp();
@@ -149,7 +149,7 @@ zilla_native_enter:
     mov cr3, rdi
     push 0x1b
     push rdx
-    push 0x2
+    push rcx
     push 0x23
     push rsi
     iretq
@@ -318,6 +318,13 @@ pub(crate) fn install_gdt_tss_and_idt() -> Result<(), Ring3Error> {
         gates[13] = IdtGate::new(zilla_native_fault_gp as *const () as u64, false, 0);
         gates[14] = IdtGate::new(zilla_native_fault_pf as *const () as u64, false, 0);
         gates[0x80] = IdtGate::new(zilla_native_interrupt as *const () as u64, true, 0);
+        #[cfg(feature = "native-ring3-preempt")]
+        {
+            gates[0x20] = IdtGate::new(
+                crate::native_ring3_preempt::zilla_native_timer_irq as *const () as u64,
+                false, 0,
+            );
+        }
     }
 
     let gdtr = DescriptorPointer {
@@ -360,7 +367,15 @@ pub(crate) fn install_gdt_tss_and_idt() -> Result<(), Ring3Error> {
 /// Only invoke after installing GDT/TSS/IDT on the single BSP.
 pub(crate) unsafe fn enter_staged(root: u64, entry: u64, stack: u64) {
     // SAFETY: caller guarantees a validated user PML4 and Ring3 context.
-    unsafe { zilla_native_enter(root, entry, stack) }
+    unsafe { zilla_native_enter(root, entry, stack, 0x2) }
+}
+
+/// # Safety
+/// Call only after a real IRQ0 gate, legacy PIC and PIT are initialized.
+#[cfg(feature = "native-ring3-preempt")]
+pub(crate) unsafe fn enter_staged_with_timer(root: u64, entry: u64, stack: u64) {
+    // SAFETY: timer experiment installs IRQ0 first; IF=1 only in Ring3.
+    unsafe { zilla_native_enter(root, entry, stack, 0x202) }
 }
 
 fn copy_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
@@ -506,7 +521,11 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     let efer = (u64::from(hi) << 32) | u64::from(lo);
     if efer & (1 << 11) == 0 { return Err(Ring3Error::InvalidNx) }
 
-    #[cfg(feature = "native-ring3-threads")]
+    #[cfg(feature = "native-ring3-preempt")]
+    {
+        return unsafe { crate::native_ring3_preempt::run(staged, hhdm) };
+    }
+    #[cfg(all(feature = "native-ring3-threads", not(feature = "native-ring3-preempt")))]
     {
         return unsafe { crate::native_ring3_threads::run(staged, hhdm) };
     }
@@ -535,7 +554,7 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     install_gdt_tss_and_idt()?;
     serial::write("ZILLAOS_NATIVE_RING3_ENTER\n");
     // SAFETY: controlled text RX and stack RW user pages; IDT+TSS installed.
-    unsafe { zilla_native_enter(staged.root, CODE_VA, STACK_TOP) };
+    unsafe { zilla_native_enter(staged.root, CODE_VA, STACK_TOP, 0x2) };
     serial::write("ZILLAOS_NATIVE_RING3_RETURNED\n");
     let state = unsafe { &mut *RUN_STATE.0.get() }.take().ok_or(Ring3Error::UnexpectedExit)?;
     let reason = state.exit_reason.ok_or(Ring3Error::UnexpectedExit)?;

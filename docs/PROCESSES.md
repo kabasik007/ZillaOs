@@ -151,3 +151,29 @@ This is **true cooperative user context switching**, not timer preemption,
 SMP, arbitrary thread creation or a production ProcessManager backend.
 Only CPU0 is online, interrupts remain masked and all code is a fixed,
 audited 42-byte fixture. The GUI Desktop is unaffected.
+
+## Milestone 7 — isolated PIT IRQ0 preemption experiment
+
+`native-ring3-preempt` is an intentionally separate, QEMU-only ISO.
+The legacy 8254 PIT channel 0 is programmed to approximately 100 Hz;
+the 8259 PIC is remapped to IRQ0 vector 0x20, with all other IRQs masked.
+A DPL0 IDT interrupt gate saves **all 15 general-purpose registers and
+the five-qword CPL3 IRET frame**, samples each thread's busy-loop counter
+and R12 canary, and forcibly switches to the other ready thread.
+The user code does **not** call `SYS_YIELD` or make any syscall. Eight
+hardware timer ticks must show `ABABABAB`, with both counters strictly
+advancing. The kernel disables interrupts on return and restores the
+previous PIC IRQ masks, then prints `ZILLAOS_TIMER_PREEMPT_OK`.
+
+```bash
+bash scripts/build.sh ring3-preempt
+python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --timeout 45
+```
+
+**Strict limits:** only one bootstrap CPU; fixed two-thread program and
+immutable user pages, no dynamic process spawning, no APIC/SMP, no
+interruptible kernel sections, no proper IRQ scheduler on a production
+desktop, no real idle thread, no CPU accounting except eight test
+interrupts. PIC remapping and PIT programming occur **only** in this
+opt-in disposable QEMU ISO. Existing `demo`, `ring3`, `ring3-threads`,
+guard and kernel-boundary tests do not enable IRQ0.

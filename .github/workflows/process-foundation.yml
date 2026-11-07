@@ -10,6 +10,7 @@ on:
       - 'src/native_vm_staging.rs'
       - 'src/native_ring3.rs'
       - 'src/native_ring3_threads.rs'
+      - 'src/native_ring3_preempt.rs'
       - 'src/main.rs'
       - 'Cargo.toml'
       - 'scripts/build.sh'
@@ -52,6 +53,8 @@ jobs:
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-kernel-fault
       - name: Compile cooperative two-thread Ring3 fixture
         run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-threads
+      - name: Compile timer-preemption Ring3 experiment
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-preempt
 
   paging-audit-qemu:
     runs-on: ubuntu-24.04
@@ -248,4 +251,40 @@ jobs:
           path: |
             ring3-threads.log
             dist/*ring3-threads*.iso
+          if-no-files-found: warn
+
+  native-ring3-pit-preemption-qemu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU and ISO tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install Rust 1.90 target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build isolated PIT preemption ISO
+        run: bash scripts/build.sh ring3-preempt
+      - name: Require IRQ0 switching with no voluntary yield
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --timeout 45 | tee pit-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_ENTER' pit-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_RETURNED' pit-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_TRACE=ABABABAB' pit-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_TICKS=0x0000000000000008' pit-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_BOTH_PROGRESS' pit-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_OK' pit-preempt.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_OK' pit-preempt.log
+          grep -qx 'ZILLAOS_BOOT_OK' pit-preempt.log
+          if grep -Eq 'ZILLAOS_TIMER_PREEMPT_VERIFICATION_FAILED|ZILLAOS_NATIVE_RING3_FAILED|ZILLAOS_EXCEPTION_FATAL|ZILLAOS_PANIC' pit-preempt.log; then exit 1; fi
+      - name: Save timer preemption artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-pit-preempt-evidence
+          path: |
+            pit-preempt.log
+            dist/*ring3-preempt*.iso
           if-no-files-found: warn
