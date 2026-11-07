@@ -1,6 +1,12 @@
 name: AMDGPU A0 read-only PCI and IP model
 
 on:
+  push:
+    branches: ['feat/amd-gpu-discovery']
+    paths:
+      - 'src/drivers/gpu/amd/**'
+      - 'src/drivers/gpu/mod.rs'
+      - '.github/workflows/amd-gpu-a0.yml'
   pull_request:
     paths:
       - 'src/drivers/gpu/amd/**'
