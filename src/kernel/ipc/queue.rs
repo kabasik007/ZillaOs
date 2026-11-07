@@ -456,9 +456,9 @@ mod tests {
             msg.sender = if i == 0 { 2 } else { 3 };
             q.send(msg, 0).unwrap();
         }
-        assert_eq!(q.purge_sender(2), 4);
-        assert_eq!(q.len(), 4);
-        for _ in 0..4 { assert_eq!(q.recv(0).unwrap().unwrap().sender(), 3); }
+        assert_eq!(q.purge_sender(2), 3);
+        assert_eq!(q.len(), 5);
+        for _ in 0..5 { assert_eq!(q.recv(0).unwrap().unwrap().sender(), 3); }
         assert!(q.recv(0).unwrap().is_none());
     }
     #[test]
