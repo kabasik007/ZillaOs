@@ -94,7 +94,7 @@ impl BufferLayout {
         let required = u64::from(self.pitch_bytes)
             .checked_mul(u64::from(self.height))
             .ok_or(SurfaceError::SizeOverflow)?;
-        if required > MAX_SURFACE_BYTES {
+        if required > MAX_SURFACE_BYTES || self.byte_length > MAX_SURFACE_BYTES {
             return Err(SurfaceError::BudgetExceeded);
         }
         if self.byte_length < required {
@@ -431,6 +431,8 @@ mod tests {
         d.layout.height = 8192;
         d.layout.pitch_bytes = 8192 * 4;
         d.layout.byte_length = u64::MAX;
+        assert_eq!(d.layout.validate(), Err(SurfaceError::BudgetExceeded));
+        d.layout.byte_length = MAX_SURFACE_BYTES;
         assert_eq!(d.layout.validate(), Ok(256 * 1024 * 1024));
         d.layout.pitch_bytes += 4;
         assert_eq!(d.layout.validate(), Err(SurfaceError::BudgetExceeded));
@@ -546,6 +548,23 @@ mod tests {
         assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::InvalidMode));
         backend.list = [None, None];
         assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::MissingMode));
+    }
+
+    #[test]
+    fn generation_wrap_retires_handles_instead_of_resurrecting_them() {
+        let mut surfaces = SurfaceRegistry::<1>::new();
+        surfaces.slots[0].generation = u32::MAX;
+        let id = surfaces.create(descriptor()).unwrap();
+        assert_eq!(surfaces.destroy(id, SurfaceOwner::Process(42)), Ok(()));
+        assert_eq!(surfaces.create(descriptor()), Err(SurfaceError::NoSlots));
+        assert_eq!(surfaces.descriptor(id), Err(SurfaceError::StaleHandle));
+
+        let mut outputs = OutputRegistry::<1>::new();
+        outputs.slots[0].generation = u16::MAX;
+        let output = outputs.connect(0).unwrap();
+        assert_eq!(outputs.disconnect(output), Ok(()));
+        assert_eq!(outputs.connect(0), Err(OutputError::Retired));
+        assert!(!outputs.is_connected(output));
     }
 
     #[test]
