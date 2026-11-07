@@ -80,3 +80,96 @@ Future A2: select ONE actual test Radeon, record exact `1002:xxxx`, subsystem/re
 - Polaris `67df` hardware evidence: https://www.phoronix.com/review/radeon-rx580-linux/2
 
 No Linux driver code, firmware blobs or external headers are copied into ZillaOS. No VMware, Desktop, ProcessManager, WindowManager, boot/ISO or storage behavior is changed by these AMD model files.
+
+
+## I-M1: canonical Platform DeviceRegistry integration (2026-11-07)
+
+**Dependencies:** [Platform #17](https://github.com/kabasik007/ZillaOs/pull/17),
+[Integration #19](https://github.com/kabasik007/ZillaOs/pull/19),
+[Graphics #15](https://github.com/kabasik007/ZillaOs/pull/15),
+[Architecture #12](https://github.com/kabasik007/ZillaOs/pull/12).
+
+PR #13 is now based on `integration/20261107-cross-workstreams` because the
+canonical Platform PCI API and `src/platform/amd_bridge.rs` live in #19,
+not `main`. A two-parent non-force merge commit preserved the original A0
+history while importing #19's exact tree. No second Platform source tree,
+global registry or PCI scanner was added. **This is a temporary stacked-PR
+dependency**, not a change to `main`, and must be reviewed by the integration
+maintainer before either PR is merged.
+
+### Authoritative data flow
+
+```text
+Platform PCI scan_topology (once, read-only)
+    -> Platform PciInventory (bounded / segment-aware)
+    -> Platform DeviceRegistry::import_inventory (single owner)
+    -> DeviceRegistry::snapshot / get(DeviceId)
+    -> platform::amd_bridge::diagnose_registry[_device]
+    -> to_amd_identity (lossless compatibility conversion)
+    -> amd::match_amd_display (strict A0 candidate filter)
+    -> DetectedUnsupported + unknown ASIC/IP profile
+    -> optional read-only DisplayManager handoff; NO output/modeset
+```
+
+- `AmdInventoryAdapter` is retained as a legacy read-only compatibility
+  adapter for early tests. The canonical path is **DeviceRegistry**, not a
+  separate AMD scan. It never calls `PciConfigRead` during diagnosis.
+- `DeviceId {slot, generation}` is checked by the Platform registry on
+  every lookup. Old generation after fault, removal or re-insertion is
+  rejected; a `PciAddress` is never treated as a resource capability.
+- `diagnose_registry_device` accepts **only unowned Discovered** AMD PCI
+  display endpoints (header type 0, no bridge descriptor). It rejects
+  malformed identity, missing subsystem pair, invalid BDF, invalid class,
+  invalid device ID, claimed/matched devices and stale device IDs.
+  Non-AMD and AMD non-display functions are ignored, not bound.
+- `diagnose_registry` is a **bounded two-pass copy**. Its caller-supplied
+  output remains unchanged on an error or too-small capacity. This does
+  not mutate the registry, driver binding state or resource claims.
+- `AmdReadOnlyDiagnostic` carries canonical `DeviceId` and preserved
+  segment/BDF/device/subsystem/revision, plus an `AsicIpInventory` with
+  unknown IP versions. `revalidate_diagnostic` must succeed before
+  any future use of saved diagnostics. Its `may_touch_hardware()` is
+  always false.
+
+### ASIC and display boundaries
+
+`ip_blocks.rs` now exposes distinct **Display DCE/DCN, GMC, PSP, SMU,
+IH, SDMA, GFX** typed contracts with `Unknown` as the default for every
+family. `typed_contracts` checks block order, rejects impossible major
+version zero and conflicting simultaneous verified DCE/DCN display engines.
+Even a synthetic `PresentVerified` IP record is *not hardware attestation*
+and never authorizes initialization.
+
+`amd/display_contract.rs` supplies an inert `AmdDisplayHandoff`:
+`OutputId=None`, zero advertised display modes, explicit blocker
+(unknown display engine, invalid IP contract, or absent native driver)
+and `can_modeset=false` / `can_submit_commands=false`. It intentionally
+does not implement `ModeBackend` or `VideoDisplayBackend`. The
+DisplayManager owner will only connect a real adapter after validated
+resource ownership, firmware/ASIC evidence, physical monitor readback
+and a *tested* recovery path. GOP recovery cannot be assumed after
+native GPU reprogramming.
+
+### I-M1 host fixtures and acceptance levels
+
+New negative tests cover stale `DeviceId`, wrong segment/BDF, foreign
+driver binding/claimed states, malformed type-1 endpoint,
+incomplete subsystem, bad device/class, duplicate/unknown ASIC hints,
+insufficient diagnostic output capacity, invalid/misaligned IP metadata,
+DCE/DCN conflict, fake DCN versions that **still cannot modeset**,
+and a counted mock `scan_topology` proving that registry consumption
+adds **zero new PCI configuration reads**.
+
+- Source: Rust `no_std` read-only models and mock tests; **implemented**.
+- Host tests, Rustfmt, bare-metal build: check the latest #13 CI runs and
+  exact SHA, not merely previous A0 success.
+- QEMU/VMware actual boot: **not tested by these mock fixtures**.
+- Physical Radeon GPU: **not tested**, no specific board has an operational
+  driver. `SUPPORTED_BOARDS` remains empty.
+- Hardware writes, MMIO/DMA, firmware, ring commands, reset, display modeset:
+  **not implemented**; no new opt-in flag or default ISO changes.
+
+Before merging: reconcile #13's stacked dependency with Integration #19,
+verify CI for the exact final SHA, ensure no unrelated changes are pulled
+into this PR's diff, and keep the original VMware/Desktop/ProcessManager code
+untouched.
