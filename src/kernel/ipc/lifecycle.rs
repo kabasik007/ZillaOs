@@ -299,4 +299,101 @@ mod tests {
             Err(LifecycleError::Queue(QueueError::QueueFull)));
         assert_eq!(calls.count(), 0);
     }
+    #[test]
+    fn restart_creates_new_endpoint_id_and_old_handle_stays_revoked() {
+        let mut processes = ProcessTable::new();
+        let client = ready(&mut processes, "client");
+        let old_server = ready(&mut processes, "old-server");
+        let mut book = ProcessHandleBook::new();
+        book.bind(&processes, client).unwrap();
+        book.bind(&processes, old_server).unwrap();
+        let mut objects = ObjectRegistry::new();
+        let old_key = register_owned_object(&processes, &book, &mut objects,
+            old_server, ObjectKind::Endpoint).unwrap();
+        let old_handle = book.kernel_grant(&processes, client, &objects, old_key,
+            Rights::SEND).unwrap();
+        let mut queue = IpcQueue::new(old_key.id());
+        let mut calls = CallTracker::new();
+        processes.mark_running(client).unwrap();
+        processes.kill(old_server).unwrap();
+        process_exit_cleanup(&processes, old_server, &mut book, &mut objects,
+            &mut calls, &mut [&mut queue]).unwrap();
+        let fresh = ready(&mut processes, "new-server");
+        assert_ne!(fresh, old_server);
+        book.bind(&processes, fresh).unwrap();
+        let fresh_key = register_owned_object(&processes, &book, &mut objects,
+            fresh, ObjectKind::Endpoint).unwrap();
+        assert_ne!(old_key.id(), fresh_key.id());
+        assert_eq!(book.authorize_running(&processes, &objects, old_handle,
+            ObjectKind::Endpoint, Rights::SEND),
+            Err(BindingError::Capability(CapError::Revoked)));
+        let new_handle = book.kernel_grant(&processes, client, &objects, fresh_key,
+            Rights::SEND).unwrap();
+        assert_eq!(book.authorize_running(&processes, &objects, new_handle,
+            ObjectKind::Endpoint, Rights::SEND).unwrap(), fresh_key);
+    }
+    #[test]
+    fn process_exit_reclaims_capabilities_even_with_unreaped_child_tid() {
+        use crate::process::thread::{ThreadError, ThreadTable};
+        let mut processes = ProcessTable::new();
+        let parent = ready(&mut processes, "parent");
+        let mut threads = ThreadTable::new(); // authoritative thread model, not ours
+        let tid = threads.create(&processes, parent, 0x400000, 0x800000, 1).unwrap();
+        threads.prepare(&processes, tid).unwrap();
+        let mut book = ProcessHandleBook::new();
+        book.bind(&processes, parent).unwrap();
+        let mut registry = ObjectRegistry::new();
+        let owned = register_owned_object(&processes, &book, &mut registry,
+            parent, ObjectKind::Surface).unwrap();
+        book.kernel_grant(&processes, parent, &registry, owned, Rights::OBSERVE).unwrap();
+        processes.kill(parent).unwrap();
+        let mut calls = CallTracker::new();
+        let mut no_queues: [&mut IpcQueue; 0] = [];
+        let cleaned = process_exit_cleanup(&processes, parent, &mut book,
+            &mut registry, &mut calls, &mut no_queues).unwrap();
+        assert_eq!(cleaned.closed_handles, 1);
+        assert_eq!(cleaned.revoked_objects, 1);
+        assert_eq!(registry.validate(owned), Err(CapError::Revoked));
+        assert_eq!(threads.get(tid).unwrap().pid, parent);
+        assert_eq!(threads.create(&processes, parent, 0x400000, 0x800000, 1),
+            Err(ThreadError::ParentMissing));
+        threads.exit(tid).unwrap();
+        threads.reap(tid).unwrap(); // ProcessManager remains responsible for PID reap
+    }
+    #[test]
+    fn already_received_delegation_cannot_outlive_sender_exit() {
+        use crate::ipc::protocol::HANDLE_DESCRIPTOR_BYTES;
+        let mut processes = ProcessTable::new();
+        let sender = ready(&mut processes, "sender");
+        let receiver = ready(&mut processes, "receiver");
+        let mut book = ProcessHandleBook::new();
+        book.bind(&processes, sender).unwrap();
+        book.bind(&processes, receiver).unwrap();
+        let mut registry = ObjectRegistry::new();
+        let key = register_owned_object(&processes, &book, &mut registry,
+            sender, ObjectKind::Device).unwrap();
+        let source = book.kernel_grant(&processes, sender, &registry, key,
+            Rights::TRANSFER.union(Rights::OBSERVE)).unwrap();
+        let mut wire = [0u8; HEADER_BYTES + HANDLE_DESCRIPTOR_BYTES];
+        let request = wire_request(777);
+        wire[..HEADER_BYTES].copy_from_slice(&request[..HEADER_BYTES]);
+        wire[24..28].copy_from_slice(&0u32.to_le_bytes());
+        wire[28..30].copy_from_slice(&1u16.to_le_bytes());
+        wire[HEADER_BYTES..HEADER_BYTES+8].copy_from_slice(&source.raw().to_le_bytes());
+        wire[HEADER_BYTES+8..].copy_from_slice(&Rights::OBSERVE.bits().to_le_bytes());
+        let parsed = parse(&wire).unwrap();
+        processes.mark_running(sender).unwrap();
+        let received = Envelope::stage(sender.0, &parsed, book.by_pid(sender).unwrap(),
+            &registry, Some(100)).unwrap();
+        processes.kill(sender).unwrap();
+        let mut calls = CallTracker::new();
+        let mut none: [&mut IpcQueue; 0] = [];
+        process_exit_cleanup(&processes, sender, &mut book, &mut registry,
+            &mut calls, &mut none).unwrap();
+        processes.mark_running(receiver).unwrap();
+        assert!(matches!(deliver_to_running(&processes, &mut book, &registry, &received),
+            Err(LifecycleError::SenderExited)));
+        assert_eq!(book.by_pid(receiver).unwrap().count(), 0);
+    }
+
 }
