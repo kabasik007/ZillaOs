@@ -41,6 +41,7 @@ impl ThemeProfile {
             Wallpaper::Ocean => "ocean",
             Wallpaper::Sunset => "sunset",
             Wallpaper::Forest => "forest",
+            Wallpaper::Custom => "custom",
         };
         let accent = match self.accent {
             Accent::Teal => "teal",
@@ -73,6 +74,7 @@ impl ThemeProfile {
             Some("wallpaper=ocean") => Wallpaper::Ocean,
             Some("wallpaper=sunset") => Wallpaper::Sunset,
             Some("wallpaper=forest") => Wallpaper::Forest,
+            Some("wallpaper=custom") => Wallpaper::Custom,
             _ => return Err(DecodeError::InvalidContents),
         };
         let accent = match lines.next() {
@@ -102,6 +104,7 @@ pub enum ProfileStatus {
     NotFound,
     InvalidFile,
     StorageFull,
+    ImageUnavailable,
 }
 
 impl ProfileStatus {
@@ -130,6 +133,9 @@ impl ProfileStatus {
             (Self::StorageFull, Ukrainian) => "RAMFS ЗАПОВНЕНО",
             (Self::StorageFull, English) => "RAMFS IS FULL",
             (Self::StorageFull, Russian) => "RAMFS ЗАПОЛНЕН",
+            (Self::ImageUnavailable, Ukrainian) => "НЕМАЄ ШПАЛЕР У BOOT ISO",
+            (Self::ImageUnavailable, English) => "NO WALLPAPER IN BOOT ISO",
+            (Self::ImageUnavailable, Russian) => "НЕТ ОБОЕВ В BOOT ISO",
         }
     }
 
@@ -142,6 +148,7 @@ impl ProfileStatus {
             Self::NotFound => "NO THEME.TXT IN DOCUMENTS",
             Self::InvalidFile => "INVALID THEME.TXT FORMAT",
             Self::StorageFull => "RAMFS FULL - NOT SAVED",
+            Self::ImageUnavailable => "NO VALID CUSTOM BOOT WALLPAPER",
         }
     }
 }
@@ -152,7 +159,7 @@ mod tests {
 
     #[test]
     fn all_eighteen_profiles_round_trip() {
-        for wallpaper in [Wallpaper::Ocean, Wallpaper::Sunset, Wallpaper::Forest] {
+        for wallpaper in [Wallpaper::Ocean, Wallpaper::Sunset, Wallpaper::Forest, Wallpaper::Custom] {
             for accent in [Accent::Teal, Accent::Violet, Accent::Amber] {
                 for dark in [true, false] {
                     let theme = ThemeProfile { wallpaper, accent, dark };
@@ -189,7 +196,7 @@ mod tests {
                 ProfileStatus::SessionOnly, ProfileStatus::Modified,
                 ProfileStatus::Saved, ProfileStatus::Loaded,
                 ProfileStatus::NotFound, ProfileStatus::InvalidFile,
-                ProfileStatus::StorageFull,
+                ProfileStatus::StorageFull, ProfileStatus::ImageUnavailable,
             ] {
                 assert!(!status.localized(lang).is_empty());
             }

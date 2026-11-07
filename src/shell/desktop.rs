@@ -123,6 +123,8 @@ pub struct Desktop {
     pub dark: bool,
     /// Volatile desktop appearance and context menu (no disk persistence).
     pub wallpaper: Wallpaper,
+    /// Set once from a validated Limine boot module, never from PCI hardware.
+    pub custom_wallpaper_available: bool,
     pub accent: Accent,
     /// Status of THEME.TXT in volatile Documents RAMFS.
     pub profile_status: ProfileStatus,
@@ -170,6 +172,7 @@ impl Desktop {
             launcher_step: 0,
             dark: true,
             wallpaper: Wallpaper::Ocean,
+            custom_wallpaper_available: false,
             accent: Accent::Teal,
             profile_status: ProfileStatus::SessionOnly,
             settings_page: SettingsPage::Overview,
@@ -280,6 +283,13 @@ impl Desktop {
             None => self.profile_status = ProfileStatus::NotFound,
             Some(Err(_)) => self.profile_status = ProfileStatus::InvalidFile,
             Some(Ok(profile)) => {
+                // Custom profiles require a valid boot-time image asset.
+                if profile.wallpaper == Wallpaper::Custom
+                    && !self.custom_wallpaper_available
+                {
+                    self.profile_status = ProfileStatus::ImageUnavailable;
+                    return;
+                }
                 // Atomic application: first validate all fields, only then
                 // change visible desktop state.
                 self.wallpaper = profile.wallpaper;
@@ -310,8 +320,12 @@ impl Desktop {
                 self.profile_status = ProfileStatus::Modified;
             }
             SettingsAction::SetWallpaper(wallpaper) => {
-                self.wallpaper = wallpaper;
-                self.profile_status = ProfileStatus::Modified;
+                if wallpaper == Wallpaper::Custom && !self.custom_wallpaper_available {
+                    self.profile_status = ProfileStatus::ImageUnavailable;
+                } else {
+                    self.wallpaper = wallpaper;
+                    self.profile_status = ProfileStatus::Modified;
+                }
             }
             SettingsAction::SetAccent(accent) => {
                 self.accent = accent;
@@ -1326,6 +1340,29 @@ mod tests {
         d.settings_action(SettingsAction::SaveProfile);
         assert_eq!(d.profile_status, ProfileStatus::StorageFull);
         assert_eq!(d.ramfs, before);
+    }
+
+    #[test]
+    fn custom_wallpaper_requires_validated_boot_asset() {
+        let mut d = Desktop::new();
+        d.settings_action(SettingsAction::SetWallpaper(Wallpaper::Custom));
+        assert_eq!(d.wallpaper, Wallpaper::Ocean);
+        assert_eq!(d.profile_status, ProfileStatus::ImageUnavailable);
+        d.custom_wallpaper_available = true;
+        d.settings_action(SettingsAction::SetWallpaper(Wallpaper::Custom));
+        assert_eq!(d.wallpaper, Wallpaper::Custom);
+        d.settings_action(SettingsAction::SaveProfile);
+        assert_eq!(d.profile_status, ProfileStatus::Saved);
+        let saved = d.ramfs;
+        let mut no_asset = Desktop::new();
+        no_asset.ramfs = saved;
+        no_asset.settings_action(SettingsAction::LoadProfile);
+        assert_eq!(no_asset.profile_status, ProfileStatus::ImageUnavailable);
+        assert_eq!(no_asset.wallpaper, Wallpaper::Ocean);
+        d.settings_action(SettingsAction::ResetProfile);
+        d.settings_action(SettingsAction::LoadProfile);
+        assert_eq!(d.wallpaper, Wallpaper::Custom);
+        assert_eq!(d.profile_status, ProfileStatus::Loaded);
     }
 
     #[test]

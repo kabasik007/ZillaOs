@@ -11,6 +11,8 @@ pub enum Wallpaper {
     Ocean,
     Sunset,
     Forest,
+    /// Optional validated BMP asset bundled in the boot ISO.
+    Custom,
 }
 impl Wallpaper {
     pub const fn next(self) -> Self {
@@ -18,6 +20,7 @@ impl Wallpaper {
             Self::Ocean => Self::Sunset,
             Self::Sunset => Self::Forest,
             Self::Forest => Self::Ocean,
+            Self::Custom => Self::Ocean,
         }
     }
     pub const fn name(self, lang: Language) -> &'static str {
@@ -31,6 +34,9 @@ impl Wallpaper {
             (Self::Forest, Language::Ukrainian) => "ЛІС",
             (Self::Forest, Language::English) => "FOREST",
             (Self::Forest, Language::Russian) => "ЛЕС",
+            (Self::Custom, Language::Ukrainian) => "МОЇ ШПАЛЕРИ",
+            (Self::Custom, Language::English) => "MY WALLPAPER",
+            (Self::Custom, Language::Russian) => "МОИ ОБОИ",
         }
     }
     /// Predefined colors, not image files: no disk or asset loader needed.
@@ -42,6 +48,9 @@ impl Wallpaper {
             (Self::Sunset, false) => (0xf8b18b, 0xf6d4ba, 0xc87d72),
             (Self::Forest, true) => (0x081c22, 0x1e5649, 0x327f62),
             (Self::Forest, false) => (0xbedbd0, 0xe2efda, 0x589578),
+            // Safe procedural fallback if the module is absent or invalid.
+            (Self::Custom, true) => (0x061222, 0x0d3751, 0x167d91),
+            (Self::Custom, false) => (0xaed9f0, 0xe2f6fc, 0x438fa7),
         }
     }
 }
@@ -106,8 +115,8 @@ pub enum SettingsAction {
 /// Direct preset thumbnails and profile buttons share coordinates between
 /// hit-testing and the software renderer. They appear only when the Settings
 /// content is wide/tall enough; compact modes retain the existing cycle rows.
-pub const WALLPAPER_OPTIONS: [Wallpaper; 3] =
-    [Wallpaper::Ocean, Wallpaper::Sunset, Wallpaper::Forest];
+pub const WALLPAPER_OPTIONS: [Wallpaper; 4] =
+    [Wallpaper::Ocean, Wallpaper::Sunset, Wallpaper::Forest, Wallpaper::Custom];
 pub const ACCENT_OPTIONS: [Accent; 3] =
     [Accent::Teal, Accent::Violet, Accent::Amber];
 
@@ -125,15 +134,17 @@ pub fn content_geometry(rect: Rect) -> (usize, usize, usize, usize) {
 }
 
 pub fn preset_tile(rect: Rect, row: GalleryRow, index: usize) -> Option<Rect> {
-    if index >= 3 { return None; }
+    if index >= match row { GalleryRow::Wallpaper => 4, GalleryRow::Accent => 3 } {
+        return None;
+    }
     let (cx, cw, body, h) = content_geometry(rect);
     let dy = match row {
         GalleryRow::Wallpaper => 64,
         GalleryRow::Accent => 127,
     };
-    if cw < 370 || h < dy + 36 { return None; }
+    if cw < 420 || h < dy + 36 { return None; }
     Some(Rect {
-        x: cx + cw - 160 + index * 52,
+        x: cx + cw - 214 + index * 52,
         y: body + dy,
         width: 45,
         height: 34,
@@ -354,7 +365,7 @@ mod tests {
     #[test]
     fn every_gallery_swatch_hits_its_exact_preset() {
         let rect = Rect{x:100,y:80,width:750,height:460};
-        for i in 0..3 {
+        for i in 0..4 {
             let wallpaper = preset_tile(rect, GalleryRow::Wallpaper, i).unwrap();
             assert_eq!(
                 settings_hit(rect, SettingsPage::Personalization,
@@ -387,6 +398,25 @@ mod tests {
         let small = Rect{x:5,y:5,width:280,height:200};
         assert!(profile_button(small,ProfileButton::Save).is_none());
         assert!(preset_tile(small, GalleryRow::Wallpaper,0).is_none());
+    }
+
+    #[test]
+    fn fourth_wallpaper_slot_never_becomes_fourth_accent_slot() {
+        let r = Rect{x:100,y:80,width:750,height:460};
+        assert!(preset_tile(r, GalleryRow::Wallpaper, 3).is_some());
+        assert!(preset_tile(r, GalleryRow::Accent, 3).is_none());
+    }
+
+    #[test]
+    fn optional_custom_slot_stays_inside_gallery() {
+        let rect = Rect{x:100,y:80,width:750,height:460};
+        let custom = preset_tile(rect, GalleryRow::Wallpaper, 3).unwrap();
+        let (cx, cw, _, _) = content_geometry(rect);
+        assert!(custom.x >= cx && custom.x + custom.width <= cx + cw);
+        assert_eq!(settings_hit(rect, SettingsPage::Personalization,
+                   custom.x + 5, custom.y + 5),
+                   Some(SettingsAction::SetWallpaper(Wallpaper::Custom)));
+        assert_eq!(Wallpaper::Custom.next(), Wallpaper::Ocean);
     }
 
     #[test]

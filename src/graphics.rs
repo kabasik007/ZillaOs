@@ -6,6 +6,7 @@ use core::cell::UnsafeCell;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use crate::limine::{self, Framebuffer};
+use crate::wallpaper_asset;
 use zillaos_kernel::desktop::{App, Desktop, Layout, Pointer};
 use zillaos_kernel::locale::{text as tr, TextId};
 use zillaos_kernel::fs::{self, NodeKind};
@@ -494,7 +495,51 @@ impl Screen {
         }
     }
 
+    /// Scale an immutable, bootloader-decoded BMP into the current RGB32
+    /// GOP framebuffer. No disk access, heap or GPU acceleration. The
+    /// Limine module bytes were copied to BSS during early startup.
+    fn custom_background(&self) -> bool {
+        let Some(image) = wallpaper_asset::current() else { return false; };
+        let width = self.fb.width;
+        let height = self.fb.height;
+        if self.buffered {
+            // SAFETY: the renderer runs on the bootstrap CPU only; the
+            // image is immutable and framebuffer fits static backing BSS.
+            let dst = unsafe { &mut *BACKBUFFER.0.get() };
+            for y in 0..height {
+                let sy = (y as u64 * image.height as u64 / height as u64) as usize;
+                let from = sy * image.width;
+                let to = y * width;
+                for x in 0..width {
+                    let sx = (x as u64 * image.width as u64 / width as u64) as usize;
+                    dst[to + x] = self.rgb(image.pixels[from + sx]);
+                }
+            }
+        } else {
+            // SAFETY: validated Limine framebuffer spans width*height and
+            // pitch bytes; per-pixel indices are inside visible bounds.
+            for y in 0..height {
+                let sy = (y as u64 * image.height as u64 / height as u64) as usize;
+                let from = sy * image.width;
+                for x in 0..width {
+                    let sx = (x as u64 * image.width as u64 / width as u64) as usize;
+                    let offset = y * self.fb.pitch + x * 4;
+                    unsafe {
+                        ptr::write_volatile(
+                            self.fb.address.add(offset).cast::<u32>(),
+                            self.rgb(image.pixels[from + sx]),
+                        );
+                    }
+                }
+            }
+        }
+        true
+    }
+
     fn background(&self, state: &Desktop) {
+        if state.wallpaper == Wallpaper::Custom && self.custom_background() {
+            return;
+        }
         let h = self.fb.height;
         let w = self.fb.width;
         let (top, bottom, horizon) = state.wallpaper.palette(state.dark);
@@ -504,7 +549,7 @@ impl Screen {
             self.rectangle(0, row, w, 1, color);
         }
         match state.wallpaper {
-            Wallpaper::Ocean => {
+            Wallpaper::Ocean | Wallpaper::Custom => {
                 self.rectangle(w / 6, h * 62 / 100, w * 2 / 3, 2, horizon);
                 self.rectangle(w / 5, h * 64 / 100, w * 3 / 5, 1, horizon);
                 self.rectangle(w / 3, h * 20 / 100, 3, h / 3, horizon);
@@ -939,21 +984,43 @@ impl Screen {
                                             tile.y.saturating_sub(2),
                                             tile.width + 4, tile.height + 4, 8, state.accent.rgb());
                                     }
-                                    let (top, bottom, horizon) = wallpaper.palette(state.dark);
-                                    self.round_rect(tile.x, tile.y, tile.width, tile.height,
-                                                    6, bottom);
-                                    // Tiny gradient preview of the actual procedural backdrop.
-                                    for line in 2..tile.height.saturating_sub(2) {
-                                        let t = (line * 255 / tile.height) as u32;
-                                        self.rectangle(tile.x + 3, tile.y + line,
-                                            tile.width.saturating_sub(6), 1,
-                                            personalization::gradient(top, bottom, t));
+                                    if wallpaper == Wallpaper::Custom {
+                                        // A missing user asset is clearly disabled-looking,
+                                        // but remains clickable to explain the requirement.
+                                        if let Some(image) = wallpaper_asset::current() {
+                                            for line in 2..tile.height.saturating_sub(2) {
+                                                let iy = (line * image.height / tile.height)
+                                                    .min(image.height - 1);
+                                                for column in 3..tile.width.saturating_sub(3) {
+                                                    let ix = (column * image.width / tile.width)
+                                                        .min(image.width - 1);
+                                                    self.rectangle(tile.x + column,
+                                                        tile.y + line, 1, 1,
+                                                        image.pixels[iy * image.width + ix]);
+                                                }
+                                            }
+                                        } else {
+                                            self.round_rect(tile.x, tile.y, tile.width,
+                                                            tile.height, 6, 0x59616e);
+                                            self.text("N/A", tile.x + 12,
+                                                      tile.y + 13, 1, 0xf7f7f7);
+                                        }
+                                    } else {
+                                        let (top, bottom, horizon) = wallpaper.palette(state.dark);
+                                        self.round_rect(tile.x, tile.y, tile.width, tile.height,
+                                                        6, bottom);
+                                        for line in 2..tile.height.saturating_sub(2) {
+                                            let t = (line * 255 / tile.height) as u32;
+                                            self.rectangle(tile.x + 3, tile.y + line,
+                                                tile.width.saturating_sub(6), 1,
+                                                personalization::gradient(top, bottom, t));
+                                        }
+                                        self.rectangle(tile.x + 3, tile.y + tile.height * 2 / 3,
+                                            tile.width.saturating_sub(6), 2, horizon);
                                     }
-                                    self.rectangle(tile.x + 3, tile.y + tile.height * 2 / 3,
-                                        tile.width.saturating_sub(6), 2, horizon);
                                 }
                             }
-                            if cw < 370 && cw >= 160 {
+                            if cw < 420 && cw >= 160 {
                                 let (top, bottom, _) = state.wallpaper.palette(state.dark);
                                 self.round_rect(cx + cw - 61, body + 64, 48, 34, 6,
                                     personalization::gradient(top, bottom, 130));
@@ -981,7 +1048,7 @@ impl Screen {
                                         tile.width, tile.height, 6, color.rgb());
                                 }
                             }
-                            if cw < 370 && cw >= 160 {
+                            if cw < 420 && cw >= 160 {
                                 self.round_rect(cx + cw - 51, body + 132,
                                                 30, 28, 7, state.accent.rgb());
                             }

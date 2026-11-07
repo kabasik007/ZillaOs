@@ -5,3 +5,6 @@
 *.log
 *.fd
 .DS_Store
+
+# Private user-supplied wallpaper; bundled locally but never committed.
+/assets/wallpaper.bmp

@@ -96,6 +96,21 @@ cp "$(find_limine_file limine-uefi-cd.bin)" "$STAGING/boot/limine-uefi-cd.bin"
 cp "$ROOT/boot/limine.conf" "$STAGING/limine.conf"
 cp "$KERNEL" "$STAGING/boot/zillaos-kernel"
 
+# Optional private bitmap asset. Normal ISO remains byte-for-byte unchanged
+# in this section when assets/wallpaper.bmp does not exist. The image is
+# bundled as a Limine module for ALL six boot resolutions, with no disk writes
+# or boot file probing by the running kernel.
+if [[ -f "$ROOT/assets/wallpaper.bmp" ]]; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "python3 is required when assets/wallpaper.bmp exists" >&2
+        exit 2
+    fi
+    python3 "$ROOT/scripts/wallpaper_asset.py" stage \
+        "$ROOT/assets/wallpaper.bmp" \
+        --iso-root "$STAGING" \
+        --config "$ROOT/boot/limine.conf"
+fi
+
 xorriso -as mkisofs -R -r -J \
     --efi-boot boot/limine-uefi-cd.bin \
     -efi-boot-part --efi-boot-image \

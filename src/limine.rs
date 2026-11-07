@@ -46,6 +46,24 @@ struct StackSizeRequest {
     stack_size: u64,
 }
 
+/// Initial five fields of Limine's base-revision-6 limine_file.
+/// Only these fields are accessed; protocol owns the rest of the struct.
+#[repr(C)]
+struct ModuleFile {
+    revision: u64,
+    address: *const u8,
+    size: u64,
+    path: *const u8,
+    string: *const u8,
+}
+
+#[repr(C)]
+struct ModuleResponse {
+    revision: u64,
+    module_count: u64,
+    modules: *const *const ModuleFile,
+}
+
 #[repr(C)]
 struct FramebufferResponse {
     revision: u64,
@@ -159,6 +177,19 @@ static FRAMEBUFFER: Request<FramebufferResponse> = Request {
 };
 
 #[used]
+#[unsafe(link_section = ".limine_requests")]
+static MODULES: Request<ModuleResponse> = Request {
+    id: [
+        0xc7b1dd30df4c8b88,
+        0x0a82e883a194f07b,
+        0x3e7e279702be32af,
+        0xca1c4f3bd1280cee,
+    ],
+    revision: 0,
+    response: AtomicPtr::new(ptr::null_mut()),
+};
+
+#[used]
 #[unsafe(link_section = ".limine_requests_end")]
 static REQUESTS_END: [u64; 2] = [
     0xadc0e0531bb10d03, 0x9572709f31764c62,
@@ -190,6 +221,55 @@ pub fn hhdm_offset() -> Result<u64, BootError> {
         return Err(BootError::InvalidHhdm);
     }
     Ok(offset)
+}
+
+
+/// Copy/inspect an optional, bounded image module synchronously.
+/// The callback MUST consume the bytes immediately: bootloader module pages
+/// may be reclaimed in the future. Only the module with the exact
+/// "zillaos-wallpaper" string is accepted, never the first arbitrary module.
+///
+/// SAFETY: Limine base revision 6 provides valid mapped response structures,
+/// pointers to module descriptors, and zero-terminated module strings while
+/// the early kernel retains bootloader-owned pages. Count and data length are
+/// bounded, and the bitmap parser independently validates every byte range.
+pub fn with_wallpaper_module<R>(inspect: impl FnOnce(&[u8]) -> R) -> Option<R> {
+    if BASE_REVISION.revision.load(Ordering::Acquire) != 0 {
+        return None;
+    }
+    let response_ptr = MODULES.response.load(Ordering::Acquire);
+    if response_ptr.is_null() { return None; }
+    // SAFETY: Limine mapped response pointer, not reclaimed in early boot.
+    let response = unsafe { &*response_ptr };
+    let count = usize::try_from(response.module_count).ok()?;
+    if count == 0 || count > 16 || response.modules.is_null() { return None; }
+    for index in 0..count {
+        // SAFETY: response contains exactly module_count descriptors.
+        let file_ptr = unsafe { *response.modules.add(index) };
+        if file_ptr.is_null() { continue; }
+        // SAFETY: descriptor pointer is Limine-owned until boot reclamation.
+        let file = unsafe { &*file_ptr };
+        if file.string.is_null() || file.address.is_null() {
+            continue;
+        }
+        const LABEL: &[u8] = b"zillaos-wallpaper\0";
+        // SAFETY: Limine provides a zero-terminated ASCII module string;
+        // stop comparing after the first short-circuit mismatch.
+        let name_matches = LABEL.iter().enumerate().all(|(n, b)| {
+            unsafe { *file.string.add(n) } == *b
+        });
+        if !name_matches { continue; }
+        let length = usize::try_from(file.size).ok()?;
+        if !(54..=zillaos_kernel::video::bmp::MAX_FILE_BYTES).contains(&length)
+            || (file.address as usize).checked_add(length).is_none()
+        {
+            return None;
+        }
+        // SAFETY: file.address points to at least file.size mapped bytes.
+        let bytes = unsafe { core::slice::from_raw_parts(file.address, length) };
+        return Some(inspect(bytes));
+    }
+    None
 }
 
 pub struct BootMemoryMap {

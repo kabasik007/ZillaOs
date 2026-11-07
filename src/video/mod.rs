@@ -11,6 +11,9 @@ pub mod gpu;
 // Pure transactional mode switching; no runtime hardware backend yet.
 pub mod display_manager;
 
+// Read-only bounded BMP asset decoder; no graphics hardware access.
+pub mod bmp;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VideoAdapter {
     FirmwareOnly,

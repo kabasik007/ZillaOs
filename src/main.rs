@@ -9,6 +9,8 @@ mod framebuffer;
 #[cfg(feature = "vm-demo")]
 mod graphics;
 #[cfg(feature = "vm-demo")]
+mod wallpaper_asset;
+#[cfg(feature = "vm-demo")]
 mod input;
 #[cfg(feature = "vm-demo")]
 mod pci_io;
@@ -365,10 +367,23 @@ pub extern "C" fn _start() -> ! {
             serial::write("ZILLAOS_SETUP_NOT_COMPLETED\n");
         }
 
+        // Limine modules are read only once, copied to bounded BSS before
+        // any future bootloader-memory reclaim. Invalid BMPs are optional.
+        let boot_wallpaper = wallpaper_asset::initialize();
+        serial::write(if boot_wallpaper {
+            "ZILLAOS_WALLPAPER_MODULE=READY\n"
+        } else {
+            "ZILLAOS_WALLPAPER_MODULE=ABSENT_OR_INVALID\n"
+        });
+
         let mut desktop = Desktop::with_layout(layout.unwrap_or_else(|| {
             Layout::for_size(1024, 768).expect("static fallback viewport")
         }));
         desktop.dark = wizard.dark;
+        desktop.custom_wallpaper_available = boot_wallpaper;
+        if boot_wallpaper {
+            desktop.wallpaper = zillaos_kernel::shell::personalization::Wallpaper::Custom;
+        }
         desktop.hostname = wizard.hostname;
         desktop.language = wizard.language;
         desktop.region = wizard.region;
