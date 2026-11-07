@@ -4,7 +4,7 @@ use crate::capabilities::{
     CapError, Delegation, HandleTable, ObjectId, ObjectRegistry,
 };
 use super::protocol::{
-    MessageHeaderV1, ParsedMessage, MAX_MESSAGE_HANDLES, MAX_PAYLOAD_BYTES,
+    MessageHeaderV1, MessageKind, ParsedMessage, MAX_MESSAGE_HANDLES, MAX_PAYLOAD_BYTES,
 };
 
 pub const QUEUE_DEPTH: usize = 8;
@@ -13,7 +13,7 @@ pub const MAX_PENDING_CALLS: usize = 16;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QueueError {
     InvalidRequest, WrongPeer, NotFound, AlreadyExists, StillPending,
-    Full, QueueFull, TimedOut, ServerGone, Canceled, BadCapability(CapError),
+    Full, QueueFull, TimedOut, ServerGone, Canceled, StaleCall, BadCapability(CapError),
 }
 impl From<CapError> for QueueError {
     fn from(value: CapError) -> Self { Self::BadCapability(value) }
@@ -23,7 +23,7 @@ impl From<CapError> for QueueError {
 /// Delegations reference kernel registry entries, never serialized pointers.
 #[derive(Clone, Copy)]
 pub struct Envelope {
-    pub sender: u64,
+    sender: u64,
     pub header: MessageHeaderV1,
     payload: [u8; MAX_PAYLOAD_BYTES],
     grants: [Option<Delegation>; MAX_MESSAGE_HANDLES],
@@ -50,6 +50,7 @@ impl Envelope {
             sender, header: parsed.header, payload, grants, deadline_ms,
         })
     }
+    pub const fn sender(&self) -> u64 { self.sender }
     pub fn payload(&self) -> &[u8] { &self.payload[..self.header.payload_len] }
     pub fn validate_transfers(&self, objects: &ObjectRegistry) -> Result<(), QueueError> {
         for grant in self.grants.iter().take(self.header.handle_count).flatten() {
@@ -96,6 +97,7 @@ impl IpcQueue {
             closed: false, rejected_full: 0, expired: 0,
         }
     }
+    pub const fn server(&self) -> ObjectId { self.server }
     pub const fn len(&self) -> usize { self.len }
     pub const fn is_closed(&self) -> bool { self.closed }
     pub fn send(&mut self, msg: Envelope, now_ms: u64) -> Result<(), QueueError> {
@@ -109,6 +111,45 @@ impl IpcQueue {
         self.slots[tail] = Some(msg);
         self.len += 1;
         Ok(())
+    }
+    /// Atomic single-thread model: register correlation and enqueue or roll back
+    /// the pending call on *any* queue failure. No SMP transaction yet.
+    pub fn send_tracked(
+        &mut self, calls: &mut CallTracker, msg: Envelope,
+        deadline_ms: u64, now_ms: u64,
+    ) -> Result<CallToken, QueueError> {
+        if msg.header.kind != MessageKind::Request
+            || msg.deadline_ms != Some(deadline_ms) {
+            return Err(QueueError::InvalidRequest);
+        }
+        let client = msg.sender;
+        let request_id = msg.header.request_id;
+        let token = calls.start_token(client, self.server, request_id, deadline_ms, now_ms)?;
+        if let Err(error) = self.send(msg, now_ms) {
+            calls.rollback_start(token);
+            return Err(error);
+        }
+        Ok(token)
+    }
+    /// Remove exiting sender's queued messages while preserving FIFO order.
+    pub fn purge_sender(&mut self, sender: u64) -> usize {
+        let original = self.len;
+        let mut removed = 0;
+        for _ in 0..original {
+            let item = self.slots[self.head].take();
+            self.head = (self.head + 1) % QUEUE_DEPTH;
+            self.len -= 1;
+            if let Some(message) = item {
+                if message.sender == sender {
+                    removed += 1;
+                } else {
+                    let tail = (self.head + self.len) % QUEUE_DEPTH;
+                    self.slots[tail] = Some(message);
+                    self.len += 1;
+                }
+            }
+        }
+        removed
     }
     /// Non-blocking model. Actual wait/wakeup requires a scheduler integration.
     pub fn recv(&mut self, now_ms: u64) -> Result<Option<Envelope>, QueueError> {
