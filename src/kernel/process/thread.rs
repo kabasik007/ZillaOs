@@ -34,6 +34,7 @@ pub enum ThreadError {
     InvalidState,
     CpuOffline,
     CpuBusy,
+    StackAttached,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -226,6 +227,23 @@ impl ThreadTable {
         Ok(())
     }
 
+    /// Model-only, all-or-nothing teardown of non-running TIDs for one
+    /// authoritative PID. A CPU still running any matching TID rejects the
+    /// entire operation BEFORE any state is changed. Kernel stack/VMM
+    /// reclamation belongs to a later, separately acknowledged stage.
+    pub fn terminate_owned_quiescent(&mut self, pid: Pid) -> Result<usize, ThreadError> {
+        if self.iter().any(|t| t.pid == pid && t.state == ThreadState::Running) {
+            return Err(ThreadError::CpuBusy);
+        }
+        let mut count = 0;
+        for thread in self.slots.iter_mut().flatten().filter(|t| t.pid == pid) {
+            thread.state = ThreadState::Exited;
+            thread.assigned_cpu = None;
+            count += 1;
+        }
+        Ok(count)
+    }
+
     pub fn reap(&mut self, tid: Tid) -> Result<(), ThreadError> {
         let slot = self.slots.iter_mut()
             .find(|slot| slot.as_ref().is_some_and(|t| t.tid == tid))
@@ -341,4 +359,23 @@ mod tests {
         let new_tid=t.create(&processes,pid,0x400000,0x800000,1).unwrap();
         assert!(new_tid > first.unwrap());
     }
+    #[test]
+    fn terminate_owned_quiescent_rejects_running_before_any_other_thread_changes() {
+        let (processes, pid) = parent();
+        let mut table = ThreadTable::new();
+        let a = table.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
+        let b = table.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
+        table.prepare(&processes, a).unwrap();
+        table.prepare(&processes, b).unwrap();
+        table.mark_running(0, a).unwrap();
+        assert_eq!(table.terminate_owned_quiescent(pid), Err(ThreadError::CpuBusy));
+        assert_eq!(table.get(b).unwrap().state, ThreadState::Ready);
+        table.yield_running(a).unwrap();
+        assert_eq!(table.terminate_owned_quiescent(pid), Ok(2));
+        assert_eq!(table.get(a).unwrap().state, ThreadState::Exited);
+        assert_eq!(table.get(b).unwrap().state, ThreadState::Exited);
+        assert_eq!(table.reap(a), Ok(()));
+        assert_eq!(table.reap(a), Err(ThreadError::UnknownThread));
+    }
+
 }
