@@ -64,8 +64,11 @@ The supplied output ID is generation-tagged; a backend must reject stale
 outputs, invalid/mismatched scanout format, unowned memory and insufficient
 apertures **without writes**.
 
-The `enumerate_modes` destination is caller-bounded. A backend must return
-at most `out.len()` and fill only validated entries. Unknown refresh is
+The `enumerate_modes` destination is caller-bounded. The
+`discover_modes` wrapper enforces active output generation, return count,
+populated entries, sane dimensions, nonzero known refresh and deduplication
+before exposing a catalogue. A backend must return at most `out.len()`
+and fill only validated entries. Unknown refresh is
 `None`, not a guessed 60 Hz. Adapter support for multi-output is a **future
 contract**; the current `DisplayManager` still tracks one `Mode`.
 Do not create a second DisplayManager per GPU vendor.
