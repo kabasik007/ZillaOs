@@ -3,6 +3,7 @@
 //! storage backend exists; the on-disk file format is only prepared here.
 
 use super::personalization::{Wallpaper, Accent};
+use crate::setup::Language;
 
 pub const PROFILE_FILE: &str = "THEME.TXT";
 pub const ENCODED_CAPACITY: usize = 80;
@@ -104,6 +105,34 @@ pub enum ProfileStatus {
 }
 
 impl ProfileStatus {
+    /// Visible labels in the currently selected desktop language.
+    pub const fn localized(self, lang: Language) -> &'static str {
+        use Language::{Ukrainian, English, Russian};
+        match (self, lang) {
+            (Self::SessionOnly, Ukrainian) => "ЛИШЕ ЦЯ СЕСІЯ",
+            (Self::SessionOnly, English) => "THIS SESSION ONLY",
+            (Self::SessionOnly, Russian) => "ТОЛЬКО ЭТА СЕССИЯ",
+            (Self::Modified, Ukrainian) => "ЗМІНИ НЕ ЗБЕРЕЖЕНІ",
+            (Self::Modified, English) => "CHANGES NOT SAVED",
+            (Self::Modified, Russian) => "ИЗМЕНЕНИЯ НЕ СОХРАНЕНЫ",
+            (Self::Saved, Ukrainian) => "ЗБЕРЕЖЕНО В RAMFS",
+            (Self::Saved, English) => "SAVED TO RAMFS",
+            (Self::Saved, Russian) => "СОХРАНЕНО В RAMFS",
+            (Self::Loaded, Ukrainian) => "ЗАВАНТАЖЕНО З RAMFS",
+            (Self::Loaded, English) => "LOADED FROM RAMFS",
+            (Self::Loaded, Russian) => "ЗАГРУЖЕНО ИЗ RAMFS",
+            (Self::NotFound, Ukrainian) => "THEME.TXT НЕ ЗНАЙДЕНО",
+            (Self::NotFound, English) => "THEME.TXT NOT FOUND",
+            (Self::NotFound, Russian) => "THEME.TXT НЕ НАЙДЕН",
+            (Self::InvalidFile, Ukrainian) => "THEME.TXT ПОШКОДЖЕНО",
+            (Self::InvalidFile, English) => "INVALID THEME.TXT",
+            (Self::InvalidFile, Russian) => "THEME.TXT ПОВРЕЖДЁН",
+            (Self::StorageFull, Ukrainian) => "RAMFS ЗАПОВНЕНО",
+            (Self::StorageFull, English) => "RAMFS IS FULL",
+            (Self::StorageFull, Russian) => "RAMFS ЗАПОЛНЕН",
+        }
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::SessionOnly => "RAM SESSION ONLY",
@@ -151,6 +180,20 @@ mod tests {
             assert!(ThemeProfile::decode(text.as_bytes()).is_err());
         }
         assert_eq!(ThemeProfile::decode(&[0xff, 0xfe]), Err(DecodeError::InvalidUtf8));
+    }
+
+    #[test]
+    fn profile_status_is_translated_to_all_desktop_languages() {
+        for lang in [Language::Ukrainian, Language::English, Language::Russian] {
+            for status in [
+                ProfileStatus::SessionOnly, ProfileStatus::Modified,
+                ProfileStatus::Saved, ProfileStatus::Loaded,
+                ProfileStatus::NotFound, ProfileStatus::InvalidFile,
+                ProfileStatus::StorageFull,
+            ] {
+                assert!(!status.localized(lang).is_empty());
+            }
+        }
     }
 
     #[test]

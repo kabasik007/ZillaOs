@@ -143,6 +143,23 @@ pub fn preset_tile(rect: Rect, row: GalleryRow, index: usize) -> Option<Rect> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProfileButton { Save, Load, Reset }
 
+impl ProfileButton {
+    pub const fn label(self, language: Language) -> &'static str {
+        use Language::{Ukrainian, English, Russian};
+        match (self, language) {
+            (Self::Save, Ukrainian) => "ЗБЕРЕГТИ",
+            (Self::Save, English) => "SAVE RAM",
+            (Self::Save, Russian) => "СОХРАНИТЬ",
+            (Self::Load, Ukrainian) => "ЗАВАНТАЖИТИ",
+            (Self::Load, English) => "LOAD RAM",
+            (Self::Load, Russian) => "ЗАГРУЗИТЬ",
+            (Self::Reset, Ukrainian) => "СКИНУТИ",
+            (Self::Reset, English) => "RESET",
+            (Self::Reset, Russian) => "СБРОС",
+        }
+    }
+}
+
 pub fn profile_button(rect: Rect, button: ProfileButton) -> Option<Rect> {
     let (cx, cw, body, h) = content_geometry(rect);
     if cw < 330 || h < 339 { return None; }
@@ -370,6 +387,15 @@ mod tests {
         let small = Rect{x:5,y:5,width:280,height:200};
         assert!(profile_button(small,ProfileButton::Save).is_none());
         assert!(preset_tile(small, GalleryRow::Wallpaper,0).is_none());
+    }
+
+    #[test]
+    fn profile_buttons_are_localized() {
+        for language in [Language::Ukrainian, Language::English, Language::Russian] {
+            for button in [ProfileButton::Save, ProfileButton::Load, ProfileButton::Reset] {
+                assert!(!button.label(language).is_empty());
+            }
+        }
     }
 
     #[test]

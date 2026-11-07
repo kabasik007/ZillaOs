@@ -1000,14 +1000,13 @@ impl Screen {
                                       cx, body + 250, 1, secondary);
                         }
                         if content_h > 291 {
-                            self.text(state.profile_status.label(),
+                            self.text(state.profile_status.localized(state.language),
                                       cx, body + 273, 1, secondary);
                         }
-                        for (button, text) in [
-                            (ProfileButton::Save, "SAVE RAM"),
-                            (ProfileButton::Load, "LOAD RAM"),
-                            (ProfileButton::Reset, "RESET"),
+                        for button in [
+                            ProfileButton::Save, ProfileButton::Load, ProfileButton::Reset,
                         ] {
+                            let text = button.label(state.language);
                             if let Some(r) = personalization::profile_button(rect, button) {
                                 let color = match button {
                                     ProfileButton::Save => 0x207e77,
@@ -1015,7 +1014,7 @@ impl Screen {
                                     ProfileButton::Reset => 0x875369,
                                 };
                                 self.round_rect(r.x, r.y, r.width, r.height, 8, color);
-                                let width = text.len() * 6;
+                                let width = text.chars().count() * 6;
                                 self.text(text, r.x + r.width.saturating_sub(width) / 2,
                                           r.y + 15, 1, 0xffffff);
                             }
