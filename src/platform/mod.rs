@@ -4,3 +4,4 @@ pub mod device;
 pub mod pci;
 pub mod resources;
 pub mod amd_bridge;
+pub mod boot;

@@ -90,6 +90,30 @@ pub fn scan_topology<const CAP: usize>(
     root_bus: u8,
     last_bus: u8,
 ) -> Result<PciInventory<CAP>, ScanError> {
+    scan_buses(config, segment, root_bus, last_bus, false)
+}
+
+/// Compatibility bootstrap for legacy CF8/CFC: scan each bus in segment zero
+/// exactly once, including buses without discoverable firmware root topology.
+/// Do not use this for PCIe segments or claim ACPI host-bridge coverage.
+pub fn scan_legacy_segment0<const CAP: usize>(
+    config: &mut impl PciConfigRead,
+    last_bus: u8,
+) -> PciInventory<CAP> {
+    // The fixed segment/root are always valid; no caller-provided range.
+    match scan_buses(config, 0, 0, last_bus, true) {
+        Ok(inventory) => inventory,
+        Err(_) => PciInventory::new(),
+    }
+}
+
+fn scan_buses<const CAP: usize>(
+    config: &mut impl PciConfigRead,
+    segment: u16,
+    root_bus: u8,
+    last_bus: u8,
+    all_legacy_buses: bool,
+) -> Result<PciInventory<CAP>, ScanError> {
     if root_bus > last_bus {
         return Err(ScanError::InvalidBusRange);
     }
@@ -97,9 +121,18 @@ pub fn scan_topology<const CAP: usize>(
     let mut visited = [false; 256];
     let mut queue = [0u8; 256];
     let mut front = 0usize;
-    let mut back = 1usize;
-    queue[0] = root_bus;
-    visited[root_bus as usize] = true;
+    let mut back = 0usize;
+    if all_legacy_buses {
+        for bus in root_bus..=last_bus {
+            queue[back] = bus;
+            visited[bus as usize] = true;
+            back += 1;
+        }
+    } else {
+        queue[0] = root_bus;
+        visited[root_bus as usize] = true;
+        back = 1;
+    }
 
     while front < back {
         let bus = queue[front];
@@ -163,6 +196,13 @@ pub fn scan_topology<const CAP: usize>(
                     subclass: (class_register >> 16) as u8,
                     programming_interface: (class_register >> 8) as u8,
                 };
+                if (id >> 16) as u16 == 0xffff || class.base == 0xff
+                    || (header_type == 1 && !class.is_pci_bridge())
+                    || (class.is_pci_bridge() && header_type != 1)
+                {
+                    inventory.report.malformed_headers += 1;
+                    continue;
+                }
                 let mut subsystem_vendor_id = None;
                 let mut subsystem_device_id = None;
                 if header_type == 0 {
@@ -200,8 +240,12 @@ pub fn scan_topology<const CAP: usize>(
                                 subordinate_bus: subordinate,
                             });
                             if visited[secondary as usize] {
-                                // Duplicate upstream paths are not claimed as new buses.
-                                inventory.report.malformed_bridges += 1;
+                                // In full legacy mode every bus was queued once at
+                                // start. In topology mode, duplicate upstream
+                                // paths are rejected as cycles/ambiguous ownership.
+                                if !all_legacy_buses {
+                                    inventory.report.malformed_bridges += 1;
+                                }
                             } else {
                                 visited[secondary as usize] = true;
                                 queue[back] = secondary;
@@ -337,4 +381,50 @@ mod tests {
         assert!(!inv.truncated);
         assert_eq!(inv.report.visited_buses, 1);
     }
+    #[test]
+    fn legacy_bootstrap_scans_far_bus_and_last_multifunction_slot_once() {
+        use core::cell::Cell;
+        let id_reads = Cell::new(0u32);
+        let mut mock = MockConfig::new(|addr: PciAddress, off: u16| {
+            if off == 0 { id_reads.set(id_reads.get() + 1); }
+            if addr.bus == 255 && addr.device == 31 {
+                return Ok(match (addr.function, off) {
+                    (0, 0) => 0x0001_8086,
+                    (0, 0x0c) => 0x0080_0000,
+                    (0, 0x08) => 0x0106_0100,
+                    (7, 0) => 0x73bf_1002,
+                    (7, 0x0c) => 0,
+                    (7, 0x08) => 0x0300_0001,
+                    _ => u32::MAX,
+                });
+            }
+            Ok(u32::MAX)
+        });
+        let inv = scan_legacy_segment0::<4>(&mut mock, 255);
+        assert_eq!(inv.count, 2);
+        assert_eq!(inv.report.visited_buses, 256);
+        assert_eq!(inv.iter().last().unwrap().identity.address,
+                   PciAddress::new(0, 255, 31, 7).unwrap());
+        assert_eq!(id_reads.get(), 8192 + 7);
+    }
+
+    #[test]
+    fn legacy_scan_fails_on_bad_bridge_header_and_bounded_overflow() {
+        let mut mock = MockConfig::new(|a: PciAddress, o: u16| {
+            if a.bus == 0 && a.device < 5 {
+                return Ok(match o {
+                    0 => 0x1234_8086,
+                    0x0c => if a.device == 4 { 0x0001_0000 } else { 0 },
+                    0x08 => 0x0300_0000,
+                    _ => u32::MAX,
+                });
+            }
+            Ok(u32::MAX)
+        });
+        let inv = scan_legacy_segment0::<2>(&mut mock, 0);
+        assert_eq!(inv.count, 2);
+        assert!(inv.truncated);
+        assert_eq!(inv.report.malformed_headers, 1);
+    }
+
 }

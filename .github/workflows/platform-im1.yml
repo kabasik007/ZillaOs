@@ -1,0 +1,64 @@
+name: ZillaOS Platform I-M1 Single PCI Inventory
+
+on:
+  push:
+    branches: ['feat/platform-im1-single-inventory']
+    paths:
+      - 'src/platform/**'
+      - 'src/main.rs'
+      - 'src/pci_io.rs'
+      - '.github/workflows/platform-im1.yml'
+  pull_request:
+    paths:
+      - 'src/platform/**'
+      - 'src/main.rs'
+      - 'src/pci_io.rs'
+      - '.github/workflows/platform-im1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust 1.90 pinned
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target x86_64-unknown-none
+      - name: Host library and cross-PR tests
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Bare-metal VM desktop
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+      - name: Bare-metal non-GUI kernel
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: Ring 3 experimental build (compilation only)
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3
+      - name: Read-only platform Rust formatting
+        run: |
+          rustfmt +1.90.0 --edition 2024 --check src/platform/boot.rs src/platform/amd_bridge.rs src/platform/pci/enumerate.rs
+      - name: Python regressions
+        run: python3 -m unittest discover -s tests -v
+
+  qemu-uefi-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU, OVMF and ISO tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso mtools
+      - name: Rust and bare-metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Boot test ISO in QEMU + OVMF (disposable image)
+        run: |
+          set -o pipefail
+          bash scripts/build.sh test
+          python3 scripts/smoke_test.py --timeout 90
+      - name: Desktop PCI scan smoke in QEMU + OVMF
+        run: |
+          set -o pipefail
+          bash scripts/build.sh demo
+          python3 scripts/desktop_smoke.py --timeout 90

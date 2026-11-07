@@ -261,6 +261,37 @@ pub extern "C" fn _start() -> ! {
             serial::write("\n");
         }
         serial::write("ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE\n");
+        // AMD A0 observes the same DeviceRegistry by immutable identity.
+        // This is diagnostics ONLY: no AMD BARs, firmware, MMIO or DMA.
+        let mut amd_candidates = 0u64;
+        if let Some(registry) = pci.registry() {
+            let amd_view =
+                zillaos_kernel::platform::amd_bridge::AmdRegistryAdapter::new(registry);
+            for device in registry.snapshot().iter() {
+                if device.info.identity.is_amd_display_candidate() {
+                    use zillaos_kernel::video::gpu::amd::pci::PciAddress as AmdAddress;
+                    let address = device.info.identity.address;
+                    let result = zillaos_kernel::video::gpu::amd::probe_address(
+                        &amd_view,
+                        AmdAddress {
+                            segment: address.segment,
+                            bus: address.bus,
+                            device: address.device,
+                            function: address.function,
+                        },
+                    );
+                    if matches!(
+                        result,
+                        zillaos_kernel::video::gpu::amd::AmdGpuProbeStatus::DetectedUnsupported(_)
+                    ) {
+                        amd_candidates += 1;
+                    }
+                }
+            }
+        }
+        serial::write("ZILLAOS_AMD_PCI_UNSUPPORTED_CANDIDATES=");
+        serial::write_hex(amd_candidates);
+        serial::write("\n");
         wizard.set_storage_inventory(storage);
 
         // Log the actual Limine GOP dimensions for VMware diagnostics.

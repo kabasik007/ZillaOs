@@ -61,6 +61,37 @@ impl<const CAP: usize> ReadOnlyPciInventory for AmdInventoryAdapter<'_, CAP> {
     }
 }
 
+/// AMD's pure A0 matcher consuming the authoritative DeviceRegistry directly.
+/// No secondary PciInventory or PCI config reader is stored by this adapter.
+pub struct AmdRegistryAdapter<'a, const DEVICES: usize, const CLAIMS: usize> {
+    registry: &'a crate::platform::device::DeviceRegistry<DEVICES, CLAIMS>,
+}
+
+impl<'a, const DEVICES: usize, const CLAIMS: usize> AmdRegistryAdapter<'a, DEVICES, CLAIMS> {
+    pub const fn new(
+        registry: &'a crate::platform::device::DeviceRegistry<DEVICES, CLAIMS>,
+    ) -> Self {
+        Self { registry }
+    }
+}
+
+impl<const DEVICES: usize, const CLAIMS: usize> ReadOnlyPciInventory
+    for AmdRegistryAdapter<'_, DEVICES, CLAIMS>
+{
+    fn identity_at(&self, address: AmdAddress) -> Option<AmdIdentity> {
+        if !address.is_valid() { return None; }
+        let platform_address = crate::platform::pci::PciAddress {
+            segment: address.segment,
+            bus: address.bus,
+            device: address.device,
+            function: address.function,
+        };
+        let id = self.registry.find(platform_address)?;
+        let view = self.registry.get(id).ok()?;
+        to_amd_identity(view.info.identity).ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,4 +205,32 @@ mod tests {
         );
         assert_eq!(reads.get(), reads_after_scan);
     }
+    #[test]
+    fn registry_adapter_preserves_segment_bdf_and_never_reads_config() {
+        use crate::platform::device::DeviceRegistry;
+        use crate::platform::pci::PciDeviceInfo;
+        let mut registry = DeviceRegistry::<2, 0>::new();
+        let platform = identity(0x1002, 0x73bf);
+        let handle = registry.insert(PciDeviceInfo {
+            identity: platform,
+            header_type: 0,
+            multifunction: false,
+            bridge: None,
+        }).unwrap();
+        let amd = AmdAddress {
+            segment: 0x1234, bus: 2, device: 7, function: 3,
+        };
+        let adapter = AmdRegistryAdapter::new(&registry);
+        assert_eq!(adapter.identity_at(amd), Some(to_amd_identity(platform).unwrap()));
+        assert!(matches!(
+            amd::probe_address(&adapter, amd),
+            AmdGpuProbeStatus::DetectedUnsupported(_)
+        ));
+        assert_eq!(adapter.identity_at(AmdAddress { segment: 0, ..amd }), None);
+        registry.remove(handle).unwrap();
+        let adapter = AmdRegistryAdapter::new(&registry);
+        assert_eq!(adapter.identity_at(amd), None);
+    }
+
+
 }

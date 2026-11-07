@@ -6,7 +6,9 @@
 //! Only used by single-core 'vm-demo' in VMware/QEMU. Not a native-PC driver.
 
 use core::arch::asm;
-use zillaos_kernel::storage_pci::{PciLocation, StorageInventory, enumerate_storage};
+use zillaos_kernel::storage_pci::PciLocation;
+use zillaos_kernel::platform::boot::{BootPci, MAX_BOOT_PCI_DEVICES};
+use zillaos_kernel::platform::pci::LegacyConfig;
 
 #[inline]
 fn read_config(loc: PciLocation, offset: u8) -> u32 {
@@ -32,31 +34,38 @@ fn read_config(loc: PciLocation, offset: u8) -> u32 {
     value
 }
 
-/// Enumerate PCI functions for mass-storage controller class codes; all
-/// contents of attached disks remain unknown, untouched and inaccessible.
-pub fn inventory() -> StorageInventory {
-    enumerate_storage(read_config)
+/// Sole segment-0 PCI scan during the VM desktop's early, single-core boot.
+/// The returned gateway owns the DeviceRegistry for the rest of this boot.
+/// No driver is allowed to call read_config independently afterwards.
+pub fn discover_boot() -> BootPci<MAX_BOOT_PCI_DEVICES> {
+    let mut backend = LegacyConfig::new(read_config);
+    BootPci::discover(&mut backend, u8::MAX)
 }
 
- 
-/// Read-only PCI video identification; does not enable the SVGA FIFO,
-/// map GPU BARs, change a mode or issue any accelerated commands.
-pub fn video_adapter() -> zillaos_kernel::video::VideoAdapter {
+/// Consume the *cached* PCI registry; VMware's existing probe implementation
+/// remains unchanged but its config callback is now entirely in-memory.
+/// The only remaining device I/O is the legacy SVGA read-only register probe.
+pub fn video_adapter(
+    pci: &BootPci<MAX_BOOT_PCI_DEVICES>,
+) -> zillaos_kernel::video::VideoAdapter {
     use zillaos_kernel::video::gpu::vmware_svga;
 
-    let adapter = zillaos_kernel::video::probe_pci_video(read_config);
+    let adapter = pci.video_adapter();
     // One read-only probe per desktop boot; failure does not touch GOP.
     #[cfg(feature = "svga-id-negotiate")]
     let probe_result = {
         crate::serial::write("ZILLAOS_SVGA_ID_NEGOTIATION=OPT_IN\n");
         vmware_svga::probe_with_negotiation(
-            read_config,
+            |location, offset| pci.legacy_read32(location, offset),
             read_svga_register,
             write_svga_id,
         )
     };
     #[cfg(not(feature = "svga-id-negotiate"))]
-    let probe_result = vmware_svga::probe(read_config, read_svga_register);
+    let probe_result = vmware_svga::probe(
+        |location, offset| pci.legacy_read32(location, offset),
+        read_svga_register,
+    );
     match probe_result {
         Ok(Some(info)) => {
             serial_probe_hex("ZILLAOS_SVGA_ID_HEX=", info.registers.interface_id as u64);
