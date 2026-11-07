@@ -11,6 +11,7 @@ on:
       - 'src/native_ring3.rs'
       - 'src/native_ring3_threads.rs'
       - 'src/native_ring3_preempt.rs'
+      - 'src/shell/personalization.rs'
       - 'src/main.rs'
       - 'Cargo.toml'
       - 'scripts/build.sh'

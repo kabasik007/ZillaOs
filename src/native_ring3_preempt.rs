@@ -211,9 +211,14 @@ fn frame_valid(frame: &TimerFrame, index: usize) -> bool {
     } else {
         (STACK_B - PAGE_SIZE, STACK_B)
     };
+    let entry = if index == 0 { CODE } else { ENTRY_B };
     frame.cs == 0x23 && frame.ss == 0x1b
         && frame.rflags & 0x202 == 0x202
-        && frame.rip >= CODE && frame.rip < CODE + PAGE_SIZE
+        // No IOPL or direction flag in a verified user frame.
+        && frame.rflags & (0x3000 | 0x0400) == 0
+        // The controlled fixture occupies 17 bytes, not a full code page.
+        // Reusing a different task's entry address must fail closed.
+        && frame.rip >= entry && frame.rip < entry + 17
         && frame.rsp > low && frame.rsp <= high
 }
 

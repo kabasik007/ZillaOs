@@ -177,3 +177,17 @@ desktop, no real idle thread, no CPU accounting except eight test
 interrupts. PIC remapping and PIT programming occur **only** in this
 opt-in disposable QEMU ISO. Existing `demo`, `ring3`, `ring3-threads`,
 guard and kernel-boundary tests do not enable IRQ0.
+
+### Trap validation and CI dependency notes
+
+The preemptive IRQ0 trap refuses any user frame with the wrong Ring 3
+selectors, an RIP outside its 17-byte owned fixture, an RSP outside its
+per-thread stack, missing RFLAGS.IF, or unexpected IOPL/DF bits. An
+invalid frame terminates the disposable test; it does not IRETQ into a
+foreign address.
+
+The process workflow also tracks `src/shell/personalization.rs`.
+Although this is GUI code, the `no_std` kernel library compiles it for
+all executable images. A concurrent Settings change previously broke
+non-GUI CI with an undefined `side` variable; this path filter makes
+future changes to that shared source revalidate the process build.
