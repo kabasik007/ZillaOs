@@ -132,3 +132,13 @@ when it would overlap the clickable top menu or another status field.
 Pure host-side tests cover 320 through 1920 widths, three locales and a
 maximum 12-character hostname. On smaller screens optional indicators
 are hidden, not illegibly painted over other fields.
+
+## TaskSnapshot real IRQ counters (not simulated CPU %)
+
+`ThreadInfo.timer_ticks` is now a read-only record of genuine timer
+interrupts charged to a running TID by the xAPIC test. Every new thread
+starts with zero ticks; a validated timer IRQ increments the counter
+using checked arithmetic and enforces CPU ownership. The UI must **not**
+translate these uncalibrated samples into seconds, CPU % or a process
+graph. Normal Desktop apps remain embedded kernel windows and
+consequently have no timer tick readings to show.

@@ -61,5 +61,17 @@ COM1 маркери: ZILLAOS_WALLPAPER_MODULE=READY (скопійовано і �
     bash scripts/build.sh demo
     python3 scripts/desktop_smoke.py --timeout 120
 
-Звичайний QEMU GUI smoke перевіряє Desktop, а не наявність приватного
-фото. Окремо слід протестувати ISO з підкладеним BMP у VMware/QEMU.
+**Автоматична QEMU-перевірка від 2026-11-07 — успішно:**
+
+- 254 Rust unit tests: passed, 0 failed.
+- Стандартний ISO без шпалер: Desktop GUI boot, PS/2 mouse, cursor — passed.
+- Синтетичний 8×8 magenta BMP вкладається в ISO як Limine module,
+  а COM1 підтверджує ZILLAOS_WALLPAPER_MODULE=READY.
+- QEMU ISO реально відрендерив 309932 пікселі magenta (#FF00FF)
+  на скриншоті 1280×800. Це реальна перевірка framebuffer-пікселів,
+  а не тільки успішний запуск функції.
+- GitHub Actions: https://github.com/kabasik007/ZillaOs/actions/runs/42330941169
+
+**Залишається ручна перевірка у VMware Workstation** із власним файлом
+assets/wallpaper.bmp, оскільки автоматизований тест використовує QEMU
+та синтетичний BMP, а не реальну фотографію користувача.
