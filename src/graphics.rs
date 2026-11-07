@@ -13,6 +13,7 @@ use zillaos_kernel::apps;
 use zillaos_kernel::apps::notepad::EditorStatus;
 use zillaos_kernel::fs::ramfs::DOCUMENTS_DIR;
 use zillaos_kernel::shell::{start_menu, taskbar, task_view, status_bar};
+use zillaos_kernel::shell::personalization::{self, Wallpaper, SettingsPage};
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
@@ -491,30 +492,46 @@ impl Screen {
         }
     }
 
-    fn background(&self, dark: bool) {
+    fn background(&self, state: &Desktop) {
         let h = self.fb.height;
         let w = self.fb.width;
+        let (top, bottom, horizon) = state.wallpaper.palette(state.dark);
         for row in 0..h {
-            let v = ((row * 120) / h.max(1)) as u32;
-            let rgb = if dark {
-                ((6 + v / 12) << 16) | ((16 + v / 5) << 8) | (34 + v / 3)
-            } else {
-                ((180 + v / 3) << 16) | ((205 + v / 4) << 8) | (236 + v / 8)
-            };
-            self.rectangle(0, row, w, 1, rgb);
+            let fraction = ((row as u64 * 255) / h.max(1) as u64) as u32;
+            let color = personalization::gradient(top, bottom, fraction);
+            self.rectangle(0, row, w, 1, color);
         }
-        // Soft beams / horizon, pure flat-color geometry for now.
-        self.rectangle(w / 6, h * 62 / 100, w * 2 / 3, 2, 0x187b88);
-        self.rectangle(w / 5, h * 64 / 100, w * 3 / 5, 1, 0x145061);
-        self.rectangle(w / 3, h * 20 / 100, 3, h / 3, 0x195674);
+        match state.wallpaper {
+            Wallpaper::Ocean => {
+                self.rectangle(w / 6, h * 62 / 100, w * 2 / 3, 2, horizon);
+                self.rectangle(w / 5, h * 64 / 100, w * 3 / 5, 1, horizon);
+                self.rectangle(w / 3, h * 20 / 100, 3, h / 3, horizon);
+            }
+            Wallpaper::Sunset => {
+                self.round_rect(w * 68 / 100, h * 22 / 100,
+                    (w / 12).max(20), (w / 12).max(20), (w / 12).max(20),
+                    if state.dark { 0xf5bd83 } else { 0xffe3a8 });
+                self.rectangle(0, h * 64 / 100, w, 3, horizon);
+                self.rectangle(w / 8, h * 70 / 100, w * 3 / 4, 2, horizon);
+            }
+            Wallpaper::Forest => {
+                self.rectangle(0, h * 71 / 100, w, h * 29 / 100, horizon);
+                for i in 0..11usize {
+                    let x = (i * w / 10).min(w.saturating_sub(2));
+                    let tree_h = h * (12 + (i * 7) % 24) / 100;
+                    self.rectangle(x, h * 71 / 100 - tree_h, 8, tree_h + 4,
+                        if state.dark { 0x133c37 } else { 0x3c7465 });
+                }
+            }
+        }
     }
 
     fn top_panel(&self, state: &Desktop, layout: &Layout) {
         let fg = if state.dark { 0xebf5ff } else { 0x142739 };
         let background = if state.dark { 0x122138 } else { 0xf5faff };
         self.rectangle(0, 0, layout.width, layout.top_bar, background);
-        self.rectangle(0, layout.top_bar - 2, layout.width, 2, 0x228f9c);
-        self.round_rect(16, 9, 23, 23, 7, 0x19c7b0);
+        self.rectangle(0, layout.top_bar - 2, layout.width, 2, state.accent.rgb());
+        self.round_rect(16, 9, 23, 23, 7, state.accent.rgb());
         self.text("Z", 22, 13, 2, 0x0b2535);
         self.text("ZILLAOS", 49, 15, 2, fg);
         if layout.width >= 720 {
@@ -850,46 +867,98 @@ impl Screen {
             }
 
             App::Settings => {
-                self.text(tr(state.language, TextId::Settings), cx, body + 9, 2, fg);
-                if content_h > 98 {
-                    self.round_rect(cx, body + 42, cw, 51, 8,
-                        if state.dark { 0x243b52 } else { 0xe1edf5 });
-                    self.text(tr(state.language, TextId::Appearance),
-                              cx + 9, body + 49, 1, secondary);
-                    self.text(tr(state.language, if state.dark {
-                        TextId::ThemeDark
-                    } else { TextId::ThemeLight }), cx + 9, body + 68, 1, fg);
+                match state.settings_page {
+                    SettingsPage::Overview => {
+                        self.text(tr(state.language, TextId::Settings), cx, body + 9, 2, fg);
+                        if content_h > 98 {
+                            self.round_rect(cx, body + 42, cw, 51, 8,
+                                if state.dark { 0x243b52 } else { 0xe1edf5 });
+                            self.text(tr(state.language, TextId::Appearance),
+                                      cx + 9, body + 49, 1, secondary);
+                            self.text(tr(state.language, if state.dark {
+                                TextId::ThemeDark
+                            } else { TextId::ThemeLight }), cx + 9, body + 68, 1, fg);
+                        }
+                        if content_h > 168 {
+                            self.round_rect(cx, body + 105, cw, 52, 8,
+                                if state.dark { 0x243b52 } else { 0xe1edf5 });
+                            self.text(tr(state.language, TextId::Language),
+                                      cx + 9, body + 112, 1, secondary);
+                            let lang = match state.language {
+                                Language::Ukrainian => TextId::LangUkrainian,
+                                Language::English => TextId::LangEnglish,
+                                Language::Russian => TextId::LangRussian,
+                            };
+                            self.text(tr(state.language, lang), cx + 9, body + 133, 1, fg);
+                        }
+                        if content_h > 232 {
+                            self.round_rect(cx, body + 175, cw, 51, 8,
+                                if state.dark { 0x243b52 } else { 0xe1edf5 });
+                            self.round_rect(cx + 10, body + 187, 27, 27, 8, state.accent.rgb());
+                            self.text(tr(state.language, TextId::Personalization),
+                                      cx + 45, body + 193, 1, fg);
+                        }
+                        if content_h > 290 {
+                            self.text(tr(state.language, TextId::BootResolution),
+                                      cx, body + 240, 1, secondary);
+                            self.decimal(self.fb.width, cx, body + 258, fg);
+                            self.text("X", cx + 29, body + 258, 1, fg);
+                            self.decimal(self.fb.height, cx + 39, body + 258, fg);
+                            self.text(tr(state.language, TextId::BootHint),
+                                      cx, body + 277, 1, state.accent.rgb());
+                        }
+                        if content_h > 340 {
+                            self.text(state.video.name(), cx, body + 306, 1, fg);
+                            self.text("GPU ACCEL: NOT ENABLED", cx, body + 324, 1, 0xffc35a);
+                        }
+                    }
+                    SettingsPage::Personalization => {
+                        self.text(tr(state.language, TextId::Personalization),
+                                  cx, body + 9, if cw > 240 { 2 } else { 1 }, fg);
+                        if content_h > 35 {
+                            self.text(tr(state.language, TextId::Back),
+                                      cx + cw.saturating_sub(65), body + 14, 1, state.accent.rgb());
+                        }
+                        if content_h > 110 {
+                            self.round_rect(cx, body + 56, cw, 51, 8,
+                                if state.dark { 0x243b52 } else { 0xe1edf5 });
+                            self.text(tr(state.language, TextId::Wallpaper),
+                                      cx + 10, body + 63, 1, secondary);
+                            self.text(state.wallpaper.name(state.language),
+                                      cx + 10, body + 83, 1, fg);
+                            if cw >= 160 {
+                                let (top, bottom, _) = state.wallpaper.palette(state.dark);
+                                self.round_rect(cx + cw - 61, body + 64, 48, 34, 6,
+                                    personalization::gradient(top, bottom, 130));
+                            }
+                        }
+                        if content_h > 173 {
+                            self.round_rect(cx, body + 119, cw, 51, 8,
+                                if state.dark { 0x243b52 } else { 0xe1edf5 });
+                            self.text(tr(state.language, TextId::AccentColor),
+                                      cx + 10, body + 126, 1, secondary);
+                            self.text(state.accent.name(state.language),
+                                      cx + 10, body + 146, 1, fg);
+                            if cw >= 160 {
+                                self.round_rect(cx + cw - 51, body + 132,
+                                                30, 28, 7, state.accent.rgb());
+                            }
+                        }
+                        if content_h > 236 {
+                            self.round_rect(cx, body + 182, cw, 51, 8,
+                                if state.dark { 0x243b52 } else { 0xe1edf5 });
+                            self.text(tr(state.language, TextId::Appearance),
+                                      cx + 10, body + 189, 1, secondary);
+                            self.text(tr(state.language, if state.dark {
+                                TextId::ThemeDark
+                            } else { TextId::ThemeLight }), cx + 10, body + 209, 1, fg);
+                        }
+                        if content_h > 268 {
+                            self.text(tr(state.language, TextId::SessionOnly),
+                                      cx, body + 250, 1, secondary);
+                        }
+                    }
                 }
-                if content_h > 168 {
-                    self.round_rect(cx, body + 105, cw, 52, 8,
-                        if state.dark { 0x243b52 } else { 0xe1edf5 });
-                    self.text(tr(state.language, TextId::Language),
-                              cx + 9, body + 112, 1, secondary);
-                    let lang = match state.language {
-                        Language::Ukrainian => TextId::LangUkrainian,
-                        Language::English => TextId::LangEnglish,
-                        Language::Russian => TextId::LangRussian,
-                    };
-                    self.text(tr(state.language, lang), cx + 9, body + 133, 1, fg);
-                }
-                if content_h > 230 {
-                    self.text(tr(state.language, TextId::BootResolution),
-                              cx, body + 175, 1, secondary);
-                    self.decimal(self.fb.width, cx, body + 195, fg);
-                    self.text("X", cx + 29, body + 195, 1, fg);
-                    self.decimal(self.fb.height, cx + 39, body + 195, fg);
-                    self.text(tr(state.language, TextId::BootHint),
-                              cx, body + 217, 1, 0x1ed2b4);
-                }
-                if content_h > 270 {
-                    self.text(state.video.name(), cx, body + 245, 1, fg);
-                    self.text("GPU ACCEL: NOT ENABLED", cx, body + 263, 1, 0xffc35a);
-                }
-                if content_h > 312 {
-                    self.text(state.hostname.as_str(), cx, body + 285, 1, secondary);
-                    self.text(state.timezone.identifier(), cx, body + 304, 1, secondary);
-                }
-            }
         }
     }
 
@@ -992,15 +1061,37 @@ impl Screen {
         }
     }
 
+
+    /// Composed above windows, taskbar and launcher but below the cursor.
+    /// Menu::hit in shell/personalization.rs owns the identical geometry.
+    fn desktop_context_menu(&self, state: &Desktop) {
+        let Some(menu) = state.context_menu else { return };
+        self.round_rect(menu.x + 4, menu.y + 4, menu.width, menu.height, 11, 0x07101b);
+        self.round_rect(menu.x, menu.y, menu.width, menu.height, 11,
+                        if state.dark { 0x20344c } else { 0xf6faff });
+        for (i, title) in [TextId::Personalization, TextId::DesktopDisplay]
+            .iter().enumerate()
+        {
+            let y = menu.y + 8 + i * 39;
+            self.round_rect(menu.x + 7, y, menu.width.saturating_sub(14), 35, 7,
+                            if state.dark { 0x2b4761 } else { 0xe2eff7 });
+            self.round_rect(menu.x + 14, y + 7, 21, 21, 6, state.accent.rgb());
+            self.text(if i == 0 { "P" } else { "D" }, menu.x + 21,
+                      y + 14, 1, 0x091d2b);
+            self.text(tr(state.language, *title), menu.x + 43,
+                      y + 14, 1, if state.dark { 0xf0f7ff } else { 0x173047 });
+        }
+    }
+
     /// A small software cursor. Always rendered LAST so no window or
     /// launcher can cover it. Rectangle clipping keeps every pixel safe.
     fn cursor(&self, state: &Desktop) {
         if state.pointer.visible {
-            self.draw_pointer(state.pointer.x, state.pointer.y);
+            self.draw_pointer(state.pointer.x, state.pointer.y, state.accent.rgb());
         }
     }
 
-    fn draw_pointer(&self, x: usize, y: usize) {
+    fn draw_pointer(&self, x: usize, y: usize, accent: u32) {
         // Compact 12x20 pointer with a one-pixel dark outline, bright body and
         // teal accent on the arrow stem. Transparent cells are never written.
         // Cursor damage bounds in raster::Region remain exactly 12x20.
@@ -1016,7 +1107,7 @@ impl Screen {
                 let color = match pixel {
                     b'X' => 0x061622,
                     b'W' => 0xf4fbff,
-                    b'T' => 0x19d9bd,
+                    b'T' => accent,
                     _ => continue,
                 };
                 self.write_direct(
@@ -1038,7 +1129,7 @@ pub fn render(state: &Desktop) -> bool {
     let buffered = raster::supports_backbuffer(fb.width, fb.height);
     BACKBUFFER_VALID.store(false, Ordering::Release);
     let screen = Screen { fb, buffered };
-    screen.background(state.dark);
+    screen.background(state);
     screen.wallpaper_label(state, &layout);
     screen.desktop_shortcuts(state, &layout);
     screen.desktop_folders(state, &layout);
@@ -1051,6 +1142,7 @@ pub fn render(state: &Desktop) -> bool {
     screen.taskbar(state, &layout);
     screen.dock(state, &layout);
     screen.launcher(state, &layout);
+    screen.desktop_context_menu(state);
 
     if buffered {
         // Compose all GUI layers before a single complete screen transfer.
@@ -1113,7 +1205,7 @@ pub fn render_setup(wizard: &Wizard) -> bool {
         BACKBUFFER_VALID.store(true, Ordering::Release);
     }
     if wizard.pointer.visible {
-        screen.draw_pointer(wizard.pointer.x, wizard.pointer.y);
+        screen.draw_pointer(wizard.pointer.x, wizard.pointer.y, 0x19d9bd);
     }
     true
 }
@@ -1137,7 +1229,7 @@ pub fn redraw_setup_cursor(previous: SetupPointer, wizard: &Wizard) -> bool {
                                             screen.fb.width, screen.fb.height) {
         screen.flush_region(region);
     }
-    screen.draw_pointer(wizard.pointer.x, wizard.pointer.y);
+    screen.draw_pointer(wizard.pointer.x, wizard.pointer.y, 0x19d9bd);
     true
 }
 

@@ -10,6 +10,7 @@ pub enum TextId {
     BootHint, ModeChangedAfterReboot, Launcher, Active, WallpaperTitle,
     WallpaperSubtitle, Preview, Shortcuts, System, ColorDepth, NoDisk,
     FilePreview, TerminalPreview, ClickToChange, KeyboardHint,
+    Personalization, Wallpaper, AccentColor, Back, DesktopDisplay, SessionOnly,
 }
 
 pub const fn text(language: Language, id: TextId) -> &'static str {
@@ -58,6 +59,12 @@ pub const fn text(language: Language, id: TextId) -> &'static str {
         (Ukrainian, TerminalPreview) => "ТЕРМІНАЛ: ПЕРЕГЛЯД", (English, TerminalPreview) => "TERMINAL: PREVIEW", (Russian, TerminalPreview) => "ТЕРМИНАЛ: ПРОСМОТР",
         (Ukrainian, ClickToChange) => "НАТИСНИ ДЛЯ ЗМІНИ", (English, ClickToChange) => "CLICK TO CHANGE", (Russian, ClickToChange) => "НАЖМИ ДЛЯ СМЕНЫ",
         (Ukrainian, KeyboardHint) => "F8 МОВА F5 ТЕМА", (English, KeyboardHint) => "F8 LANGUAGE F5 THEME", (Russian, KeyboardHint) => "F8 ЯЗЫК F5 ТЕМА",
+        (Ukrainian, Personalization) => "ПЕРСОНАЛІЗАЦІЯ", (English, Personalization) => "PERSONALIZATION", (Russian, Personalization) => "ПЕРСОНАЛИЗАЦИЯ",
+        (Ukrainian, Wallpaper) => "ШПАЛЕРИ", (English, Wallpaper) => "WALLPAPER", (Russian, Wallpaper) => "ОБОИ",
+        (Ukrainian, AccentColor) => "АКЦЕНТНИЙ КОЛІР", (English, AccentColor) => "ACCENT COLOR", (Russian, AccentColor) => "ЦВЕТ АКЦЕНТА",
+        (Ukrainian, Back) => "НАЗАД", (English, Back) => "BACK", (Russian, Back) => "НАЗАД",
+        (Ukrainian, DesktopDisplay) => "НАЛАШТУВАННЯ ЕКРАНА", (English, DesktopDisplay) => "DISPLAY SETTINGS", (Russian, DesktopDisplay) => "НАСТРОЙКИ ЭКРАНА",
+        (Ukrainian, SessionOnly) => "ЛИШЕ ЦЯ СЕСІЯ", (English, SessionOnly) => "THIS SESSION ONLY", (Russian, SessionOnly) => "ТОЛЬКО ЭТА СЕССИЯ",
     }
 }
 
@@ -78,7 +85,8 @@ mod tests {
             TextId::WallpaperSubtitle, TextId::Preview, TextId::Shortcuts,
             TextId::System, TextId::ColorDepth, TextId::NoDisk,
             TextId::FilePreview, TextId::TerminalPreview, TextId::ClickToChange,
-            TextId::KeyboardHint];
+            TextId::KeyboardHint, TextId::Personalization, TextId::Wallpaper,
+            TextId::AccentColor, TextId::Back, TextId::DesktopDisplay, TextId::SessionOnly];
         for lang in [Language::Ukrainian, Language::English, Language::Russian] {
             for id in ids { assert!(!text(lang, id).is_empty()); }
         }

@@ -10,3 +10,6 @@ pub mod start_menu;
 pub mod taskbar;
 pub mod status_bar;
 pub mod task_view;
+
+/// Volatile wallpaper, accent and desktop context-menu geometry.
+pub mod personalization;

@@ -416,6 +416,10 @@ pub extern "C" fn _start() -> ! {
             let previous_launcher = desktop.launcher;
             let previous_menu_step = desktop.launcher_step;
             let previous_theme = desktop.dark;
+            let previous_wallpaper = desktop.wallpaper;
+            let previous_accent = desktop.accent;
+            let previous_settings_page = desktop.settings_page;
+            let previous_context_menu = desktop.context_menu;
             let previous_language = desktop.language;
             let previous_pointer = desktop.pointer;
             let event = input.poll();
@@ -454,6 +458,10 @@ pub extern "C" fn _start() -> ! {
                 if previous_windows != desktop.windows
                     || previous_launcher != desktop.launcher
                     || previous_theme != desktop.dark
+                    || previous_wallpaper != desktop.wallpaper
+                    || previous_accent != desktop.accent
+                    || previous_settings_page != desktop.settings_page
+                    || previous_context_menu != desktop.context_menu
                     || previous_language != desktop.language
                     || previous_files != desktop.files
                     || previous_icons != desktop.icons
@@ -482,6 +490,10 @@ pub extern "C" fn _start() -> ! {
                         || previous_launcher != desktop.launcher
                         || previous_menu_step != desktop.launcher_step
                         || previous_theme != desktop.dark
+                        || previous_wallpaper != desktop.wallpaper
+                        || previous_accent != desktop.accent
+                        || previous_settings_page != desktop.settings_page
+                        || previous_context_menu != desktop.context_menu
                         || previous_language != desktop.language
                         || previous_files != desktop.files
                         || previous_notepad_revision != desktop.notepad.revision

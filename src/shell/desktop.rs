@@ -10,6 +10,7 @@ use crate::shell::clock::{ClockTime, ClockDate};
 use crate::shell::desktop_icons::DesktopIcons;
 use crate::video::VideoAdapter;
 use crate::shell::{start_menu, taskbar, task_view};
+use crate::shell::personalization::{self, Accent, Wallpaper, SettingsPage, SettingsAction, Menu, MenuAction};
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
@@ -119,6 +120,12 @@ pub struct Desktop {
     pub launcher: bool,
     pub launcher_step: u8,
     pub dark: bool,
+    /// Volatile desktop appearance and context menu (no disk persistence).
+    pub wallpaper: Wallpaper,
+    pub accent: Accent,
+    pub settings_page: SettingsPage,
+    pub context_menu: Option<Menu>,
+    right_down: bool,
     pub changes: u32,
 }
 
@@ -159,6 +166,11 @@ impl Desktop {
             launcher: false,
             launcher_step: 0,
             dark: true,
+            wallpaper: Wallpaper::Ocean,
+            accent: Accent::Teal,
+            settings_page: SettingsPage::Overview,
+            context_menu: None,
+            right_down: false,
             changes: 0,
         }
     }
@@ -167,6 +179,10 @@ impl Desktop {
         self.windows.focused()
     }
     pub fn launch_app(&mut self, app: App) {
+        if app == App::Settings {
+            self.settings_page = SettingsPage::Overview;
+        }
+        self.context_menu = None;
         ApplicationManager::launch(&mut self.windows, LaunchTarget::Builtin(app))
             .expect("installed built-in application");
     }
@@ -219,22 +235,37 @@ impl Desktop {
         };
     }
 
-    /// Settings rows share these coordinates with the immediate renderer.
-    /// 0 is appearance and 1 is language. Resolution is read-only because
-    /// the Limine-provided GOP framebuffer cannot change modes after handoff.
-    fn settings_row(rect: crate::window_manager::Rect, x: usize, y: usize) -> Option<usize> {
-        let bar_h = if rect.height < 170 { 30 } else { 45 };
-        let body = rect.y + bar_h + 8;
-        let side = (rect.width / 4).clamp(70, 170);
-        let cx = rect.x + side + 27;
-        if x < cx || x >= rect.x.saturating_add(rect.width).saturating_sub(12) {
-            return None;
+    /// Right-click only on unused wallpaper, never over a window, dock,
+    /// taskbar, launcher, shortcuts or draggable desktop folder icons.
+    fn can_open_desktop_menu(&self, x: usize, y: usize) -> bool {
+        if y < self.layout.top_bar
+            || y >= self.layout.height.saturating_sub(self.layout.dock_height + 12)
+            || self.launcher
+            || self.launcher_step != 0
+            || Self::desktop_shortcut_at(self.layout, x, y).is_some()
+            || self.icons.hit(x, y).is_some()
+            || Self::dock_app_at(self.layout, x, y).is_some()
+        {
+            return false;
         }
-        if y >= body + 42 && y < body + 96 { return Some(0); }
-        if y >= body + 105 && y < body + 160 { return Some(1); }
-        None
+        !self.windows.back_to_front().iter().copied().any(|app| {
+            self.windows.window(app).visible()
+                && WindowManager::contains(self.windows.rect(app), x, y)
+        })
     }
 
+    fn settings_action(&mut self, action: SettingsAction) {
+        match action {
+            SettingsAction::ToggleTheme => self.dark = !self.dark,
+            SettingsAction::CycleLanguage => self.cycle_language(),
+            SettingsAction::OpenPersonalization => {
+                self.settings_page = SettingsPage::Personalization;
+            }
+            SettingsAction::Back => self.settings_page = SettingsPage::Overview,
+            SettingsAction::CycleWallpaper => self.wallpaper = self.wallpaper.next(),
+            SettingsAction::CycleAccent => self.accent = self.accent.next(),
+        }
+    }
 
     /// All Files hit testing lives in the shell module; browser state owns
     /// only virtual in-memory paths, never host or block-device operations.
@@ -336,7 +367,8 @@ impl Desktop {
         if !self.pointer.visible {
             return false;
         }
-        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons);
+        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons,
+                      self.context_menu, self.settings_page, self.wallpaper, self.accent);
         let old_note = self.notepad.revision;
         let old_ramfs = self.ramfs.revision;
         self.pointer.x = self.pointer.x
@@ -346,10 +378,38 @@ impl Desktop {
             .saturating_add_signed(packet.dy as isize)
             .min(self.layout.height.saturating_sub(1));
 
+        // Trigger once on the right-button press edge, not on every motion
+        // packet while the button is held.
+        if packet.right && !self.right_down {
+            let x = self.pointer.x;
+            let y = self.pointer.y;
+            if self.can_open_desktop_menu(x, y) {
+                self.context_menu = Some(Menu::at(self.layout, x, y));
+            } else {
+                self.context_menu = None;
+                if self.launcher { self.launcher = false; }
+            }
+        }
+        self.right_down = packet.right;
+
         if packet.left && !self.pointer.left {
             let x = self.pointer.x;
             let y = self.pointer.y;
-            if self.launcher {
+            if let Some(menu) = self.context_menu.take() {
+                // The click always belongs to the popup, including outside
+                // the popup; never activate a window underneath it.
+                match menu.hit(x, y) {
+                    Some(MenuAction::Personalization) => {
+                        self.launch_app(App::Settings);
+                        self.settings_page = SettingsPage::Personalization;
+                    }
+                    Some(MenuAction::DisplaySettings) => {
+                        self.launch_app(App::Settings);
+                        self.settings_page = SettingsPage::Overview;
+                    }
+                    None => {}
+                }
+            } else if self.launcher {
                 if let Some(app) = self.launcher_app_at(x, y) {
                     self.launch_app(app);
                 }
@@ -389,10 +449,10 @@ impl Desktop {
                 } else if title {
                     self.pointer.dragging = Some(app);
                 } else if app == App::Settings {
-                    match Self::settings_row(rect, x, y) {
-                        Some(0) => self.dark = !self.dark,
-                        Some(1) => self.cycle_language(),
-                        _ => {}
+                    if let Some(action) = personalization::settings_hit(
+                        rect, self.settings_page, x, y,
+                    ) {
+                        self.settings_action(action);
                     }
                 } else if app == App::Files {
                     self.files_click(rect, x, y);
@@ -427,7 +487,8 @@ impl Desktop {
             }
         }
         self.pointer.left = packet.left;
-        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons)
+        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons,
+                                  self.context_menu, self.settings_page, self.wallpaper, self.accent)
             || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
@@ -437,7 +498,8 @@ impl Desktop {
 
     /// Return true only when a state transition changes the visible desktop.
     pub fn handle(&mut self, key: Key) -> bool {
-        let before = (self.windows, self.launcher, self.dark, self.language, self.files);
+        let before = (self.windows, self.launcher, self.dark, self.language, self.files,
+                      self.context_menu, self.settings_page);
         let old_note = self.notepad.revision;
         let old_ramfs = self.ramfs.revision;
         match key {
@@ -492,14 +554,21 @@ impl Desktop {
             Key::SaveDocument | Key::NewDocument | Key::Confirm |
             Key::Backspace | Key::Text(_) => {}
             Key::Escape => {
-                if self.launcher {
+                if self.context_menu.take().is_some() {
+                    // Esc dismisses context menu without closing an app.
+                } else if self.launcher {
                     self.launcher = false;
+                } else if self.active() == Some(App::Settings)
+                    && self.settings_page == SettingsPage::Personalization
+                {
+                    self.settings_page = SettingsPage::Overview;
                 } else {
                     self.windows.close_focused();
                 }
             }
         }
-        let changed = before != (self.windows, self.launcher, self.dark, self.language, self.files)
+        let changed = before != (self.windows, self.launcher, self.dark, self.language, self.files,
+                                  self.context_menu, self.settings_page)
             || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
@@ -1028,6 +1097,101 @@ mod tests {
         assert_eq!(d.feed(0x0c), Some(Key::Text(b'-')));
         assert_eq!(d.feed(0x02), Some(Key::Text(b'1')));
         assert_eq!(d.feed(0x82), None);
+    }
+
+
+    fn right_packet(right: bool) -> MousePacket {
+        MousePacket { dx: 0, dy: 0, left: false, right, middle: false }
+    }
+
+    #[test]
+    fn desktop_right_click_opens_menu_only_on_empty_wallpaper() {
+        let mut d = Desktop::new();
+        d.enable_pointer();
+        d.pointer.x = 720;
+        d.pointer.y = 600;
+        assert!(d.handle_mouse(right_packet(true)));
+        let menu = d.context_menu.expect("empty desktop menu");
+        assert!(menu.contains(d.pointer.x, d.pointer.y));
+        assert!(!d.handle_mouse(right_packet(true))); // hold must not repeat
+        assert!(!d.handle_mouse(right_packet(false)));
+        d.pointer.x = d.windows.rect(App::Files).x + 15;
+        d.pointer.y = d.windows.rect(App::Files).y + 25;
+        assert!(d.handle_mouse(right_packet(true))); // dismiss menu over window
+        assert!(d.context_menu.is_none());
+        d.handle_mouse(right_packet(false));
+    }
+
+    #[test]
+    fn context_personalization_opens_settings_without_dismissing_other_apps() {
+        let mut d = Desktop::new();
+        d.enable_pointer();
+        d.pointer.x = 800;
+        d.pointer.y = 600;
+        assert!(d.handle_mouse(right_packet(true)));
+        let menu = d.context_menu.unwrap();
+        d.handle_mouse(right_packet(false));
+        d.pointer.x = menu.x + 18;
+        d.pointer.y = menu.y + 18;
+        assert!(d.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(d.active(), Some(App::Settings));
+        assert_eq!(d.settings_page, SettingsPage::Personalization);
+        assert!(d.context_menu.is_none());
+        assert!(d.windows.window(App::Files).visible());
+    }
+
+    #[test]
+    fn personalization_controls_change_wallpaper_accent_and_theme() {
+        let mut d = Desktop::new();
+        d.enable_pointer();
+        d.launch_app(App::Settings);
+        d.settings_page = SettingsPage::Personalization;
+        let rect = d.windows.rect(App::Settings);
+        let cx = rect.x + (rect.width / 4).clamp(70,170) + 40;
+        let body = rect.y + 45 + 8;
+        d.pointer.x = cx;
+        d.pointer.y = body + 65;
+        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert_eq!(d.wallpaper, Wallpaper::Sunset);
+        d.handle_mouse(test_packet(0,0,false));
+        d.pointer.y = body + 130;
+        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert_eq!(d.accent, Accent::Violet);
+        d.handle_mouse(test_packet(0,0,false));
+        d.pointer.y = body + 190;
+        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert!(!d.dark);
+        assert_eq!(d.settings_page, SettingsPage::Personalization);
+    }
+
+    #[test]
+    fn escape_closes_menu_then_personalization_and_preserves_app_state() {
+        let mut d = Desktop::new();
+        d.enable_pointer();
+        d.launch_app(App::Settings);
+        d.settings_page = SettingsPage::Personalization;
+        d.context_menu = Some(Menu::at(d.layout, 800, 510));
+        assert!(d.handle(Key::Escape));
+        assert!(d.context_menu.is_none());
+        assert_eq!(d.settings_page, SettingsPage::Personalization);
+        assert!(d.handle(Key::Escape));
+        assert_eq!(d.settings_page, SettingsPage::Overview);
+        assert_eq!(d.active(), Some(App::Settings));
+    }
+
+    #[test]
+    fn outside_menu_click_dismisses_without_desktop_shortcut_activation() {
+        let mut d = Desktop::new();
+        d.enable_pointer();
+        d.pointer.x = 800;
+        d.pointer.y = 600;
+        d.handle_mouse(right_packet(true));
+        d.handle_mouse(right_packet(false));
+        d.pointer.x = 40;
+        d.pointer.y = d.layout.top_bar + 150;
+        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert!(d.context_menu.is_none());
+        assert_eq!(d.active(), Some(App::Files)); // initial focus, no new app
     }
 
     #[test]
