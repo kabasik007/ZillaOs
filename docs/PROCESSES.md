@@ -214,3 +214,19 @@ shared `src/shell/personalization.rs` source, since any `no_std`
 library compile failure blocks both GUI and non-GUI kernels. A
 concurrent personalization change once produced an undefined variable
 and broke process builds despite not editing process files.
+
+### Milestone 7.1 — real timer-interrupt samples by TID
+
+`ThreadTable::charge_timer_tick(cpu,tid)` records one **delivered,
+verified timer IRQ** for a currently running thread assigned to that CPU.
+The field starts at zero and uses checked increments, rejecting wrong
+CPU ownership, non-running state and overflow. This counter is preserved
+in read-only `TaskSnapshot::ThreadInfo.timer_ticks` with its explicit
+uncalibrated unit.
+
+The QEMU xAPIC experiment requires exactly **four** sampled timer
+interrupts for TID A and **four** for TID B in its `ABABABAB` trace.
+Neither counter is a measured CPU time, CPU utilization or frequency;
+the timer input frequency/quantum is not calibrated. The normal
+Desktop has no active timer accounting yet and must not display these
+test fixtures as live applications.
