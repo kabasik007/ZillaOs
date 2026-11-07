@@ -46,6 +46,7 @@ pub struct Quotas { pub memory_bytes: u64, pub threads: u8 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ServiceManifest {
     pub schema_version: u16,
+    pub version: u32,
     pub id: &'static str,
     /// A future *allowlisted* native executable identity, not a runnable path.
     pub executable: &'static str,
@@ -60,7 +61,7 @@ pub struct ServiceManifest {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ValidationError {
-    EmptyRegistry, TooManyServices, InvalidSchema, InvalidId,
+    EmptyRegistry, TooManyServices, InvalidSchema, InvalidVersion, InvalidId,
     InvalidExecutable, DuplicateId, TooManyDependencies,
     DuplicateDependency, SelfDependency, MissingRequired,
     DependencyCycle, TooManyCapabilities, UnknownCapability,
@@ -79,6 +80,7 @@ fn validate_manifest(m: ServiceManifest) -> Result<(), ValidationError> {
     if m.schema_version != MANIFEST_SCHEMA_V1 {
         return Err(ValidationError::InvalidSchema);
     }
+    if m.version == 0 { return Err(ValidationError::InvalidVersion); }
     if !valid_id(m.id) { return Err(ValidationError::InvalidId); }
     if m.executable.strip_prefix(EXEC_PREFIX) != Some(m.id) {
         return Err(ValidationError::InvalidExecutable);
