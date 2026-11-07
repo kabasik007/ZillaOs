@@ -378,7 +378,11 @@ impl<P: Copy + Eq> ServiceSupervisor<P> {
         // failed process/launch resource reclamation ACKs are verified.
         if self.cleaning.iter().any(Option::is_some) { return Ok(()); }
         self.model.model_tick(now);
-        for id in self.model.registry().startup_order() {
+        let mut ordered = [ServiceId(0); MAX_SERVICES];
+        for (i, id) in self.model.registry().startup_order().enumerate() {
+            ordered[i] = id;
+        }
+        for id in ordered[..self.model.registry().len()].iter().copied() {
             if self.state(id)? == ServiceState::Starting
                 && self.launching[id.index()].is_none()
                 && self.bound[id.index()].is_none()
