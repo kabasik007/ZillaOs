@@ -35,7 +35,7 @@
 | State view | snapshot | owned, detached immutable copy; zero fabricated PID fields |
 | Execution | execute_service | always Unsupported |
 
-Constants: maximum 16 services, 8 required and 8 optional-after dependencies per service, 8 requested capabilities, 32 queued events, 1 GiB memory request per service, 32 threads. Manifest schema_version must be 1 and the service ID must be ASCII lower-case alphanumeric, hyphen or underscore, starting with a letter, at most 32 bytes.
+Constants: maximum 16 services, 8 required and 8 optional-after dependencies per service, 8 requested capabilities, 32 queued events, 1 GiB memory request per service, 32 threads. Manifest schema_version must be 1; independent service version must be nonzero; the service ID must be ASCII lower-case alphanumeric, hyphen or underscore, starting with a letter, at most 32 bytes.
 
 ### Dependencies and shutdown
 
@@ -61,6 +61,7 @@ The actual typed examples are in src/services/service_manifests.rs. The public h
 
 ```toml
 schema_version = 1
+version = 1
 id = "displayd"
 executable = "/System/Services/displayd"
 start = "on-boot"
