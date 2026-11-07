@@ -1,5 +1,7 @@
 # ZillaOS — Architecture v0.1
 
+> **TARGET / HISTORICAL ARCHITECTURE:** Long-term designs here are not the live implementation. For current state see [ARCHITECTURE_CURRENT](ARCHITECTURE_CURRENT.md), [STATUS](STATUS.md) and [specifications](specs/README.md).
+
 > **Цей документ — довгостроковий дизайн, а не перелік реалізованих функцій.**
 > Стан `main` перевіряйте в [ARCHITECTURE_CURRENT.md](ARCHITECTURE_CURRENT.md).
 > Два активні агенти працюють паралельно за

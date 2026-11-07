@@ -1,5 +1,7 @@
 # ZillaOS — Security-First Architecture & Threat Model
 
+> **SECURITY SCOPE NOTE (2026-11-07):** This is a threat model, not certification. Legacy two-agent references/absence of all IPC models are historical; see [six current owners](AGENT_COORDINATION.md) and [STATUS](STATUS.md) for the present models and missing runtime gates.
+
 **Статус:** проєктна політика й acceptance gates, **не** сертифікація
 безпеки. Станом на 2026-11-06 реальна ізоляція Ring 3, IPC,
 PermissionManager, Task Manager і SecurityMonitor ще не реалізовані.

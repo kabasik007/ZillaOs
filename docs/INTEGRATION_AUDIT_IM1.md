@@ -1,5 +1,7 @@
 # ZillaOS I-M1 Cross-Agent Integration Audit — 2026-11-07
 
+> **HISTORICAL AUDIT:** STAGED/NOT APPROVED below describes PR #19 *before* it merged. The consolidated code and Rustfmt PR #26 were merged later. Current [STATUS](STATUS.md); preserve SHA/decisions as audit evidence.
+
 Status: **STAGED FOR INDEPENDENT INTEGRATION CI**, not approved for main.
 
 ## Immutable input heads

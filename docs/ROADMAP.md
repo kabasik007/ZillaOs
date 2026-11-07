@@ -1,5 +1,7 @@
 # ZillaOS — staged roadmap with PASS/FAIL gates
 
+> **HISTORICAL ROADMAP NOTE (2026-11-07):** Earlier unverified milestones are preserved as history. Current evidence: [STATUS](STATUS.md), [EVIDENCE_MATRIX](verification/EVIDENCE_MATRIX.md), [I-M2](NEXT_WAVE_I_M2.md).
+
 **Baseline:** 2026-10-19. Dates are deliberately not promised. Progress is measured by boot artifacts and tests, not estimates.
 
 ## Definition of Done — every milestone

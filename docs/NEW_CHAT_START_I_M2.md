@@ -6,6 +6,8 @@ Repository: https://github.com/kabasik007/ZillaOs
 Mission board: https://github.com/kabasik007/ZillaOs/issues/25  
 Source-of-truth documents: `AGENTS.md`, `docs/NEXT_WAVE_I_M2.md`, `docs/AGENT_COORDINATION.md`.
 
+**Documentation-first:** read [docs/README.md](README.md), [docs/STATUS.md](STATUS.md), relevant [specs](specs/README.md), and [Bootstrap adoption](BOOTSTRAP_ADOPTION.md) before a nontrivial implementation. Old plans are not stronger evidence than current source/CI.
+
 Before beginning any chat: read the **current** `main` SHA and the documents above. Old SHAs in conversations are history, not a working base. The next wave is **I-M2**, not I-M1.
 
 ## Chief Architect — new integration chat

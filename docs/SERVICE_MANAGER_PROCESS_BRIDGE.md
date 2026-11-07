@@ -1,5 +1,7 @@
 # ZillaOS ServiceManager / ProcessManager Bridge — I-M1
 
+> **HISTORICAL PR REFERENCE:** PR #14 merged, but no real user-space zillad runs. See [STATUS](STATUS.md) and [I-M2](NEXT_WAVE_I_M2.md).
+
 **Status:** Pure host-testable Rust no_std model; NOT a user-space daemon, NOT a syscall backend.
 **PR:** #14; **integration:** #19; **architecture:** #12; **blocking issue:** #22.
 

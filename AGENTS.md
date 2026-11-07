@@ -6,6 +6,10 @@
 **Handoff for fresh chats:** [docs/NEW_CHAT_START_I_M2.md](docs/NEW_CHAT_START_I_M2.md).  
 **Owner matrix and next milestones:** [docs/NEXT_WAVE_I_M2.md](docs/NEXT_WAVE_I_M2.md).
 
+## Spec-first behavior contracts
+
+Before changing a kernel/user ABI, process/IPC/device lifecycle, rights, stateful feature or user-visible behavior, create or update a source-backed [specification](docs/specs/README.md). Record facts, non-goals, invariants, negative/failure cases and target-specific evidence. Chief Architect reviews shared contracts before agent code changes. Small no-behavior formatting changes need no spec. Documentation routing: [docs/README](docs/README.md); adoption analysis: [BOOTSTRAP_ADOPTION](docs/BOOTSTRAP_ADOPTION.md).
+
 ## Non-negotiable workflow
 
 1. Read current `main`, `README.md`, this file, `docs/AGENT_COORDINATION.md`, `docs/ARCHITECTURE_CURRENT.md`, `docs/SECURITY_ARCHITECTURE.md` and your subsystem docs **before** modifying code.

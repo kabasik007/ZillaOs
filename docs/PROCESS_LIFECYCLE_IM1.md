@@ -1,5 +1,7 @@
 # ZillaOS Process I-M1 — process ownership, cleanup, IPC/service integration
 
+> **HISTORICAL PR REFERENCE:** PR #18 branch is merged and retired. Model-only cleanup still differs from production syscalls. See [STATUS](STATUS.md), [trusted-exit spec](specs/features/trusted-process-exit.md), Issue #21.
+
 Status (2026-11-07): bounded Rust no_std **MODELS**, not production process isolation, real SMP, Ring3 service runtime, or actual hardware memory reclamation.
 
 Coordination: Process PR #18, IPC PR #16, Integration PR #19 and Issue #21. Each remains owned by its respective agent. Before merging, recheck the latest upstream HEAD and PR diff.
