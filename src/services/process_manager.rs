@@ -2,7 +2,7 @@
 //! Unlike the existing built-in AppManager, this does NOT execute a CPU task.
 use crate::process::address_space::UserRegion;
 use crate::process::scheduler::RoundRobin;
-use crate::process::cpu_local::{CpuLocalState, CpuSchedulerModel, SavedTrapContext, ScheduleError};
+use crate::process::cpu_local::{CpuLocalState, CpuSchedulerModel, CurrentTaskIdentity, SavedTrapContext, ScheduleError};
 use crate::process::kernel_stack::{KernelStackLease, KernelStackRegistry, StackError};
 use crate::process::lifecycle::{
     CleanupBackend, CleanupError, CleanupHookError, CleanupPhase, CleanupWork,
@@ -140,6 +140,15 @@ impl ProcessManager {
 
     pub fn cpu_local_model_snapshot(&self, cpu: usize) -> Option<CpuLocalState> {
         self.cpu_scheduler.snapshot(cpu)
+    }
+
+    /// Authenticated current PID/TID for a trusted kernel trap context.
+    /// CPU argument must come from the architecture's current CPU identity,
+    /// never a user-provided message. Not yet wired to real IRQ / IPC syscalls.
+    pub fn current_task_identity_model(
+        &self, cpu: usize,
+    ) -> Result<CurrentTaskIdentity, ScheduleError> {
+        self.cpu_scheduler.current_identity(&self.threads, &self.processes, cpu)
     }
 
     /// Do not release a process PID until EVERY owned TID has exited and
@@ -600,5 +609,18 @@ mod tests {
         assert_eq!(pm.cpu_local_model_snapshot(0).unwrap().current(), None);
     }
 
+
+    #[test]
+    fn process_manager_current_task_identity_is_not_user_claimed_pid() {
+        let mut pm = ProcessManager::new();
+        let (pid, tid) = prepared_process(&mut pm);
+        assert_eq!(pm.current_task_identity_model(0), Err(ScheduleError::NoCurrent));
+        assert_eq!(pm.current_task_identity_model(1), Err(ScheduleError::CpuOffline));
+        pm.dispatch_thread_model(0).unwrap();
+        let identity = pm.current_task_identity_model(0).unwrap();
+        assert_eq!((identity.pid(), identity.tid(), identity.cpu()), (pid, tid, 0));
+        pm.exit_thread_model(0, unsafe { SavedTrapContext::confirmed(tid) }).unwrap();
+        assert_eq!(pm.current_task_identity_model(0), Err(ScheduleError::NoCurrent));
+    }
 
 }
