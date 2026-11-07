@@ -293,14 +293,18 @@ fn dependency_failure_stops_consumers_before_restarting_provider() {
     assert_eq!(s.next_action(6).unwrap(), Some(SupervisorAction::Stop {
         ticket:display_intent.ticket, pid:KernelPid(2), force:false
     }));
-    assert_eq!(s.next_action(6).unwrap(), Some(SupervisorAction::Cleanup {
-        ticket:provider_t, pid:Some(KernelPid(1))
-    }));
+    // No provider cleanup while any required consumer remains bound.
+    assert_eq!(s.next_action(6).unwrap(), None);
+    assert_eq!(s.confirm_cleaned(&k, provider_t, Some(KernelPid(1)), 7),
+        Err(BridgeError::ActiveDependent));
     assert_eq!(s.next_action(1000).unwrap(), None);
     k.exited(KernelPid(2));
     s.notify_exit(&k, display_intent.ticket, KernelPid(2), ExitReason::Killed, 1001).unwrap();
     assert!(matches!(s.next_action(1002).unwrap(), Some(SupervisorAction::Cleanup { .. })));
     s.confirm_cleaned(&k, display_intent.ticket, Some(KernelPid(2)), 1003).unwrap();
+    assert_eq!(s.next_action(1003).unwrap(), Some(SupervisorAction::Cleanup {
+        ticket:provider_t, pid:Some(KernelPid(1))
+    }));
     s.confirm_cleaned(&k, provider_t, Some(KernelPid(1)), 1003).unwrap();
     assert!(matches!(s.next_action(1004).unwrap(), Some(SupervisorAction::Launch(_))));
 }
