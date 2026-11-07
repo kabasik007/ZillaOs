@@ -561,3 +561,6 @@ impl ServiceManager {
 
 #[path = "service_manifests.rs"]
 pub mod manifests;
+
+#[path = "service_supervisor.rs"]
+pub mod supervisor;
