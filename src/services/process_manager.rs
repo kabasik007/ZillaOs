@@ -181,7 +181,7 @@ mod tests {
         service.processes.mark_running(pid).unwrap();
         service.processes.mark_exited(pid, ExitReason::Normal(0)).unwrap();
         assert_eq!(service.reap_native_model(pid), Ok(ExitReason::Normal(0)));
-        assert_eq!(service.process(pid), None);
+        assert!(service.process(pid).is_none());
     }
 
     #[test]
