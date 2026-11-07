@@ -400,10 +400,10 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     let masks=initialize_timer()?;
     serial::write("ZILLAOS_TIMER_PREEMPT_ENTER\n");
     serial::write("ZILLAOS_TIMER_SOURCE=X2APIC_LOCAL_TIMER\n");
-    // SAFETY: IRETQ sets IF in the verified user frame, allowing PIT IRQ0 to
-    // preempt code that never invokes yield or exit. The IRQ handler restores
+    // SAFETY: use the *timer-enabled* entry; the normal entry forces IF=0
+    // and silently prevents all IRQ delivery. The APIC IRQ handler restores
     // the original supervisor continuation with interrupts disabled.
-    unsafe { native_ring3::enter_staged(staged.root,CODE,STACK_A) };
+    unsafe { native_ring3::enter_staged_with_timer(staged.root,CODE,STACK_A) };
     stop_timer(masks);
     serial::write("ZILLAOS_TIMER_PREEMPT_RETURNED\n");
 

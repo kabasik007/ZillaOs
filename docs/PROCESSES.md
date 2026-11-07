@@ -234,3 +234,18 @@ or provide SMP-ready APIC handling.
 bash scripts/build.sh ring3-preempt
 python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --cpu max --timeout 45
 ```
+
+### Confirmed root cause of the first two timer timeouts
+
+Code review revealed that the preemption fixture had used the ordinary
+`native_ring3::enter_staged()`, which intentionally enters CPL3 with
+`RFLAGS.IF=0`. Thus **no maskable timer IRQ could be delivered**
+regardless of the PIC/APIC routing choice. Previous PIT failure logs do
+**not** prove the legacy PIC path itself was unsupported by OVMF; the
+interrupt-enable bit was simply disabled.
+
+The x2APIC backend remains the preferred modern timer experiment, but
+the test must invoke `enter_staged_with_timer()`, which supplies
+`RFLAGS=0x202` on first `IRETQ` and keeps IF enabled in both saved
+CPL3 frames. The ordinary `enter_staged()` still uses `0x2` so the
+working cooperative and fault tests cannot accidentally enable IRQs.
