@@ -107,10 +107,13 @@ pub fn preview_for(disk: DiskGeometry) -> Result<PreviewPlan, PlanError> {
     let efi_sectors = ESP_BYTES / sector;
     let min_root = MIN_SYSTEM_BYTES / sector;
     let efi_start = start_guard;
-    let root_start = efi_start.checked_add(efi_sectors)
+    let root_start = efi_start
+        .checked_add(efi_sectors)
         .ok_or(PlanError::ArithmeticOverflow)?;
     let root_end = sectors.checked_sub(end_guard).ok_or(PlanError::TooSmall)?;
-    let root_sectors = root_end.checked_sub(root_start).ok_or(PlanError::TooSmall)?;
+    let root_sectors = root_end
+        .checked_sub(root_start)
+        .ok_or(PlanError::TooSmall)?;
 
     if root_sectors < min_root {
         return Err(PlanError::TooSmall);
@@ -152,24 +155,43 @@ mod tests {
             assert_eq!(p.efi.size_bytes(sector), Some(ESP_BYTES));
             assert_eq!(p.system.first_lba * sector as u64, MIB + ESP_BYTES);
             assert!(p.system.size_bytes(sector).unwrap() >= MIN_SYSTEM_BYTES);
-            assert_eq!(p.system.end_exclusive().unwrap() * sector as u64, 32 * GIB - MIB);
+            assert_eq!(
+                p.system.end_exclusive().unwrap() * sector as u64,
+                32 * GIB - MIB
+            );
         }
     }
 
     #[test]
     fn insufficient_or_invalid_disks_are_rejected() {
-        assert_eq!(preview_for(DiskGeometry {
-            capacity_bytes: 0, logical_sector_bytes: 512,
-        }), Err(PlanError::ZeroCapacity));
-        assert_eq!(preview_for(DiskGeometry {
-            capacity_bytes: 6 * GIB, logical_sector_bytes: 512,
-        }), Err(PlanError::TooSmall));
-        assert_eq!(preview_for(DiskGeometry {
-            capacity_bytes: 20 * GIB, logical_sector_bytes: 520,
-        }), Err(PlanError::UnsupportedLogicalSector));
-        assert_eq!(preview_for(DiskGeometry {
-            capacity_bytes: 16 * GIB + 1, logical_sector_bytes: 4096,
-        }), Err(PlanError::CapacityNotSectorAligned));
+        assert_eq!(
+            preview_for(DiskGeometry {
+                capacity_bytes: 0,
+                logical_sector_bytes: 512,
+            }),
+            Err(PlanError::ZeroCapacity)
+        );
+        assert_eq!(
+            preview_for(DiskGeometry {
+                capacity_bytes: 6 * GIB,
+                logical_sector_bytes: 512,
+            }),
+            Err(PlanError::TooSmall)
+        );
+        assert_eq!(
+            preview_for(DiskGeometry {
+                capacity_bytes: 20 * GIB,
+                logical_sector_bytes: 520,
+            }),
+            Err(PlanError::UnsupportedLogicalSector)
+        );
+        assert_eq!(
+            preview_for(DiskGeometry {
+                capacity_bytes: 16 * GIB + 1,
+                logical_sector_bytes: 4096,
+            }),
+            Err(PlanError::CapacityNotSectorAligned)
+        );
     }
 
     #[test]

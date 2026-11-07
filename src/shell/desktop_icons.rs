@@ -16,10 +16,22 @@ pub struct FolderShortcut {
 }
 
 pub const FOLDERS: [FolderShortcut; ICON_COUNT] = [
-    FolderShortcut { title: "DOCUMENTS", path: "/Users/Guest/Documents" },
-    FolderShortcut { title: "PICTURES", path: "/Users/Guest/Pictures" },
-    FolderShortcut { title: "DOWNLOADS", path: "/Users/Guest/Downloads" },
-    FolderShortcut { title: "PROGRAM FILES", path: "/Program Files" },
+    FolderShortcut {
+        title: "DOCUMENTS",
+        path: "/Users/Guest/Documents",
+    },
+    FolderShortcut {
+        title: "PICTURES",
+        path: "/Users/Guest/Pictures",
+    },
+    FolderShortcut {
+        title: "DOWNLOADS",
+        path: "/Users/Guest/Downloads",
+    },
+    FolderShortcut {
+        title: "PROGRAM FILES",
+        path: "/Program Files",
+    },
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,13 +58,18 @@ impl DesktopIcons {
         let bottom = layout.height.saturating_sub(layout.dock_height + 18);
         let mut positions = [IconPoint { x, y: min_y }; ICON_COUNT];
         for (index, p) in positions.iter_mut().enumerate() {
-            p.y = min_y.saturating_add(22 + index * 82)
-                       .min(bottom.saturating_sub(ICON_HEIGHT));
+            p.y = min_y
+                .saturating_add(22 + index * 82)
+                .min(bottom.saturating_sub(ICON_HEIGHT));
         }
         Self {
-            positions, dragging: None, moved: false,
-            width: layout.width, height: layout.height,
-            min_y, bottom,
+            positions,
+            dragging: None,
+            moved: false,
+            width: layout.width,
+            height: layout.height,
+            min_y,
+            bottom,
         }
     }
 
@@ -61,30 +78,51 @@ impl DesktopIcons {
     }
 
     pub fn hit(&self, x: usize, y: usize) -> Option<usize> {
-        if !self.visible() { return None; }
-        self.positions.iter().enumerate().rev().find_map(|(id, point)| {
-            if x >= point.x && x < point.x.saturating_add(ICON_WIDTH)
-                && y >= point.y && y < point.y.saturating_add(ICON_HEIGHT) {
-                Some(id)
-            } else { None }
-        })
+        if !self.visible() {
+            return None;
+        }
+        self.positions
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(id, point)| {
+                if x >= point.x
+                    && x < point.x.saturating_add(ICON_WIDTH)
+                    && y >= point.y
+                    && y < point.y.saturating_add(ICON_HEIGHT)
+                {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
     }
 
     pub fn begin(&mut self, icon: usize) -> bool {
-        if icon >= ICON_COUNT || !self.visible() { return false; }
+        if icon >= ICON_COUNT || !self.visible() {
+            return false;
+        }
         self.dragging = Some(icon);
         self.moved = false;
         true
     }
 
     pub fn move_by(&mut self, dx: i16, dy: i16) -> bool {
-        let Some(icon) = self.dragging else { return false };
-        if dx == 0 && dy == 0 { return false; }
+        let Some(icon) = self.dragging else {
+            return false;
+        };
+        if dx == 0 && dy == 0 {
+            return false;
+        }
         let point = &mut self.positions[icon];
-        let x = point.x.saturating_add_signed(dx as isize)
+        let x = point
+            .x
+            .saturating_add_signed(dx as isize)
             .min(self.width.saturating_sub(ICON_WIDTH));
-        let y = point.y.saturating_add_signed(dy as isize)
-            .clamp(self.min_y, self.bottom.saturating_sub(ICON_HEIGHT).max(self.min_y));
+        let y = point.y.saturating_add_signed(dy as isize).clamp(
+            self.min_y,
+            self.bottom.saturating_sub(ICON_HEIGHT).max(self.min_y),
+        );
         if (x, y) != (point.x, point.y) {
             point.x = x;
             point.y = y;
@@ -99,9 +137,13 @@ impl DesktopIcons {
         let icon = self.dragging.take()?;
         let moved = self.moved;
         self.moved = false;
-        if moved { return None; }
+        if moved {
+            return None;
+        }
         let id = fs::lookup(FOLDERS[icon].path)?;
-        if fs::node(id)?.kind != NodeKind::Directory { return None; }
+        if fs::node(id)?.kind != NodeKind::Directory {
+            return None;
+        }
         Some(id)
     }
 }
@@ -113,8 +155,10 @@ mod tests {
     fn icons_reference_existing_guest_directories() {
         let icons = DesktopIcons::new(Layout::for_size(1024, 768).unwrap());
         for (index, folder) in FOLDERS.iter().enumerate() {
-            assert_eq!(icons.hit(icons.positions[index].x + 5,
-                                 icons.positions[index].y + 5), Some(index));
+            assert_eq!(
+                icons.hit(icons.positions[index].x + 5, icons.positions[index].y + 5),
+                Some(index)
+            );
             let id = fs::lookup(folder.path).unwrap();
             assert_eq!(fs::node(id).unwrap().kind, NodeKind::Directory);
         }

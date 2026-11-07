@@ -52,12 +52,17 @@ pub struct KernelStackRegistry {
 }
 
 impl Default for KernelStackRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KernelStackRegistry {
     pub const fn new() -> Self {
-        Self { slots: [None; MAX_THREADS], next_id: 1 }
+        Self {
+            slots: [None; MAX_THREADS],
+            next_id: 1,
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = KernelStackLease> + '_ {
@@ -75,40 +80,66 @@ impl KernelStackRegistry {
     /// Reserve exactly one unmapped guard page plus bounded RW/NX kernel
     /// stack pages. The VM subsystem MUST install permissions separately.
     pub fn reserve(
-        &mut self, tid: Tid, guard_base: u64, mapped_pages: u64,
+        &mut self,
+        tid: Tid,
+        guard_base: u64,
+        mapped_pages: u64,
     ) -> Result<u64, StackError> {
-        if tid.0 == 0 || guard_base < KERNEL_HIGH_HALF_START
+        if tid.0 == 0
+            || guard_base < KERNEL_HIGH_HALF_START
             || guard_base % PAGE_SIZE != 0
-            || mapped_pages == 0 || mapped_pages > MAX_KERNEL_STACK_PAGES
+            || mapped_pages == 0
+            || mapped_pages > MAX_KERNEL_STACK_PAGES
         {
             return Err(StackError::InvalidRange);
         }
-        let mapped_base = guard_base.checked_add(PAGE_SIZE)
+        let mapped_base = guard_base
+            .checked_add(PAGE_SIZE)
             .ok_or(StackError::InvalidRange)?;
-        let bytes = mapped_pages.checked_mul(PAGE_SIZE)
+        let bytes = mapped_pages
+            .checked_mul(PAGE_SIZE)
             .ok_or(StackError::InvalidRange)?;
-        let end = mapped_base.checked_add(bytes).ok_or(StackError::InvalidRange)?;
+        let end = mapped_base
+            .checked_add(bytes)
+            .ok_or(StackError::InvalidRange)?;
         if self.iter().any(|lease| lease.tid == tid) {
             return Err(StackError::DuplicateOwner);
         }
-        if self.iter().any(|lease| guard_base < lease.end() && lease.guard_base < end) {
+        if self
+            .iter()
+            .any(|lease| guard_base < lease.end() && lease.guard_base < end)
+        {
             return Err(StackError::Overlap);
         }
-        let slot = self.slots.iter().position(Option::is_none).ok_or(StackError::Capacity)?;
+        let slot = self
+            .slots
+            .iter()
+            .position(Option::is_none)
+            .ok_or(StackError::Capacity)?;
         let next = self.next_id.checked_add(1).ok_or(StackError::IdExhausted)?;
         let id = self.next_id;
         self.next_id = next;
         self.slots[slot] = Some(KernelStackLease {
-            id, tid, guard_base, mapped_base, mapped_pages,
+            id,
+            tid,
+            guard_base,
+            mapped_base,
+            mapped_pages,
             phase: StackPhase::Reserved,
         });
         Ok(id)
     }
 
     pub fn activate(&mut self, id: u64) -> Result<(), StackError> {
-        let lease = self.slots.iter_mut().flatten()
-            .find(|lease| lease.id == id).ok_or(StackError::UnknownLease)?;
-        if lease.phase != StackPhase::Reserved { return Err(StackError::InvalidPhase); }
+        let lease = self
+            .slots
+            .iter_mut()
+            .flatten()
+            .find(|lease| lease.id == id)
+            .ok_or(StackError::UnknownLease)?;
+        if lease.phase != StackPhase::Reserved {
+            return Err(StackError::InvalidPhase);
+        }
         lease.phase = StackPhase::Active;
         Ok(())
     }
@@ -120,9 +151,15 @@ impl KernelStackRegistry {
     /// is required before any real VMM reclamation. Pure host tests only
     /// simulate this obligation.
     pub unsafe fn retire_after_quiescence(&mut self, id: u64) -> Result<(), StackError> {
-        let lease = self.slots.iter_mut().flatten()
-            .find(|lease| lease.id == id).ok_or(StackError::UnknownLease)?;
-        if lease.phase == StackPhase::Retired { return Err(StackError::InvalidPhase); }
+        let lease = self
+            .slots
+            .iter_mut()
+            .flatten()
+            .find(|lease| lease.id == id)
+            .ok_or(StackError::UnknownLease)?;
+        if lease.phase == StackPhase::Retired {
+            return Err(StackError::InvalidPhase);
+        }
         lease.phase = StackPhase::Retired;
         Ok(())
     }
@@ -131,10 +168,15 @@ impl KernelStackRegistry {
     /// unmapped, invalidated and released the pages / guard reservation.
     /// This method does not perform those operations.
     pub fn release_record(&mut self, id: u64) -> Result<(), StackError> {
-        let slot = self.slots.iter_mut()
+        let slot = self
+            .slots
+            .iter_mut()
             .find(|item| item.as_ref().is_some_and(|entry| entry.id == id))
             .ok_or(StackError::UnknownLease)?;
-        if slot.as_ref().is_none_or(|entry| entry.phase != StackPhase::Retired) {
+        if slot
+            .as_ref()
+            .is_none_or(|entry| entry.phase != StackPhase::Retired)
+        {
             return Err(StackError::InvalidPhase);
         }
         *slot = None;
@@ -174,24 +216,47 @@ mod tests {
     fn overlapping_reservations_and_duplicate_tid_fail_closed() {
         let mut registry = KernelStackRegistry::new();
         registry.reserve(Tid(1), BASE, 8).unwrap();
-        assert_eq!(registry.reserve(Tid(1), BASE + 100 * PAGE_SIZE, 2),
-            Err(StackError::DuplicateOwner));
-        assert_eq!(registry.reserve(Tid(2), BASE + 8 * PAGE_SIZE, 1),
-            Err(StackError::Overlap));
-        assert_eq!(registry.reserve(Tid(2), BASE + 9 * PAGE_SIZE, 1).is_ok(), true);
+        assert_eq!(
+            registry.reserve(Tid(1), BASE + 100 * PAGE_SIZE, 2),
+            Err(StackError::DuplicateOwner)
+        );
+        assert_eq!(
+            registry.reserve(Tid(2), BASE + 8 * PAGE_SIZE, 1),
+            Err(StackError::Overlap)
+        );
+        assert_eq!(
+            registry.reserve(Tid(2), BASE + 9 * PAGE_SIZE, 1).is_ok(),
+            true
+        );
     }
 
     #[test]
     fn reject_kernel_stack_overflow_and_user_addresses() {
         let mut registry = KernelStackRegistry::new();
-        assert_eq!(registry.reserve(Tid(0), BASE, 1), Err(StackError::InvalidRange));
-        assert_eq!(registry.reserve(Tid(1), 0x800000, 4), Err(StackError::InvalidRange));
-        assert_eq!(registry.reserve(Tid(1), BASE + 1, 1), Err(StackError::InvalidRange));
-        assert_eq!(registry.reserve(Tid(1), BASE, 0), Err(StackError::InvalidRange));
-        assert_eq!(registry.reserve(Tid(1), BASE, MAX_KERNEL_STACK_PAGES + 1),
-            Err(StackError::InvalidRange));
-        assert_eq!(registry.reserve(Tid(1), u64::MAX - (PAGE_SIZE - 1), 2),
-            Err(StackError::InvalidRange));
+        assert_eq!(
+            registry.reserve(Tid(0), BASE, 1),
+            Err(StackError::InvalidRange)
+        );
+        assert_eq!(
+            registry.reserve(Tid(1), 0x800000, 4),
+            Err(StackError::InvalidRange)
+        );
+        assert_eq!(
+            registry.reserve(Tid(1), BASE + 1, 1),
+            Err(StackError::InvalidRange)
+        );
+        assert_eq!(
+            registry.reserve(Tid(1), BASE, 0),
+            Err(StackError::InvalidRange)
+        );
+        assert_eq!(
+            registry.reserve(Tid(1), BASE, MAX_KERNEL_STACK_PAGES + 1),
+            Err(StackError::InvalidRange)
+        );
+        assert_eq!(
+            registry.reserve(Tid(1), u64::MAX - (PAGE_SIZE - 1), 2),
+            Err(StackError::InvalidRange)
+        );
         assert_eq!(registry.iter().count(), 0);
     }
 
@@ -199,11 +264,15 @@ mod tests {
     fn exhausted_registry_does_not_silently_evict_active_stack() {
         let mut registry = KernelStackRegistry::new();
         for i in 0..MAX_THREADS {
-            let id = registry.reserve(Tid(i as u64 + 1), BASE + (i as u64) * 10 * PAGE_SIZE, 8).unwrap();
+            let id = registry
+                .reserve(Tid(i as u64 + 1), BASE + (i as u64) * 10 * PAGE_SIZE, 8)
+                .unwrap();
             registry.activate(id).unwrap();
         }
         assert_eq!(registry.iter().count(), MAX_THREADS);
-        assert_eq!(registry.reserve(Tid(100), BASE + 1000 * PAGE_SIZE, 8),
-            Err(StackError::Capacity));
+        assert_eq!(
+            registry.reserve(Tid(100), BASE + 1000 * PAGE_SIZE, 8),
+            Err(StackError::Capacity)
+        );
     }
 }

@@ -60,7 +60,9 @@ pub struct ThreadTable {
 }
 
 impl Default for ThreadTable {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ThreadTable {
@@ -73,7 +75,9 @@ impl ThreadTable {
         }
     }
 
-    pub const fn online_cpu_mask(&self) -> u64 { self.online_cpu_mask }
+    pub const fn online_cpu_mask(&self) -> u64 {
+        self.online_cpu_mask
+    }
 
     pub fn iter(&self) -> impl Iterator<Item = &Thread> + '_ {
         self.slots.iter().flatten()
@@ -84,14 +88,15 @@ impl ThreadTable {
     }
 
     fn get_mut(&mut self, tid: Tid) -> Result<&mut Thread, ThreadError> {
-        self.slots.iter_mut().flatten()
-            .find(|t| t.tid == tid).ok_or(ThreadError::UnknownThread)
+        self.slots
+            .iter_mut()
+            .flatten()
+            .find(|t| t.tid == tid)
+            .ok_or(ThreadError::UnknownThread)
     }
 
     fn cpu_allowed(&self, cpu: usize, mask: u64) -> bool {
-        cpu < MAX_CPUS
-            && (self.online_cpu_mask & (1u64 << cpu)) != 0
-            && (mask & (1u64 << cpu)) != 0
+        cpu < MAX_CPUS && (self.online_cpu_mask & (1u64 << cpu)) != 0 && (mask & (1u64 << cpu)) != 0
     }
 
     pub fn create(
@@ -105,25 +110,36 @@ impl ThreadTable {
         let Some(parent) = processes.process(pid) else {
             return Err(ThreadError::ParentMissing);
         };
-        if parent.state == ProcessState::Exited { return Err(ThreadError::ParentMissing); }
-        if !(USER_MIN..USER_TOP).contains(&entry)
-            || !(USER_MIN..USER_TOP).contains(&stack_top)
-        {
+        if parent.state == ProcessState::Exited {
+            return Err(ThreadError::ParentMissing);
+        }
+        if !(USER_MIN..USER_TOP).contains(&entry) || !(USER_MIN..USER_TOP).contains(&stack_top) {
             return Err(ThreadError::InvalidContext);
         }
-        if affinity_mask == 0 || affinity_mask & self.online_cpu_mask == 0
+        if affinity_mask == 0
+            || affinity_mask & self.online_cpu_mask == 0
             || affinity_mask >> MAX_CPUS != 0
         {
             return Err(ThreadError::InvalidAffinity);
         }
-        let index = self.slots.iter().position(Option::is_none)
+        let index = self
+            .slots
+            .iter()
+            .position(Option::is_none)
             .ok_or(ThreadError::NoFreeSlot)?;
-        let new_next = self.next_tid.checked_add(1).ok_or(ThreadError::IdExhausted)?;
+        let new_next = self
+            .next_tid
+            .checked_add(1)
+            .ok_or(ThreadError::IdExhausted)?;
         let tid = Tid(self.next_tid);
         self.next_tid = new_next;
         self.slots[index] = Some(Thread {
-            tid, pid, state: ThreadState::Created,
-            instruction: entry, stack_top, affinity_mask,
+            tid,
+            pid,
+            state: ThreadState::Created,
+            instruction: entry,
+            stack_top,
+            affinity_mask,
             assigned_cpu: None,
             timer_ticks: 0,
         });
@@ -132,15 +148,21 @@ impl ThreadTable {
 
     /// Validate the parent's planned RX entry and RW user stack.
     /// Does NOT map pages or initialize the CPU register context.
-    pub fn prepare(&mut self, processes: &ProcessTable, tid: Tid)
-        -> Result<(), ThreadError>
-    {
+    pub fn prepare(&mut self, processes: &ProcessTable, tid: Tid) -> Result<(), ThreadError> {
         let record = *self.get(tid).ok_or(ThreadError::UnknownThread)?;
-        if record.state != ThreadState::Created { return Err(ThreadError::InvalidState) }
-        let parent = processes.process(record.pid).ok_or(ThreadError::ParentMissing)?;
+        if record.state != ThreadState::Created {
+            return Err(ThreadError::InvalidState);
+        }
+        let parent = processes
+            .process(record.pid)
+            .ok_or(ThreadError::ParentMissing)?;
         if parent.state == ProcessState::Exited
-            || !parent.address_space.allows(record.instruction, 1, Access::Execute)
-            || !parent.address_space.allows(record.stack_top - 1, 1, Access::Write)
+            || !parent
+                .address_space
+                .allows(record.instruction, 1, Access::Execute)
+            || !parent
+                .address_space
+                .allows(record.stack_top - 1, 1, Access::Write)
         {
             return Err(ThreadError::InvalidContext);
         }
@@ -151,16 +173,23 @@ impl ThreadTable {
     /// Non-mutating priority-free Round Robin selection for one *online*
     /// logical CPU. Mutates only the selection cursor; it does not run tasks.
     pub fn next_ready(&mut self, cpu: usize) -> Option<Tid> {
-        if !self.cpu_allowed(cpu, 1u64 << cpu.min(63)) { return None; }
+        if !self.cpu_allowed(cpu, 1u64 << cpu.min(63)) {
+            return None;
+        }
         let last = self.last_scheduled[cpu];
         let mut first: Option<Tid> = None;
         let mut after: Option<Tid> = None;
-        for thread in self.iter().filter(|t|
-            t.state == ThreadState::Ready && t.affinity_mask & (1 << cpu) != 0
-        ) {
+        for thread in self
+            .iter()
+            .filter(|t| t.state == ThreadState::Ready && t.affinity_mask & (1 << cpu) != 0)
+        {
             let id = thread.tid;
-            if first.is_none_or(|prev| id < prev) { first = Some(id); }
-            if id.0 > last && after.is_none_or(|prev| id < prev) { after = Some(id); }
+            if first.is_none_or(|prev| id < prev) {
+                first = Some(id);
+            }
+            if id.0 > last && after.is_none_or(|prev| id < prev) {
+                after = Some(id);
+            }
         }
         let chosen = after.or(first)?;
         self.last_scheduled[cpu] = chosen.0;
@@ -172,8 +201,13 @@ impl ThreadTable {
         if !self.cpu_allowed(cpu, record.affinity_mask) {
             return Err(ThreadError::CpuOffline);
         }
-        if record.state != ThreadState::Ready { return Err(ThreadError::InvalidState) }
-        if self.iter().any(|t| t.state == ThreadState::Running && t.assigned_cpu == Some(cpu)) {
+        if record.state != ThreadState::Ready {
+            return Err(ThreadError::InvalidState);
+        }
+        if self
+            .iter()
+            .any(|t| t.state == ThreadState::Running && t.assigned_cpu == Some(cpu))
+        {
             return Err(ThreadError::CpuBusy);
         }
         let t = self.get_mut(tid)?;
@@ -186,16 +220,17 @@ impl ThreadTable {
     /// currently running thread on this CPU. The interrupt backend calls
     /// this after verifying its saved CPU/user context.
     /// No wall-clock duration or CPU percentage is calculated here.
-    pub fn charge_timer_tick(&mut self, cpu: usize, tid: Tid)
-        -> Result<u64, ThreadError>
-    {
+    pub fn charge_timer_tick(&mut self, cpu: usize, tid: Tid) -> Result<u64, ThreadError> {
         let thread = *self.get(tid).ok_or(ThreadError::UnknownThread)?;
-        if cpu >= MAX_CPUS || thread.state != ThreadState::Running
+        if cpu >= MAX_CPUS
+            || thread.state != ThreadState::Running
             || thread.assigned_cpu != Some(cpu)
         {
             return Err(ThreadError::InvalidState);
         }
-        let ticks = thread.timer_ticks.checked_add(1)
+        let ticks = thread
+            .timer_ticks
+            .checked_add(1)
             .ok_or(ThreadError::TickOverflow)?;
         self.get_mut(tid)?.timer_ticks = ticks;
         Ok(ticks)
@@ -206,7 +241,8 @@ impl ThreadTable {
     /// switch and interrupt acknowledgement.
     pub fn preempt_running(&mut self, cpu: usize, tid: Tid) -> Result<(), ThreadError> {
         let thread = *self.get(tid).ok_or(ThreadError::UnknownThread)?;
-        if cpu >= MAX_CPUS || thread.state != ThreadState::Running
+        if cpu >= MAX_CPUS
+            || thread.state != ThreadState::Running
             || thread.assigned_cpu != Some(cpu)
         {
             return Err(ThreadError::InvalidState);
@@ -219,7 +255,9 @@ impl ThreadTable {
 
     pub fn yield_running(&mut self, tid: Tid) -> Result<(), ThreadError> {
         let t = self.get_mut(tid)?;
-        if t.state != ThreadState::Running { return Err(ThreadError::InvalidState); }
+        if t.state != ThreadState::Running {
+            return Err(ThreadError::InvalidState);
+        }
         t.state = ThreadState::Ready;
         t.assigned_cpu = None;
         Ok(())
@@ -237,14 +275,18 @@ impl ThreadTable {
 
     pub fn wake(&mut self, tid: Tid) -> Result<(), ThreadError> {
         let t = self.get_mut(tid)?;
-        if t.state != ThreadState::Blocked { return Err(ThreadError::InvalidState); }
+        if t.state != ThreadState::Blocked {
+            return Err(ThreadError::InvalidState);
+        }
         t.state = ThreadState::Ready;
         Ok(())
     }
 
     pub fn exit(&mut self, tid: Tid) -> Result<(), ThreadError> {
         let t = self.get_mut(tid)?;
-        if t.state == ThreadState::Exited { return Err(ThreadError::InvalidState); }
+        if t.state == ThreadState::Exited {
+            return Err(ThreadError::InvalidState);
+        }
         t.state = ThreadState::Exited;
         t.assigned_cpu = None;
         Ok(())
@@ -255,7 +297,10 @@ impl ThreadTable {
     /// entire operation BEFORE any state is changed. Kernel stack/VMM
     /// reclamation belongs to a later, separately acknowledged stage.
     pub fn terminate_owned_quiescent(&mut self, pid: Pid) -> Result<usize, ThreadError> {
-        if self.iter().any(|t| t.pid == pid && t.state == ThreadState::Running) {
+        if self
+            .iter()
+            .any(|t| t.pid == pid && t.state == ThreadState::Running)
+        {
             return Err(ThreadError::CpuBusy);
         }
         let mut count = 0;
@@ -268,7 +313,9 @@ impl ThreadTable {
     }
 
     pub fn reap(&mut self, tid: Tid) -> Result<(), ThreadError> {
-        let slot = self.slots.iter_mut()
+        let slot = self
+            .slots
+            .iter_mut()
             .find(|slot| slot.as_ref().is_some_and(|t| t.tid == tid))
             .ok_or(ThreadError::UnknownThread)?;
         if slot.as_ref().is_none_or(|t| t.state != ThreadState::Exited) {
@@ -282,141 +329,195 @@ impl ThreadTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::address_space::{Permissions, UserRegion, PAGE_SIZE};
+    use crate::process::address_space::{PAGE_SIZE, Permissions, UserRegion};
 
     fn parent() -> (ProcessTable, Pid) {
-        let mut processes=ProcessTable::new();
-        let pid=processes.create("thread-fixture", 0x400000, 0x800000, 4).unwrap();
-        processes.map_region(pid, UserRegion::checked(
-            0x400000, PAGE_SIZE, Permissions::READ_EXECUTE,
-        ).unwrap()).unwrap();
+        let mut processes = ProcessTable::new();
+        let pid = processes
+            .create("thread-fixture", 0x400000, 0x800000, 4)
+            .unwrap();
+        processes
+            .map_region(
+                pid,
+                UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+            )
+            .unwrap();
         processes.prepare(pid).unwrap();
-        (processes,pid)
+        (processes, pid)
     }
 
     #[test]
     fn lifecycle_and_parent_validation_are_explicit() {
-        let (processes,pid)=parent();
-        let mut table=ThreadTable::new();
-        assert_eq!(table.online_cpu_mask(),1);
-        assert_eq!(table.create(&processes,Pid(999),0x400000,0x800000,1),
-                   Err(ThreadError::ParentMissing));
-        assert_eq!(table.create(&processes,pid,0x400000,0x800000,2),
-                   Err(ThreadError::InvalidAffinity));
-        let tid=table.create(&processes,pid,0x400000,0x800000,1).unwrap();
-        assert_eq!(table.prepare(&processes,tid),Ok(()));
-        assert_eq!(table.prepare(&processes,tid),Err(ThreadError::InvalidState));
-        assert_eq!(table.next_ready(1),None);
-        assert_eq!(table.next_ready(0),Some(tid));
-        assert_eq!(table.mark_running(1,tid),Err(ThreadError::CpuOffline));
-        table.mark_running(0,tid).unwrap();
-        assert_eq!(table.get(tid).unwrap().assigned_cpu,Some(0));
+        let (processes, pid) = parent();
+        let mut table = ThreadTable::new();
+        assert_eq!(table.online_cpu_mask(), 1);
+        assert_eq!(
+            table.create(&processes, Pid(999), 0x400000, 0x800000, 1),
+            Err(ThreadError::ParentMissing)
+        );
+        assert_eq!(
+            table.create(&processes, pid, 0x400000, 0x800000, 2),
+            Err(ThreadError::InvalidAffinity)
+        );
+        let tid = table
+            .create(&processes, pid, 0x400000, 0x800000, 1)
+            .unwrap();
+        assert_eq!(table.prepare(&processes, tid), Ok(()));
+        assert_eq!(
+            table.prepare(&processes, tid),
+            Err(ThreadError::InvalidState)
+        );
+        assert_eq!(table.next_ready(1), None);
+        assert_eq!(table.next_ready(0), Some(tid));
+        assert_eq!(table.mark_running(1, tid), Err(ThreadError::CpuOffline));
+        table.mark_running(0, tid).unwrap();
+        assert_eq!(table.get(tid).unwrap().assigned_cpu, Some(0));
         table.block(tid).unwrap();
-        assert_eq!(table.next_ready(0),None);
+        assert_eq!(table.next_ready(0), None);
         table.wake(tid).unwrap();
-        table.mark_running(0,tid).unwrap();
+        table.mark_running(0, tid).unwrap();
         table.yield_running(tid).unwrap();
         table.exit(tid).unwrap();
-        assert_eq!(table.reap(tid),Ok(()));
-        assert_eq!(table.get(tid),None);
+        assert_eq!(table.reap(tid), Ok(()));
+        assert_eq!(table.get(tid), None);
     }
 
     #[test]
     fn preemption_requires_current_cpu_ownership() {
         let (processes, pid) = parent();
         let mut threads = ThreadTable::new();
-        let tid = threads.create(&processes,pid,0x400000,0x800000,1).unwrap();
-        threads.prepare(&processes,tid).unwrap();
-        assert_eq!(threads.preempt_running(0,tid),Err(ThreadError::InvalidState));
-        threads.mark_running(0,tid).unwrap();
-        assert_eq!(threads.preempt_running(1,tid),Err(ThreadError::InvalidState));
-        assert_eq!(threads.preempt_running(0,tid),Ok(()));
-        assert_eq!(threads.get(tid).unwrap().state,ThreadState::Ready);
-        assert_eq!(threads.get(tid).unwrap().assigned_cpu,None);
-        threads.mark_running(0,tid).unwrap();
-        assert_eq!(threads.get(tid).unwrap().assigned_cpu,Some(0));
+        let tid = threads
+            .create(&processes, pid, 0x400000, 0x800000, 1)
+            .unwrap();
+        threads.prepare(&processes, tid).unwrap();
+        assert_eq!(
+            threads.preempt_running(0, tid),
+            Err(ThreadError::InvalidState)
+        );
+        threads.mark_running(0, tid).unwrap();
+        assert_eq!(
+            threads.preempt_running(1, tid),
+            Err(ThreadError::InvalidState)
+        );
+        assert_eq!(threads.preempt_running(0, tid), Ok(()));
+        assert_eq!(threads.get(tid).unwrap().state, ThreadState::Ready);
+        assert_eq!(threads.get(tid).unwrap().assigned_cpu, None);
+        threads.mark_running(0, tid).unwrap();
+        assert_eq!(threads.get(tid).unwrap().assigned_cpu, Some(0));
     }
 
     #[test]
     fn timer_tick_accounting_rejects_wrong_cpu_and_preserves_identity() {
-        let (processes,pid) = parent();
+        let (processes, pid) = parent();
         let mut threads = ThreadTable::new();
-        let a=threads.create(&processes,pid,0x400000,0x800000,1).unwrap();
-        let b=threads.create(&processes,pid,0x400000,0x800000,1).unwrap();
-        threads.prepare(&processes,a).unwrap();
-        threads.prepare(&processes,b).unwrap();
-        assert_eq!(threads.charge_timer_tick(0,a),Err(ThreadError::InvalidState));
-        threads.mark_running(0,a).unwrap();
-        assert_eq!(threads.charge_timer_tick(1,a),Err(ThreadError::InvalidState));
-        assert_eq!(threads.charge_timer_tick(0,b),Err(ThreadError::InvalidState));
-        assert_eq!(threads.charge_timer_tick(0,a),Ok(1));
-        assert_eq!(threads.charge_timer_tick(0,a),Ok(2));
-        assert_eq!(threads.get(b).unwrap().timer_ticks,0);
-        threads.preempt_running(0,a).unwrap();
-        assert_eq!(threads.charge_timer_tick(0,a),Err(ThreadError::InvalidState));
-        threads.mark_running(0,b).unwrap();
-        assert_eq!(threads.charge_timer_tick(0,b),Ok(1));
+        let a = threads
+            .create(&processes, pid, 0x400000, 0x800000, 1)
+            .unwrap();
+        let b = threads
+            .create(&processes, pid, 0x400000, 0x800000, 1)
+            .unwrap();
+        threads.prepare(&processes, a).unwrap();
+        threads.prepare(&processes, b).unwrap();
+        assert_eq!(
+            threads.charge_timer_tick(0, a),
+            Err(ThreadError::InvalidState)
+        );
+        threads.mark_running(0, a).unwrap();
+        assert_eq!(
+            threads.charge_timer_tick(1, a),
+            Err(ThreadError::InvalidState)
+        );
+        assert_eq!(
+            threads.charge_timer_tick(0, b),
+            Err(ThreadError::InvalidState)
+        );
+        assert_eq!(threads.charge_timer_tick(0, a), Ok(1));
+        assert_eq!(threads.charge_timer_tick(0, a), Ok(2));
+        assert_eq!(threads.get(b).unwrap().timer_ticks, 0);
+        threads.preempt_running(0, a).unwrap();
+        assert_eq!(
+            threads.charge_timer_tick(0, a),
+            Err(ThreadError::InvalidState)
+        );
+        threads.mark_running(0, b).unwrap();
+        assert_eq!(threads.charge_timer_tick(0, b), Ok(1));
         threads.get_mut(b).unwrap().timer_ticks = u64::MAX;
-        assert_eq!(threads.charge_timer_tick(0,b),Err(ThreadError::TickOverflow));
-        assert_eq!(threads.get(b).unwrap().timer_ticks,u64::MAX);
-        assert_eq!(threads.get(a).unwrap().timer_ticks,2);
+        assert_eq!(
+            threads.charge_timer_tick(0, b),
+            Err(ThreadError::TickOverflow)
+        );
+        assert_eq!(threads.get(b).unwrap().timer_ticks, u64::MAX);
+        assert_eq!(threads.get(a).unwrap().timer_ticks, 2);
     }
 
     #[test]
     fn round_robin_never_schedules_blocked_or_exited_threads() {
-        let (processes,pid)=parent();
-        let mut t=ThreadTable::new();
-        let ids: [_;3]=core::array::from_fn(|_| {
-            let tid=t.create(&processes,pid,0x400000,0x800000,1).unwrap();
-            t.prepare(&processes,tid).unwrap();
+        let (processes, pid) = parent();
+        let mut t = ThreadTable::new();
+        let ids: [_; 3] = core::array::from_fn(|_| {
+            let tid = t.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
+            t.prepare(&processes, tid).unwrap();
             tid
         });
-        assert_eq!(t.next_ready(0),Some(ids[0]));
-        assert_eq!(t.next_ready(0),Some(ids[1]));
+        assert_eq!(t.next_ready(0), Some(ids[0]));
+        assert_eq!(t.next_ready(0), Some(ids[1]));
         t.block(ids[2]).unwrap();
-        assert_eq!(t.next_ready(0),Some(ids[0]));
-        t.mark_running(0,ids[0]).unwrap();
-        assert_eq!(t.mark_running(0,ids[1]),Err(ThreadError::CpuBusy));
+        assert_eq!(t.next_ready(0), Some(ids[0]));
+        t.mark_running(0, ids[0]).unwrap();
+        assert_eq!(t.mark_running(0, ids[1]), Err(ThreadError::CpuBusy));
         t.exit(ids[1]).unwrap();
-        assert_eq!(t.next_ready(0),None);
+        assert_eq!(t.next_ready(0), None);
     }
 
     #[test]
     fn cannot_prepare_unmapped_or_kernel_context() {
-        let (processes,pid)=parent();
-        let mut t=ThreadTable::new();
-        assert_eq!(t.create(&processes,pid,u64::MAX,0x800000,1),
-                   Err(ThreadError::InvalidContext));
-        let tid=t.create(&processes,pid,0x500000,0x800000,1).unwrap();
-        assert_eq!(t.prepare(&processes,tid),Err(ThreadError::InvalidContext));
+        let (processes, pid) = parent();
+        let mut t = ThreadTable::new();
+        assert_eq!(
+            t.create(&processes, pid, u64::MAX, 0x800000, 1),
+            Err(ThreadError::InvalidContext)
+        );
+        let tid = t.create(&processes, pid, 0x500000, 0x800000, 1).unwrap();
+        assert_eq!(t.prepare(&processes, tid), Err(ThreadError::InvalidContext));
     }
 
     #[test]
     fn bounded_capacity_does_not_reuse_running_tids() {
-        let (processes,pid)=parent();
-        let mut t=ThreadTable::new();
-        let mut first=None;
+        let (processes, pid) = parent();
+        let mut t = ThreadTable::new();
+        let mut first = None;
         for _ in 0..MAX_THREADS {
-            let tid=t.create(&processes,pid,0x400000,0x800000,1).unwrap();
-            if first.is_none() { first=Some(tid); }
+            let tid = t.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
+            if first.is_none() {
+                first = Some(tid);
+            }
         }
-        assert_eq!(t.create(&processes,pid,0x400000,0x800000,1),
-                   Err(ThreadError::NoFreeSlot));
+        assert_eq!(
+            t.create(&processes, pid, 0x400000, 0x800000, 1),
+            Err(ThreadError::NoFreeSlot)
+        );
         t.exit(first.unwrap()).unwrap();
         t.reap(first.unwrap()).unwrap();
-        let new_tid=t.create(&processes,pid,0x400000,0x800000,1).unwrap();
+        let new_tid = t.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
         assert!(new_tid > first.unwrap());
     }
     #[test]
     fn terminate_owned_quiescent_rejects_running_before_any_other_thread_changes() {
         let (processes, pid) = parent();
         let mut table = ThreadTable::new();
-        let a = table.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
-        let b = table.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
+        let a = table
+            .create(&processes, pid, 0x400000, 0x800000, 1)
+            .unwrap();
+        let b = table
+            .create(&processes, pid, 0x400000, 0x800000, 1)
+            .unwrap();
         table.prepare(&processes, a).unwrap();
         table.prepare(&processes, b).unwrap();
         table.mark_running(0, a).unwrap();
-        assert_eq!(table.terminate_owned_quiescent(pid), Err(ThreadError::CpuBusy));
+        assert_eq!(
+            table.terminate_owned_quiescent(pid),
+            Err(ThreadError::CpuBusy)
+        );
         assert_eq!(table.get(b).unwrap().state, ThreadState::Ready);
         table.yield_running(a).unwrap();
         assert_eq!(table.terminate_owned_quiescent(pid), Ok(2));
@@ -425,5 +526,4 @@ mod tests {
         assert_eq!(table.reap(a), Ok(()));
         assert_eq!(table.reap(a), Err(ThreadError::UnknownThread));
     }
-
 }

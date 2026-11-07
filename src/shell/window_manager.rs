@@ -55,14 +55,21 @@ impl WindowManager {
     pub fn new(viewport: Layout) -> Self {
         // Keep room for a visible cascade even at 800x600; the original
         // layout window occupies almost the entire screen.
-        let width = viewport.window_width.min((viewport.width * 78 / 100).max(240));
-        let height = viewport.window_height.min((viewport.height * 64 / 100).max(100));
-        let base = Self::clamp_rect(Rect {
-            x: viewport.width.saturating_sub(width) / 2,
-            y: viewport.top_bar.saturating_add(25),
-            width,
-            height,
-        }, viewport);
+        let width = viewport
+            .window_width
+            .min((viewport.width * 78 / 100).max(240));
+        let height = viewport
+            .window_height
+            .min((viewport.height * 64 / 100).max(100));
+        let base = Self::clamp_rect(
+            Rect {
+                x: viewport.width.saturating_sub(width) / 2,
+                y: viewport.top_bar.saturating_add(25),
+                width,
+                height,
+            },
+            viewport,
+        );
         let offset = (viewport.width / 20).clamp(12, 40);
         let shifted = Self::clamp_rect(
             Rect {
@@ -82,20 +89,53 @@ impl WindowManager {
         );
         Self {
             windows: [
-                Window { app: App::Files, rect: base, mode: WindowMode::Normal },
-                Window { app: App::Terminal, rect: shifted, mode: WindowMode::Hidden },
-                Window { app: App::Settings, rect: shifted_again, mode: WindowMode::Hidden },
-                Window { app: App::AppCenter, rect: shifted, mode: WindowMode::Hidden },
-                Window { app: App::Notepad, rect: shifted_again, mode: WindowMode::Hidden },
-                Window { app: App::TaskManager, rect: shifted, mode: WindowMode::Hidden },
+                Window {
+                    app: App::Files,
+                    rect: base,
+                    mode: WindowMode::Normal,
+                },
+                Window {
+                    app: App::Terminal,
+                    rect: shifted,
+                    mode: WindowMode::Hidden,
+                },
+                Window {
+                    app: App::Settings,
+                    rect: shifted_again,
+                    mode: WindowMode::Hidden,
+                },
+                Window {
+                    app: App::AppCenter,
+                    rect: shifted,
+                    mode: WindowMode::Hidden,
+                },
+                Window {
+                    app: App::Notepad,
+                    rect: shifted_again,
+                    mode: WindowMode::Hidden,
+                },
+                Window {
+                    app: App::TaskManager,
+                    rect: shifted,
+                    mode: WindowMode::Hidden,
+                },
             ],
-            order: [App::Notepad, App::AppCenter, App::Settings, App::Terminal, App::TaskManager, App::Files],
+            order: [
+                App::Notepad,
+                App::AppCenter,
+                App::Settings,
+                App::Terminal,
+                App::TaskManager,
+                App::Files,
+            ],
             focus: Some(App::Files),
             viewport,
         }
     }
 
-    const fn index(app: App) -> usize { app.index() }
+    const fn index(app: App) -> usize {
+        app.index()
+    }
 
     pub const fn focused(&self) -> Option<App> {
         self.focus
@@ -126,22 +166,35 @@ impl WindowManager {
     }
 
     fn bottom(&self) -> usize {
-        self.viewport.height.saturating_sub(self.viewport.dock_height + 18)
+        self.viewport
+            .height
+            .saturating_sub(self.viewport.dock_height + 18)
     }
 
     fn clamp_rect(mut rect: Rect, viewport: Layout) -> Rect {
         let top = viewport.top_bar.saturating_add(8);
         let bottom = viewport.height.saturating_sub(viewport.dock_height + 18);
         let max_height = bottom.saturating_sub(top);
-        rect.width = rect.width.clamp(180.min(viewport.width), viewport.width.saturating_sub(16).max(1));
+        rect.width = rect.width.clamp(
+            180.min(viewport.width),
+            viewport.width.saturating_sub(16).max(1),
+        );
         rect.height = rect.height.clamp(80.min(max_height), max_height.max(1));
-        rect.x = rect.x.clamp(8, viewport.width.saturating_sub(rect.width + 8).max(8));
-        rect.y = rect.y.clamp(top, bottom.saturating_sub(rect.height).max(top));
+        rect.x = rect
+            .x
+            .clamp(8, viewport.width.saturating_sub(rect.width + 8).max(8));
+        rect.y = rect
+            .y
+            .clamp(top, bottom.saturating_sub(rect.height).max(top));
         rect
     }
 
     fn frontmost_visible(&self) -> Option<App> {
-        self.order.iter().rev().copied().find(|app| self.window(*app).visible())
+        self.order
+            .iter()
+            .rev()
+            .copied()
+            .find(|app| self.window(*app).visible())
     }
 
     fn bring_to_front(&mut self, app: App) {
@@ -165,7 +218,9 @@ impl WindowManager {
 
     pub fn cycle(&mut self) {
         let available: [App; App::COUNT] = self.order;
-        let start = self.focus.and_then(|focus| available.iter().position(|app| *app == focus));
+        let start = self
+            .focus
+            .and_then(|focus| available.iter().position(|app| *app == focus));
         // Choose the next visible window in stable cyclic Z order.
         for distance in 1..=App::COUNT {
             let candidate = available[(start.unwrap_or(App::COUNT - 1) + distance) % App::COUNT];
@@ -215,7 +270,9 @@ impl WindowManager {
     pub fn translate_focused(&mut self, direction: Move) {
         let Some(app) = self.focus else { return };
         let i = Self::index(app);
-        if self.windows[i].mode != WindowMode::Normal { return; }
+        if self.windows[i].mode != WindowMode::Normal {
+            return;
+        }
         let mut rect = self.windows[i].rect;
         let step = 24;
         match direction {
@@ -230,7 +287,9 @@ impl WindowManager {
     pub fn resize_focused(&mut self, direction: Move) {
         let Some(app) = self.focus else { return };
         let i = Self::index(app);
-        if self.windows[i].mode != WindowMode::Normal { return; }
+        if self.windows[i].mode != WindowMode::Normal {
+            return;
+        }
         let mut rect = self.windows[i].rect;
         let step = 24;
         match direction {
@@ -385,7 +444,10 @@ mod tests {
         wm.open(App::Terminal);
         wm.open(App::Settings);
         let top = wm.rect(App::Settings);
-        assert_eq!(wm.activate_at(top.x + 60, top.y + 15), Some((App::Settings, true)));
+        assert_eq!(
+            wm.activate_at(top.x + 60, top.y + 15),
+            Some((App::Settings, true))
+        );
         let previous = wm.rect(App::Settings);
         wm.drag_window(App::Settings, -18, 24);
         let now = wm.rect(App::Settings);
@@ -398,8 +460,10 @@ mod tests {
         let mut wm = manager();
         assert_eq!(wm.activate_at(1, 1), None);
         let initial = wm.rect(App::Files);
-        assert_eq!(wm.activate_at(initial.x + 25, initial.y + 25),
-                   Some((App::Files, true)));
+        assert_eq!(
+            wm.activate_at(initial.x + 25, initial.y + 25),
+            Some((App::Files, true))
+        );
         wm.minimize_focused();
         assert_eq!(wm.activate_at(initial.x + 25, initial.y + 25), None);
     }

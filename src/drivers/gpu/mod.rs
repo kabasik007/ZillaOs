@@ -1,3 +1,3 @@
 //! GPU-specific drivers; pure portions are host-testable.
-pub mod vmware_svga;
 pub mod amd;
+pub mod vmware_svga;

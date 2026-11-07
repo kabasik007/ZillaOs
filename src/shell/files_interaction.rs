@@ -44,13 +44,20 @@ mod tests {
 
     #[test]
     fn files_actions_follow_layout_and_reject_outside_clicks() {
-        let rect = Rect { x: 120, y: 80, width: 600, height: 420 };
+        let rect = Rect {
+            x: 120,
+            y: 80,
+            width: 600,
+            height: 420,
+        };
         let body = 80 + 45 + 8;
         let cx = 120 + (600 / 4) + 40;
         assert_eq!(files_action(rect, 140, body + 10), Some(FilesAction::Home));
         assert_eq!(files_action(rect, cx, body + 15), Some(FilesAction::Up));
-        assert_eq!(files_action(rect, cx, body + 42 + 47 * 2 + 12),
-                   Some(FilesAction::OpenRow(2)));
+        assert_eq!(
+            files_action(rect, cx, body + 42 + 47 * 2 + 12),
+            Some(FilesAction::OpenRow(2))
+        );
         assert_eq!(files_action(rect, 80, body + 60), None);
         assert_eq!(files_action(rect, cx, body + 42 + 45), None);
     }

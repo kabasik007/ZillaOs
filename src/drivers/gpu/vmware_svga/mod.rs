@@ -3,12 +3,12 @@
 //! No VRAM/FIFO MMIO mapping, runtime mode switching or GPU acceleration.
 pub mod capabilities;
 pub mod fifo;
-pub mod update_bridge;
 pub mod mmio;
-pub mod queue;
 pub mod negotiation;
 pub mod pci;
+pub mod queue;
 pub mod registers;
+pub mod update_bridge;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProbeInfo {
@@ -37,8 +37,8 @@ pub fn probe(
     let Some(pci) = pci::locate(read_config).map_err(ProbeError::Pci)? else {
         return Ok(None);
     };
-    let registers = capabilities::inspect(pci.io_base, read_register)
-        .map_err(ProbeError::Registers)?;
+    let registers =
+        capabilities::inspect(pci.io_base, read_register).map_err(ProbeError::Registers)?;
     Ok(Some(ProbeInfo { pci, registers }))
 }
 #[cfg(test)]
@@ -46,25 +46,45 @@ mod tests {
     use super::*;
     #[test]
     fn invalid_bar_rejects_all_device_port_reads() {
-        let mut reads=0;
-        let r=probe(|l,o|{
-            if l.bus!=0 || l.device!=1 { return u32::MAX; }
-            match o {
-                0=>0x0405_15ad, 4=>3, 8=>0x0300_0000, 12=>0, 16=>0,
-                _=>u32::MAX,
-            }
-        }, |_,_| {reads+=1;u32::MAX});
-        assert_eq!(r,Err(ProbeError::Pci(pci::PciError::InvalidIoBar)));
-        assert_eq!(reads,0);
+        let mut reads = 0;
+        let r = probe(
+            |l, o| {
+                if l.bus != 0 || l.device != 1 {
+                    return u32::MAX;
+                }
+                match o {
+                    0 => 0x0405_15ad,
+                    4 => 3,
+                    8 => 0x0300_0000,
+                    12 => 0,
+                    16 => 0,
+                    _ => u32::MAX,
+                }
+            },
+            |_, _| {
+                reads += 1;
+                u32::MAX
+            },
+        );
+        assert_eq!(r, Err(ProbeError::Pci(pci::PciError::InvalidIoBar)));
+        assert_eq!(reads, 0);
     }
     #[test]
     fn missing_device_is_not_an_error() {
-        let mut reads=0;
-        assert_eq!(probe(|_,_|u32::MAX,|_,_|{reads+=1;0}),Ok(None));
-        assert_eq!(reads,0);
+        let mut reads = 0;
+        assert_eq!(
+            probe(
+                |_, _| u32::MAX,
+                |_, _| {
+                    reads += 1;
+                    0
+                }
+            ),
+            Ok(None)
+        );
+        assert_eq!(reads, 0);
     }
 }
-
 
 /// Opt-in path only; the normal boot probe above never writes device values.
 /// The PCI descriptor is checked before any handshake I/O occurs.
@@ -81,8 +101,8 @@ pub fn probe_with_negotiation(
         |index, value| write_register(pci.io_base, index, value),
     )
     .map_err(ProbeError::Negotiation)?;
-    let registers = capabilities::inspect(pci.io_base, read_register)
-        .map_err(ProbeError::Registers)?;
+    let registers =
+        capabilities::inspect(pci.io_base, read_register).map_err(ProbeError::Registers)?;
     if registers.interface_id != selected {
         return Err(ProbeError::Negotiation(
             negotiation::NegotiationError::UnstableInterfaceId,

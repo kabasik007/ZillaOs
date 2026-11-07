@@ -11,7 +11,17 @@ pub struct ObjectId(pub u64);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ObjectKind {
-    Endpoint, Process, Thread, Device, Service, Irq, Mmio, Dma, File, Surface, Timer,
+    Endpoint,
+    Process,
+    Thread,
+    Device,
+    Service,
+    Irq,
+    Mmio,
+    Dma,
+    File,
+    Surface,
+    Timer,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,33 +35,62 @@ impl Rights {
     pub const CONTROL: Self = Self(1 << 5);
     pub const OBSERVE: Self = Self(1 << 6);
     pub const KNOWN: u64 = (1 << 7) - 1;
-    pub const fn bits(self) -> u64 { self.0 }
-    pub const fn from_bits(bits: u64) -> Option<Self> {
-        if bits & !Self::KNOWN == 0 { Some(Self(bits)) } else { None }
+    pub const fn bits(self) -> u64 {
+        self.0
     }
-    pub const fn union(self, rhs: Self) -> Self { Self(self.0 | rhs.0) }
-    pub const fn intersect(self, rhs: Self) -> Self { Self(self.0 & rhs.0) }
-    pub const fn contains(self, rhs: Self) -> bool { self.0 & rhs.0 == rhs.0 }
-    pub const fn is_empty(self) -> bool { self.0 == 0 }
+    pub const fn from_bits(bits: u64) -> Option<Self> {
+        if bits & !Self::KNOWN == 0 {
+            Some(Self(bits))
+        } else {
+            None
+        }
+    }
+    pub const fn union(self, rhs: Self) -> Self {
+        Self(self.0 | rhs.0)
+    }
+    pub const fn intersect(self, rhs: Self) -> Self {
+        Self(self.0 & rhs.0)
+    }
+    pub const fn contains(self, rhs: Self) -> bool {
+        self.0 & rhs.0 == rhs.0
+    }
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
 }
 
 impl ObjectKind {
     /// Structural rights discipline; high-trust MMIO/DMA policy is separate.
     pub const fn allows_rights(self, rights: Rights) -> bool {
         let allowed = match self {
-            Self::Endpoint => Rights::SEND.bits() | Rights::RECEIVE.bits()
-                | Rights::CONTROL.bits() | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
-            Self::Process | Self::Thread | Self::Device | Self::Service =>
-                Rights::CONTROL.bits() | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
-            Self::Irq | Self::Timer =>
-                Rights::READ.bits() | Rights::CONTROL.bits()
-                    | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
-            Self::Mmio | Self::Dma =>
-                Rights::READ.bits() | Rights::WRITE.bits()
-                    | Rights::CONTROL.bits() | Rights::TRANSFER.bits(),
-            Self::File | Self::Surface =>
-                Rights::READ.bits() | Rights::WRITE.bits()
-                    | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
+            Self::Endpoint => {
+                Rights::SEND.bits()
+                    | Rights::RECEIVE.bits()
+                    | Rights::CONTROL.bits()
+                    | Rights::OBSERVE.bits()
+                    | Rights::TRANSFER.bits()
+            }
+            Self::Process | Self::Thread | Self::Device | Self::Service => {
+                Rights::CONTROL.bits() | Rights::OBSERVE.bits() | Rights::TRANSFER.bits()
+            }
+            Self::Irq | Self::Timer => {
+                Rights::READ.bits()
+                    | Rights::CONTROL.bits()
+                    | Rights::OBSERVE.bits()
+                    | Rights::TRANSFER.bits()
+            }
+            Self::Mmio | Self::Dma => {
+                Rights::READ.bits()
+                    | Rights::WRITE.bits()
+                    | Rights::CONTROL.bits()
+                    | Rights::TRANSFER.bits()
+            }
+            Self::File | Self::Surface => {
+                Rights::READ.bits()
+                    | Rights::WRITE.bits()
+                    | Rights::OBSERVE.bits()
+                    | Rights::TRANSFER.bits()
+            }
         };
         rights.bits() & !allowed == 0
     }
@@ -59,25 +98,42 @@ impl ObjectKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CapError {
-    InvalidOwner, InvalidHandle, StaleHandle, InvalidObject, Revoked,
-    WrongType, AccessDenied, InvalidRights, EmptyRights, Full, Exhausted,
+    InvalidOwner,
+    InvalidHandle,
+    StaleHandle,
+    InvalidObject,
+    Revoked,
+    WrongType,
+    AccessDenied,
+    InvalidRights,
+    EmptyRights,
+    Full,
+    Exhausted,
 }
 
 /// Only meaningful inside its owning process's table; NOT a global authority.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Handle(u64);
 impl Handle {
-    pub const fn from_raw(raw: u64) -> Self { Self(raw) }
-    pub const fn raw(self) -> u64 { self.0 }
+    pub const fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
     const fn new(slot: usize, generation: u32) -> Self {
         Self(((generation as u64) << 32) | (slot as u64 + 1))
     }
     fn parts(self) -> Result<(usize, u32), CapError> {
         let low = self.0 as u32;
         let generation = (self.0 >> 32) as u32;
-        if low == 0 || generation == 0 { return Err(CapError::InvalidHandle); }
+        if low == 0 || generation == 0 {
+            return Err(CapError::InvalidHandle);
+        }
         let slot = (low - 1) as usize;
-        if slot >= MAX_HANDLES { return Err(CapError::InvalidHandle); }
+        if slot >= MAX_HANDLES {
+            return Err(CapError::InvalidHandle);
+        }
         Ok((slot, generation))
     }
 }
@@ -90,10 +146,13 @@ pub struct ObjectKey {
     kind: ObjectKind,
 }
 impl ObjectKey {
-    pub const fn id(self) -> ObjectId { self.id }
-    pub const fn kind(self) -> ObjectKind { self.kind }
+    pub const fn id(self) -> ObjectId {
+        self.id
+    }
+    pub const fn kind(self) -> ObjectKind {
+        self.kind
+    }
 }
-
 
 #[derive(Clone, Copy)]
 struct ObjectSlot {
@@ -102,32 +161,49 @@ struct ObjectSlot {
     owner: Option<u64>,
     retired: bool,
 }
-const EMPTY_OBJECT: ObjectSlot = ObjectSlot { generation: 1, object: None, owner: None, retired: false };
+const EMPTY_OBJECT: ObjectSlot = ObjectSlot {
+    generation: 1,
+    object: None,
+    owner: None,
+    retired: false,
+};
 
 /// Shared kernel object registry. Revoke invalidates ALL delegated references.
 pub struct ObjectRegistry {
     slots: [ObjectSlot; MAX_OBJECTS],
     next_id: u64,
 }
-impl Default for ObjectRegistry { fn default() -> Self { Self::new() } }
+impl Default for ObjectRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl ObjectRegistry {
     pub const fn new() -> Self {
-        Self { slots: [EMPTY_OBJECT; MAX_OBJECTS], next_id: 1 }
+        Self {
+            slots: [EMPTY_OBJECT; MAX_OBJECTS],
+            next_id: 1,
+        }
     }
     pub fn create(&mut self, kind: ObjectKind) -> Result<ObjectKey, CapError> {
         self.create_with_owner(kind, None)
     }
     /// Trusted issuer only. Ownership is resource metadata; no process records are created.
-    pub fn create_owned(&mut self, kind: ObjectKind, owner: u64)
-        -> Result<ObjectKey, CapError>
-    {
-        if owner == 0 { return Err(CapError::InvalidOwner); }
+    pub fn create_owned(&mut self, kind: ObjectKind, owner: u64) -> Result<ObjectKey, CapError> {
+        if owner == 0 {
+            return Err(CapError::InvalidOwner);
+        }
         self.create_with_owner(kind, Some(owner))
     }
-    fn create_with_owner(&mut self, kind: ObjectKind, owner: Option<u64>)
-        -> Result<ObjectKey, CapError>
-    {
-        let index = self.slots.iter().position(|s| s.object.is_none() && !s.retired)
+    fn create_with_owner(
+        &mut self,
+        kind: ObjectKind,
+        owner: Option<u64>,
+    ) -> Result<ObjectKey, CapError> {
+        let index = self
+            .slots
+            .iter()
+            .position(|s| s.object.is_none() && !s.retired)
             .ok_or(CapError::Full)?;
         let next = self.next_id.checked_add(1).ok_or(CapError::Exhausted)?;
         let id = ObjectId(self.next_id);
@@ -135,12 +211,24 @@ impl ObjectRegistry {
         let slot = &mut self.slots[index];
         slot.object = Some((id, kind));
         slot.owner = owner;
-        Ok(ObjectKey { slot: index as u32, generation: slot.generation, id, kind })
+        Ok(ObjectKey {
+            slot: index as u32,
+            generation: slot.generation,
+            id,
+            kind,
+        })
     }
     pub fn validate(&self, key: ObjectKey) -> Result<(), CapError> {
-        let slot = self.slots.get(key.slot as usize).ok_or(CapError::InvalidObject)?;
-        if slot.generation != key.generation { return Err(CapError::Revoked); }
-        if slot.object != Some((key.id, key.kind)) { return Err(CapError::Revoked); }
+        let slot = self
+            .slots
+            .get(key.slot as usize)
+            .ok_or(CapError::InvalidObject)?;
+        if slot.generation != key.generation {
+            return Err(CapError::Revoked);
+        }
+        if slot.object != Some((key.id, key.kind)) {
+            return Err(CapError::Revoked);
+        }
         Ok(())
     }
     /// Read ownership by a kernel-minted key; never authorize by ObjectId alone.
@@ -157,14 +245,19 @@ impl ObjectRegistry {
     }
     /// Object revocation on verified process exit; no DMA/IRQ teardown is implied.
     pub fn revoke_owned(&mut self, owner: u64) -> usize {
-        if owner == 0 { return 0; }
+        if owner == 0 {
+            return 0;
+        }
         let mut count = 0;
         for slot in &mut self.slots {
             if slot.owner == Some(owner) && slot.object.is_some() {
                 slot.object = None;
                 slot.owner = None;
-                if slot.generation == u32::MAX { slot.retired = true; }
-                else { slot.generation += 1; }
+                if slot.generation == u32::MAX {
+                    slot.retired = true;
+                } else {
+                    slot.generation += 1;
+                }
                 count += 1;
             }
         }
@@ -175,8 +268,11 @@ impl ObjectRegistry {
         let slot = &mut self.slots[key.slot as usize];
         slot.object = None;
         slot.owner = None;
-        if slot.generation == u32::MAX { slot.retired = true; }
-        else { slot.generation += 1; }
+        if slot.generation == u32::MAX {
+            slot.retired = true;
+        } else {
+            slot.generation += 1;
+        }
         Ok(())
     }
 }
@@ -189,8 +285,12 @@ impl Delegation {
     pub fn validate(self, objects: &ObjectRegistry) -> Result<(), CapError> {
         objects.validate(self.key)
     }
-    pub const fn rights(self) -> Rights { self.rights }
-    pub const fn object_id(self) -> ObjectId { self.key.id }
+    pub const fn rights(self) -> Rights {
+        self.rights
+    }
+    pub const fn object_id(self) -> ObjectId {
+        self.key.id
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -199,7 +299,11 @@ struct HandleSlot {
     value: Option<Delegation>,
     retired: bool,
 }
-const EMPTY_HANDLE: HandleSlot = HandleSlot { generation: 1, value: None, retired: false };
+const EMPTY_HANDLE: HandleSlot = HandleSlot {
+    generation: 1,
+    value: None,
+    retired: false,
+};
 
 /// Per-process handle table. Caller PID is supplied by a trusted kernel task source.
 pub struct HandleTable {
@@ -208,94 +312,166 @@ pub struct HandleTable {
 }
 impl HandleTable {
     pub const fn new(owner: u64) -> Self {
-        Self { owner, slots: [EMPTY_HANDLE; MAX_HANDLES] }
+        Self {
+            owner,
+            slots: [EMPTY_HANDLE; MAX_HANDLES],
+        }
     }
-    pub const fn owner(&self) -> u64 { self.owner }
+    pub const fn owner(&self) -> u64 {
+        self.owner
+    }
     fn check_owner(&self, caller: u64) -> Result<(), CapError> {
-        if caller == 0 || caller != self.owner { Err(CapError::InvalidOwner) } else { Ok(()) }
+        if caller == 0 || caller != self.owner {
+            Err(CapError::InvalidOwner)
+        } else {
+            Ok(())
+        }
     }
     fn insert(&mut self, grant: Delegation) -> Result<Handle, CapError> {
-        let index = self.slots.iter().position(|s| s.value.is_none() && !s.retired)
+        let index = self
+            .slots
+            .iter()
+            .position(|s| s.value.is_none() && !s.retired)
             .ok_or(CapError::Full)?;
         let slot = &mut self.slots[index];
         slot.value = Some(grant);
         Ok(Handle::new(index, slot.generation))
     }
     /// Trusted issuer only: caller cannot request this operation from user space.
-    pub fn grant(&mut self, caller: u64, objects: &ObjectRegistry, key: ObjectKey, rights: Rights)
-        -> Result<Handle, CapError>
-    {
+    pub fn grant(
+        &mut self,
+        caller: u64,
+        objects: &ObjectRegistry,
+        key: ObjectKey,
+        rights: Rights,
+    ) -> Result<Handle, CapError> {
         self.check_owner(caller)?;
         objects.validate(key)?;
-        if rights.is_empty() { return Err(CapError::EmptyRights); }
-        if !key.kind.allows_rights(rights) { return Err(CapError::InvalidRights); }
+        if rights.is_empty() {
+            return Err(CapError::EmptyRights);
+        }
+        if !key.kind.allows_rights(rights) {
+            return Err(CapError::InvalidRights);
+        }
         self.insert(Delegation { key, rights })
     }
-    fn lookup(&self, caller: u64, objects: &ObjectRegistry, handle: Handle)
-        -> Result<Delegation, CapError>
-    {
+    fn lookup(
+        &self,
+        caller: u64,
+        objects: &ObjectRegistry,
+        handle: Handle,
+    ) -> Result<Delegation, CapError> {
         self.check_owner(caller)?;
         let (index, generation) = handle.parts()?;
         let slot = &self.slots[index];
-        if slot.generation != generation { return Err(CapError::StaleHandle); }
+        if slot.generation != generation {
+            return Err(CapError::StaleHandle);
+        }
         let grant = slot.value.ok_or(CapError::StaleHandle)?;
         objects.validate(grant.key)?;
         Ok(grant)
     }
     /// Enforced on EVERY use, including after a request was enqueued.
-    pub fn authorize(&self, caller: u64, objects: &ObjectRegistry, handle: Handle,
-        kind: ObjectKind, required: Rights) -> Result<ObjectId, CapError>
-    {
-        Ok(self.authorize_key(caller, objects, handle, kind, required)?.id())
+    pub fn authorize(
+        &self,
+        caller: u64,
+        objects: &ObjectRegistry,
+        handle: Handle,
+        kind: ObjectKind,
+        required: Rights,
+    ) -> Result<ObjectId, CapError> {
+        Ok(self
+            .authorize_key(caller, objects, handle, kind, required)?
+            .id())
     }
     /// Returns a generation-aware kernel key, not just an object number.
     /// Recheck under the resource lock before touching backing memory/hardware.
-    pub fn authorize_key(&self, caller: u64, objects: &ObjectRegistry, handle: Handle,
-        kind: ObjectKind, required: Rights) -> Result<ObjectKey, CapError>
-    {
+    pub fn authorize_key(
+        &self,
+        caller: u64,
+        objects: &ObjectRegistry,
+        handle: Handle,
+        kind: ObjectKind,
+        required: Rights,
+    ) -> Result<ObjectKey, CapError> {
         let grant = self.lookup(caller, objects, handle)?;
-        if grant.key.kind != kind { return Err(CapError::WrongType); }
-        if !grant.rights.contains(required) { return Err(CapError::AccessDenied); }
+        if grant.key.kind != kind {
+            return Err(CapError::WrongType);
+        }
+        if !grant.rights.contains(required) {
+            return Err(CapError::AccessDenied);
+        }
         Ok(grant.key)
     }
     /// Source needs TRANSFER. Requested rights are intersected; never amplified.
-    pub fn prepare_transfer(&self, caller: u64, objects: &ObjectRegistry,
-        handle: Handle, requested: Rights) -> Result<Delegation, CapError>
-    {
+    pub fn prepare_transfer(
+        &self,
+        caller: u64,
+        objects: &ObjectRegistry,
+        handle: Handle,
+        requested: Rights,
+    ) -> Result<Delegation, CapError> {
         let source = self.lookup(caller, objects, handle)?;
-        if !source.rights.contains(Rights::TRANSFER) { return Err(CapError::AccessDenied); }
+        if !source.rights.contains(Rights::TRANSFER) {
+            return Err(CapError::AccessDenied);
+        }
         let rights = source.rights.intersect(requested);
-        if rights.is_empty() { return Err(CapError::EmptyRights); }
-        if !source.key.kind.allows_rights(rights) { return Err(CapError::InvalidRights); }
-        Ok(Delegation { key: source.key, rights })
+        if rights.is_empty() {
+            return Err(CapError::EmptyRights);
+        }
+        if !source.key.kind.allows_rights(rights) {
+            return Err(CapError::InvalidRights);
+        }
+        Ok(Delegation {
+            key: source.key,
+            rights,
+        })
     }
     /// Trusted receiver commit after validating all references, not a user grant.
-    pub fn accept(&mut self, caller: u64, objects: &ObjectRegistry, grant: Delegation)
-        -> Result<Handle, CapError>
-    {
+    pub fn accept(
+        &mut self,
+        caller: u64,
+        objects: &ObjectRegistry,
+        grant: Delegation,
+    ) -> Result<Handle, CapError> {
         self.check_owner(caller)?;
         grant.validate(objects)?;
-        if grant.rights.is_empty() { return Err(CapError::EmptyRights); }
-        if !grant.key.kind.allows_rights(grant.rights) { return Err(CapError::InvalidRights); }
+        if grant.rights.is_empty() {
+            return Err(CapError::EmptyRights);
+        }
+        if !grant.key.kind.allows_rights(grant.rights) {
+            return Err(CapError::InvalidRights);
+        }
         self.insert(grant)
     }
     /// Preflight ALL grants and receiver capacity before any handle is installed.
     /// Caller must serialize registry/table mutations; this is not an SMP lock.
     pub fn accept_many<const N: usize>(
-        &mut self, caller: u64, objects: &ObjectRegistry,
+        &mut self,
+        caller: u64,
+        objects: &ObjectRegistry,
         grants: &[Option<Delegation>; N],
     ) -> Result<[Option<Handle>; N], CapError> {
         self.check_owner(caller)?;
         let mut needed = 0usize;
         for grant in grants.iter().flatten() {
             grant.validate(objects)?;
-            if grant.rights.is_empty() { return Err(CapError::EmptyRights); }
-            if !grant.key.kind.allows_rights(grant.rights) { return Err(CapError::InvalidRights); }
+            if grant.rights.is_empty() {
+                return Err(CapError::EmptyRights);
+            }
+            if !grant.key.kind.allows_rights(grant.rights) {
+                return Err(CapError::InvalidRights);
+            }
             needed += 1;
         }
-        let available = self.slots.iter()
-            .filter(|slot| slot.value.is_none() && !slot.retired).count();
-        if needed > available { return Err(CapError::Full); }
+        let available = self
+            .slots
+            .iter()
+            .filter(|slot| slot.value.is_none() && !slot.retired)
+            .count();
+        if needed > available {
+            return Err(CapError::Full);
+        }
         let mut result = [None; N];
         for (i, grant) in grants.iter().enumerate() {
             if let Some(grant) = grant {
@@ -309,18 +485,26 @@ impl HandleTable {
         self.check_owner(caller)?;
         let (index, generation) = handle.parts()?;
         let slot = &mut self.slots[index];
-        if generation != slot.generation || slot.value.is_none() { return Err(CapError::StaleHandle); }
+        if generation != slot.generation || slot.value.is_none() {
+            return Err(CapError::StaleHandle);
+        }
         slot.value = None;
-        if slot.generation == u32::MAX { slot.retired = true; }
-        else { slot.generation += 1; }
+        if slot.generation == u32::MAX {
+            slot.retired = true;
+        } else {
+            slot.generation += 1;
+        }
         Ok(())
     }
     /// Kernel process-exit cleanup; globally-owned objects must separately be revoked.
     pub fn close_all(&mut self) {
         for slot in &mut self.slots {
             if slot.value.take().is_some() {
-                if slot.generation == u32::MAX { slot.retired = true; }
-                else { slot.generation += 1; }
+                if slot.generation == u32::MAX {
+                    slot.retired = true;
+                } else {
+                    slot.generation += 1;
+                }
             }
         }
     }
@@ -332,15 +516,20 @@ impl HandleTable {
             if let Some(grant) = slot.value {
                 if objects.validate(grant.key).is_err() {
                     slot.value = None;
-                    if slot.generation == u32::MAX { slot.retired = true; }
-                    else { slot.generation += 1; }
+                    if slot.generation == u32::MAX {
+                        slot.retired = true;
+                    } else {
+                        slot.generation += 1;
+                    }
                     reclaimed += 1;
                 }
             }
         }
         reclaimed
     }
-    pub fn count(&self) -> usize { self.slots.iter().filter(|s| s.value.is_some()).count() }
+    pub fn count(&self) -> usize {
+        self.slots.iter().filter(|s| s.value.is_some()).count()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -351,7 +540,11 @@ pub struct DeniedEvent {
 }
 /// Data only; an authenticated, bounded kernel EventLog must persist these later.
 pub const fn denied_event(caller: u64, object: Option<ObjectId>, reason: CapError) -> DeniedEvent {
-    DeniedEvent { caller, object, reason }
+    DeniedEvent {
+        caller,
+        object,
+        reason,
+    }
 }
 
 #[cfg(test)]
@@ -363,11 +556,38 @@ mod tests {
         let endpoint = objects.create(ObjectKind::Endpoint).unwrap();
         let mut a = HandleTable::new(11);
         let h = a.grant(11, &objects, endpoint, Rights::SEND).unwrap();
-        assert_eq!(a.authorize(12, &objects, h, ObjectKind::Endpoint, Rights::SEND), Err(CapError::InvalidOwner));
-        assert_eq!(a.authorize(11, &objects, Handle::from_raw(0), ObjectKind::Endpoint, Rights::SEND), Err(CapError::InvalidHandle));
-        assert_eq!(a.authorize(11, &objects, Handle::from_raw(h.raw() + 1), ObjectKind::Endpoint, Rights::SEND), Err(CapError::StaleHandle));
-        assert_eq!(a.authorize(11, &objects, h, ObjectKind::Device, Rights::SEND), Err(CapError::WrongType));
-        assert_eq!(a.authorize(11, &objects, h, ObjectKind::Endpoint, Rights::RECEIVE), Err(CapError::AccessDenied));
+        assert_eq!(
+            a.authorize(12, &objects, h, ObjectKind::Endpoint, Rights::SEND),
+            Err(CapError::InvalidOwner)
+        );
+        assert_eq!(
+            a.authorize(
+                11,
+                &objects,
+                Handle::from_raw(0),
+                ObjectKind::Endpoint,
+                Rights::SEND
+            ),
+            Err(CapError::InvalidHandle)
+        );
+        assert_eq!(
+            a.authorize(
+                11,
+                &objects,
+                Handle::from_raw(h.raw() + 1),
+                ObjectKind::Endpoint,
+                Rights::SEND
+            ),
+            Err(CapError::StaleHandle)
+        );
+        assert_eq!(
+            a.authorize(11, &objects, h, ObjectKind::Device, Rights::SEND),
+            Err(CapError::WrongType)
+        );
+        assert_eq!(
+            a.authorize(11, &objects, h, ObjectKind::Endpoint, Rights::RECEIVE),
+            Err(CapError::AccessDenied)
+        );
     }
     #[test]
     fn generation_close_and_revoke_reject_stale_handles() {
@@ -376,11 +596,17 @@ mod tests {
         let mut a = HandleTable::new(1);
         let h = a.grant(1, &objects, akey, Rights::OBSERVE).unwrap();
         a.close(1, h).unwrap();
-        assert_eq!(a.authorize(1, &objects, h, ObjectKind::Device, Rights::OBSERVE), Err(CapError::StaleHandle));
+        assert_eq!(
+            a.authorize(1, &objects, h, ObjectKind::Device, Rights::OBSERVE),
+            Err(CapError::StaleHandle)
+        );
         let next = a.grant(1, &objects, akey, Rights::OBSERVE).unwrap();
         assert_ne!(next.raw(), h.raw());
         objects.revoke(akey).unwrap();
-        assert_eq!(a.authorize(1, &objects, next, ObjectKind::Device, Rights::OBSERVE), Err(CapError::Revoked));
+        assert_eq!(
+            a.authorize(1, &objects, next, ObjectKind::Device, Rights::OBSERVE),
+            Err(CapError::Revoked)
+        );
         let again = objects.create(ObjectKind::Device).unwrap();
         assert_ne!(akey.id(), again.id());
         assert_eq!(objects.validate(akey), Err(CapError::Revoked));
@@ -391,25 +617,45 @@ mod tests {
         let key = objects.create(ObjectKind::Endpoint).unwrap();
         let mut sender = HandleTable::new(1);
         let mut receiver = HandleTable::new(2);
-        let original = sender.grant(1, &objects, key, Rights::TRANSFER.union(Rights::SEND)).unwrap();
-        let grant = sender.prepare_transfer(1, &objects, original, Rights::SEND.union(Rights::CONTROL)).unwrap();
+        let original = sender
+            .grant(1, &objects, key, Rights::TRANSFER.union(Rights::SEND))
+            .unwrap();
+        let grant = sender
+            .prepare_transfer(1, &objects, original, Rights::SEND.union(Rights::CONTROL))
+            .unwrap();
         assert_eq!(grant.rights(), Rights::SEND);
         let copied = receiver.accept(2, &objects, grant).unwrap();
-        assert_eq!(receiver.authorize(2, &objects, copied, ObjectKind::Endpoint, Rights::SEND), Ok(key.id()));
-        assert_eq!(receiver.authorize(2, &objects, copied, ObjectKind::Endpoint, Rights::CONTROL), Err(CapError::AccessDenied));
+        assert_eq!(
+            receiver.authorize(2, &objects, copied, ObjectKind::Endpoint, Rights::SEND),
+            Ok(key.id())
+        );
+        assert_eq!(
+            receiver.authorize(2, &objects, copied, ObjectKind::Endpoint, Rights::CONTROL),
+            Err(CapError::AccessDenied)
+        );
         objects.revoke(key).unwrap();
-        assert_eq!(receiver.authorize(2, &objects, copied, ObjectKind::Endpoint, Rights::SEND), Err(CapError::Revoked));
+        assert_eq!(
+            receiver.authorize(2, &objects, copied, ObjectKind::Endpoint, Rights::SEND),
+            Err(CapError::Revoked)
+        );
     }
     #[test]
     fn bounded_and_cleanup() {
         let mut registry = ObjectRegistry::new();
         let key = registry.create(ObjectKind::File).unwrap();
         let mut t = HandleTable::new(1);
-        for _ in 0..MAX_HANDLES { t.grant(1, &registry, key, Rights::READ).unwrap(); }
-        assert_eq!(t.grant(1, &registry, key, Rights::READ), Err(CapError::Full));
+        for _ in 0..MAX_HANDLES {
+            t.grant(1, &registry, key, Rights::READ).unwrap();
+        }
+        assert_eq!(
+            t.grant(1, &registry, key, Rights::READ),
+            Err(CapError::Full)
+        );
         t.close_all();
         assert_eq!(t.count(), 0);
-        for _ in 1..MAX_OBJECTS { registry.create(ObjectKind::Timer).unwrap(); }
+        for _ in 1..MAX_OBJECTS {
+            registry.create(ObjectKind::Timer).unwrap();
+        }
         assert_eq!(registry.create(ObjectKind::Timer), Err(CapError::Full));
     }
     #[test]
@@ -427,7 +673,10 @@ mod tests {
             Some(source.prepare_transfer(1, &reg, hb, Rights::SEND).unwrap()),
         ];
         reg.revoke(bkey).unwrap();
-        assert!(matches!(recipient.accept_many(2, &reg, &grants), Err(CapError::Revoked)));
+        assert!(matches!(
+            recipient.accept_many(2, &reg, &grants),
+            Err(CapError::Revoked)
+        ));
         assert_eq!(recipient.count(), 0);
         let revised = [grants[0], None];
         let accepted = recipient.accept_many(2, &reg, &revised).unwrap();
@@ -444,8 +693,10 @@ mod tests {
         reg.revoke(key).unwrap();
         assert_eq!(t.sweep_revoked(&reg), 1);
         assert_eq!(t.count(), 0);
-        assert_eq!(t.authorize(1, &reg, handle, ObjectKind::Device, Rights::OBSERVE),
-            Err(CapError::StaleHandle));
+        assert_eq!(
+            t.authorize(1, &reg, handle, ObjectKind::Device, Rights::OBSERVE),
+            Err(CapError::StaleHandle)
+        );
         assert_eq!(t.sweep_revoked(&reg), 0);
     }
     #[test]
@@ -480,8 +731,10 @@ mod tests {
         let leaked = recipient.grant(20, &reg, key, Rights::OBSERVE).unwrap();
         assert_eq!(reg.revoke_owned(10), 1);
         assert_eq!(reg.revoke_owned(10), 0);
-        assert_eq!(recipient.authorize(20, &reg, leaked, ObjectKind::Device, Rights::OBSERVE),
-            Err(CapError::Revoked));
+        assert_eq!(
+            recipient.authorize(20, &reg, leaked, ObjectKind::Device, Rights::OBSERVE),
+            Err(CapError::Revoked)
+        );
         assert_eq!(reg.owner_of(other), Ok(Some(11)));
         assert_eq!(reg.owner_of(unowned), Ok(None));
     }
@@ -491,20 +744,31 @@ mod tests {
         let dev = reg.create(ObjectKind::Device).unwrap();
         let ep = reg.create(ObjectKind::Endpoint).unwrap();
         let mut issuer = HandleTable::new(10);
-        assert_eq!(issuer.grant(10, &reg, dev, Rights::SEND), Err(CapError::InvalidRights));
-        let src = issuer.grant(10, &reg, ep, Rights::TRANSFER.union(Rights::SEND)).unwrap();
-        let delegated = issuer.prepare_transfer(10, &reg, src, Rights::SEND).unwrap();
+        assert_eq!(
+            issuer.grant(10, &reg, dev, Rights::SEND),
+            Err(CapError::InvalidRights)
+        );
+        let src = issuer
+            .grant(10, &reg, ep, Rights::TRANSFER.union(Rights::SEND))
+            .unwrap();
+        let delegated = issuer
+            .prepare_transfer(10, &reg, src, Rights::SEND)
+            .unwrap();
         let mut target = HandleTable::new(20);
         for _ in 0..MAX_HANDLES - 1 {
             target.grant(20, &reg, ep, Rights::SEND).unwrap();
         }
         let before = target.count();
-        assert_eq!(target.accept_many(20, &reg, &[Some(delegated), Some(delegated)]),
-            Err(CapError::Full));
+        assert_eq!(
+            target.accept_many(20, &reg, &[Some(delegated), Some(delegated)]),
+            Err(CapError::Full)
+        );
         assert_eq!(target.count(), before);
         let installed = target.accept_many(20, &reg, &[Some(delegated)]).unwrap()[0].unwrap();
-        assert_eq!(target.authorize(20, &reg, installed, ObjectKind::Endpoint, Rights::SEND),
-            Ok(ep.id()));
+        assert_eq!(
+            target.authorize(20, &reg, installed, ObjectKind::Endpoint, Rights::SEND),
+            Ok(ep.id())
+        );
     }
     #[test]
     fn close_does_not_revoke_valid_delegated_copy() {
@@ -512,9 +776,20 @@ mod tests {
         let key = reg.create(ObjectKind::Endpoint).unwrap();
         let mut a = HandleTable::new(1);
         let mut b = HandleTable::new(2);
-        let h = a.grant(1, &reg, key, Rights::SEND.union(Rights::TRANSFER)).unwrap();
-        let copy = b.accept(2, &reg, a.prepare_transfer(1, &reg, h, Rights::SEND).unwrap()).unwrap();
+        let h = a
+            .grant(1, &reg, key, Rights::SEND.union(Rights::TRANSFER))
+            .unwrap();
+        let copy = b
+            .accept(
+                2,
+                &reg,
+                a.prepare_transfer(1, &reg, h, Rights::SEND).unwrap(),
+            )
+            .unwrap();
         a.close(1, h).unwrap();
-        assert_eq!(b.authorize(2, &reg, copy, ObjectKind::Endpoint, Rights::SEND), Ok(key.id()));
+        assert_eq!(
+            b.authorize(2, &reg, copy, ObjectKind::Endpoint, Rights::SEND),
+            Ok(key.id())
+        );
     }
 }

@@ -3,14 +3,10 @@
 //! The active Limine page tables are read-only and never reclaimed.
 use core::ptr;
 
-use zillaos_kernel::memory::{FrameAllocator, MemoryRegion, PhysicalFrame, PAGE_SIZE};
-use zillaos_kernel::page_table_walk::{translate, WalkError};
-use zillaos_kernel::paging::{
-    is_canonical, NO_EXECUTE, PRESENT, USER, WRITABLE,
-};
-use zillaos_kernel::process::address_space::{
-    Access, AddressSpacePlan, Permissions, UserRegion,
-};
+use zillaos_kernel::memory::{FrameAllocator, MemoryRegion, PAGE_SIZE, PhysicalFrame};
+use zillaos_kernel::page_table_walk::{WalkError, translate};
+use zillaos_kernel::paging::{NO_EXECUTE, PRESENT, USER, WRITABLE, is_canonical};
+use zillaos_kernel::process::address_space::{Access, AddressSpacePlan, Permissions, UserRegion};
 
 use crate::page_table_observer::Snapshot;
 
@@ -46,17 +42,25 @@ pub struct StagedSpace {
 }
 
 fn mapped_table_frame(regions: &[MemoryRegion], physical: u64) -> bool {
-    let Some(end) = physical.checked_add(PAGE_SIZE) else { return false };
-    physical % PAGE_SIZE == 0 && regions.iter().any(|region| {
-        matches!(region.kind, HHDM_USABLE | HHDM_BOOTLOADER)
-            && region.base <= physical
-            && region.base.checked_add(region.length).is_some_and(|last| end <= last)
-    })
+    let Some(end) = physical.checked_add(PAGE_SIZE) else {
+        return false;
+    };
+    physical % PAGE_SIZE == 0
+        && regions.iter().any(|region| {
+            matches!(region.kind, HHDM_USABLE | HHDM_BOOTLOADER)
+                && region.base <= physical
+                && region
+                    .base
+                    .checked_add(region.length)
+                    .is_some_and(|last| end <= last)
+        })
 }
 
 fn frame_address(frame: u64, hhdm: u64) -> Result<*mut u64, StageError> {
     let start = hhdm.checked_add(frame).ok_or(StageError::InvalidHhdm)?;
-    let end = start.checked_add(PAGE_SIZE - 1).ok_or(StageError::InvalidHhdm)?;
+    let end = start
+        .checked_add(PAGE_SIZE - 1)
+        .ok_or(StageError::InvalidHhdm)?;
     if !is_canonical(start, 48) || !is_canonical(end, 48) {
         return Err(StageError::InvalidHhdm);
     }
@@ -64,7 +68,9 @@ fn frame_address(frame: u64, hhdm: u64) -> Result<*mut u64, StageError> {
 }
 
 fn reserve_clean(allocator: &mut FrameAllocator, hhdm: u64) -> Result<PhysicalFrame, StageError> {
-    let frame = allocator.reserve_frame().ok_or(StageError::PhysicalMemoryUnavailable)?;
+    let frame = allocator
+        .reserve_frame()
+        .ok_or(StageError::PhysicalMemoryUnavailable)?;
     let ptr = frame_address(frame.address, hhdm)?;
     // SAFETY: FrameAllocator grants exclusive ownership of this USABLE frame.
     // Limine base revision 6 maps USABLE pages via the HHDM, and no CR3
@@ -74,16 +80,21 @@ fn reserve_clean(allocator: &mut FrameAllocator, hhdm: u64) -> Result<PhysicalFr
 }
 
 fn put(frame: u64, index: usize, value: u64, hhdm: u64) -> Result<(), StageError> {
-    if index >= 512 { return Err(StageError::InvalidPageTables) }
+    if index >= 512 {
+        return Err(StageError::InvalidPageTables);
+    }
     let ptr = frame_address(frame, hhdm)?;
     // SAFETY: all destination frames were exclusively allocated and zeroed.
     unsafe { ptr::write_volatile(ptr.add(index), value) };
     Ok(())
 }
 
-fn read_verified(regions: &[MemoryRegion], frame: u64, index: usize, hhdm: u64)
-    -> Result<u64, StageError>
-{
+fn read_verified(
+    regions: &[MemoryRegion],
+    frame: u64,
+    index: usize,
+    hhdm: u64,
+) -> Result<u64, StageError> {
     if index >= 512 || !mapped_table_frame(regions, frame) {
         return Err(StageError::UnsafeBootMapping);
     }
@@ -113,14 +124,18 @@ pub unsafe fn stage(
         return Err(StageError::UnsafeBootMapping);
     }
 
-    let mut plan = AddressSpacePlan::with_stack(STACK_TOP, 1)
-        .map_err(|_| StageError::InvalidUserPlan)?;
-    plan.map(UserRegion::checked(CODE_VA, PAGE_SIZE, Permissions::READ_EXECUTE)
-        .map_err(|_| StageError::InvalidUserPlan)?)
-        .map_err(|_| StageError::InvalidUserPlan)?;
-    plan.map(UserRegion::checked(DATA_VA, PAGE_SIZE, Permissions::READ_WRITE)
-        .map_err(|_| StageError::InvalidUserPlan)?)
-        .map_err(|_| StageError::InvalidUserPlan)?;
+    let mut plan =
+        AddressSpacePlan::with_stack(STACK_TOP, 1).map_err(|_| StageError::InvalidUserPlan)?;
+    plan.map(
+        UserRegion::checked(CODE_VA, PAGE_SIZE, Permissions::READ_EXECUTE)
+            .map_err(|_| StageError::InvalidUserPlan)?,
+    )
+    .map_err(|_| StageError::InvalidUserPlan)?;
+    plan.map(
+        UserRegion::checked(DATA_VA, PAGE_SIZE, Permissions::READ_WRITE)
+            .map_err(|_| StageError::InvalidUserPlan)?,
+    )
+    .map_err(|_| StageError::InvalidUserPlan)?;
     if !plan.allows(CODE_VA, 1, Access::Execute)
         || !plan.allows(DATA_VA, 1, Access::Write)
         || !plan.allows(STACK_VA, 1, Access::Write)
@@ -158,11 +173,26 @@ pub unsafe fn stage(
     put(pd.address, 2, pt_code.address | user_table, hhdm)?;
     put(pd.address, 3, pt_stack.address | user_table, hhdm)?;
     put(pt_code.address, 0, code.address | PRESENT | USER, hhdm)?;
-    put(pt_code.address, 1, data.address | PRESENT | USER | WRITABLE | NO_EXECUTE, hhdm)?;
-    put(pt_stack.address, 511, stack.address | PRESENT | USER | WRITABLE | NO_EXECUTE, hhdm)?;
+    put(
+        pt_code.address,
+        1,
+        data.address | PRESENT | USER | WRITABLE | NO_EXECUTE,
+        hhdm,
+    )?;
+    put(
+        pt_stack.address,
+        511,
+        stack.address | PRESENT | USER | WRITABLE | NO_EXECUTE,
+        hhdm,
+    )?;
     // PT[510] is intentionally absent: the first stack guard page.
     #[cfg(feature = "native-ring3-threads")]
-    put(pt_stack.address, 509, stack2.address | PRESENT | USER | WRITABLE | NO_EXECUTE, hhdm)?;
+    put(
+        pt_stack.address,
+        509,
+        stack2.address | PRESENT | USER | WRITABLE | NO_EXECUTE,
+        hhdm,
+    )?;
     // Second stack at 0x7fd000, distinct from first 0x7ff000; PT[508]
     // remains absent as its independent lower guard page.
 
@@ -178,21 +208,26 @@ pub unsafe fn stage(
         }
         let base_msr = ((high as u64) << 32) | low as u64;
         let physical = base_msr & 0x000f_ffff_ffff_f000;
-        if base_msr & (1 << 11) == 0 || base_msr & (1 << 10) != 0
-            || physical == 0 || physical >= (1u64 << physical_bits)
+        if base_msr & (1 << 11) == 0
+            || base_msr & (1 << 10) != 0
+            || physical == 0
+            || physical >= (1u64 << physical_bits)
         {
             return Err(StageError::UnsupportedPaging);
         }
         // Index 507 of this existing stack PT is unused, supervisor-only,
         // write-through + cache-disable, NX. Do not install in Limine CR3.
-        put(pt_stack.address, 507, physical | PRESENT | WRITABLE
-            | NO_EXECUTE | (1 << 3) | (1 << 4), hhdm)?;
+        put(
+            pt_stack.address,
+            507,
+            physical | PRESENT | WRITABLE | NO_EXECUTE | (1 << 3) | (1 << 4),
+            hhdm,
+        )?;
         physical
     };
     let verify = |va| {
         translate(root.address, va, 48, physical_bits, |frame, index| {
-            read_verified(regions, frame, index, hhdm)
-                .map_err(|_| WalkError::TableReadDenied)
+            read_verified(regions, frame, index, hhdm).map_err(|_| WalkError::TableReadDenied)
         })
     };
     let text = verify(CODE_VA).map_err(|_| StageError::InvalidPageTables)?;
@@ -200,18 +235,26 @@ pub unsafe fn stage(
     let writable_stack = verify(STACK_VA).map_err(|_| StageError::InvalidPageTables)?;
     #[cfg(feature = "native-ring3-threads")]
     let writable_stack2 = verify(0x007f_d000).map_err(|_| StageError::InvalidPageTables)?;
-    if text.physical_address != code.address || !text.user || text.writable || !text.executable
+    if text.physical_address != code.address
+        || !text.user
+        || text.writable
+        || !text.executable
         || writable_data.physical_address != data.address
-        || !writable_data.user || !writable_data.writable || writable_data.executable
+        || !writable_data.user
+        || !writable_data.writable
+        || writable_data.executable
         || writable_stack.physical_address != stack.address
-        || !writable_stack.user || !writable_stack.writable || writable_stack.executable
+        || !writable_stack.user
+        || !writable_stack.writable
+        || writable_stack.executable
         || verify(GUARD_VA) != Err(WalkError::Unmapped)
     {
         return Err(StageError::InvalidPageTables);
     }
     #[cfg(feature = "native-ring3-threads")]
     if writable_stack2.physical_address != stack2.address
-        || !writable_stack2.user || !writable_stack2.writable
+        || !writable_stack2.user
+        || !writable_stack2.writable
         || writable_stack2.executable
         || verify(0x007f_c000) != Err(WalkError::Unmapped)
     {
@@ -221,18 +264,19 @@ pub unsafe fn stage(
     // Verifies inherited supervisor kernel mapping is still present.
     #[cfg(feature = "native-ring3-preempt")]
     {
-        let lapic = verify(LAPIC_MMIO_VA)
-            .map_err(|_| StageError::InvalidPageTables)?;
-        if lapic.physical_address != lapic_physical || lapic.user
-            || !lapic.writable || lapic.executable
+        let lapic = verify(LAPIC_MMIO_VA).map_err(|_| StageError::InvalidPageTables)?;
+        if lapic.physical_address != lapic_physical
+            || lapic.user
+            || !lapic.writable
+            || lapic.executable
             || verify(0x007f_c000) != Err(WalkError::Unmapped)
         {
             return Err(StageError::InvalidPageTables);
         }
     }
 
-    let kernel_text = verify(crate::_start as usize as u64)
-        .map_err(|_| StageError::InvalidPageTables)?;
+    let kernel_text =
+        verify(crate::_start as usize as u64).map_err(|_| StageError::InvalidPageTables)?;
     if kernel_text.user || !kernel_text.executable {
         return Err(StageError::InvalidPageTables);
     }

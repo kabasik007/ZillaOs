@@ -1,8 +1,8 @@
 //! Read-only bounded process/thread snapshot contract.
 //! Exposes real timer interrupt counts only when a CPU backend charges them.
 //! Never invent CPU %, RSS, times, or unrelated GUI windows.
-use crate::process::{Pid, ProcessState, ProcessTable, MAX_PROCESSES};
-use crate::process::thread::{Tid, ThreadState, ThreadTable, MAX_THREADS};
+use crate::process::thread::{MAX_THREADS, ThreadState, ThreadTable, Tid};
+use crate::process::{MAX_PROCESSES, Pid, ProcessState, ProcessTable};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProcessInfo {
@@ -63,10 +63,17 @@ impl TaskSnapshot {
         snapshot
     }
 
-    pub const fn process_count(&self) -> usize { self.process_count }
-    pub const fn thread_count(&self) -> usize { self.thread_count }
+    pub const fn process_count(&self) -> usize {
+        self.process_count
+    }
+    pub const fn thread_count(&self) -> usize {
+        self.thread_count
+    }
     pub fn processes(&self) -> impl Iterator<Item = ProcessInfo> + '_ {
-        self.processes[..self.process_count].iter().flatten().copied()
+        self.processes[..self.process_count]
+            .iter()
+            .flatten()
+            .copied()
     }
     pub fn threads(&self) -> impl Iterator<Item = ThreadInfo> + '_ {
         self.threads[..self.thread_count].iter().flatten().copied()
@@ -76,34 +83,36 @@ impl TaskSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::address_space::{Permissions, UserRegion, PAGE_SIZE};
+    use crate::process::address_space::{PAGE_SIZE, Permissions, UserRegion};
     use crate::services::process_manager::ProcessManager;
 
     #[test]
     fn enumerates_only_registered_processes_and_owned_threads() {
-        let mut pm=ProcessManager::new();
-        let empty=pm.snapshot();
-        assert_eq!((empty.process_count(),empty.thread_count()),(0,0));
-        assert_eq!(empty.online_cpu_mask,1);
-        let pid=pm.reserve_native("sample",0x400000,0x800000,4).unwrap();
-        pm.map_native_region(pid,UserRegion::checked(
-            0x400000,PAGE_SIZE,Permissions::READ_EXECUTE,
-        ).unwrap()).unwrap();
+        let mut pm = ProcessManager::new();
+        let empty = pm.snapshot();
+        assert_eq!((empty.process_count(), empty.thread_count()), (0, 0));
+        assert_eq!(empty.online_cpu_mask, 1);
+        let pid = pm.reserve_native("sample", 0x400000, 0x800000, 4).unwrap();
+        pm.map_native_region(
+            pid,
+            UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+        )
+        .unwrap();
         pm.prepare_native(pid).unwrap();
-        let a=pm.reserve_thread(pid,0x400000,0x800000,1).unwrap();
+        let a = pm.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
         pm.prepare_thread(a).unwrap();
-        let snap=pm.snapshot();
-        assert_eq!(snap.process_count(),1);
-        assert_eq!(snap.thread_count(),1);
-        let p=snap.processes().next().unwrap();
-        assert_eq!(p.pid,pid);
-        assert_eq!(p.thread_count,1);
-        assert_eq!(p.state,ProcessState::Ready);
-        let t=snap.threads().next().unwrap();
-        assert_eq!(t.tid,a);
-        assert_eq!(t.pid,pid);
-        assert_eq!(t.state,ThreadState::Ready);
-        assert_eq!(t.assigned_cpu,None);
-        assert_eq!(t.timer_ticks,0);
+        let snap = pm.snapshot();
+        assert_eq!(snap.process_count(), 1);
+        assert_eq!(snap.thread_count(), 1);
+        let p = snap.processes().next().unwrap();
+        assert_eq!(p.pid, pid);
+        assert_eq!(p.thread_count, 1);
+        assert_eq!(p.state, ProcessState::Ready);
+        let t = snap.threads().next().unwrap();
+        assert_eq!(t.tid, a);
+        assert_eq!(t.pid, pid);
+        assert_eq!(t.state, ThreadState::Ready);
+        assert_eq!(t.assigned_cpu, None);
+        assert_eq!(t.timer_ticks, 0);
     }
 }

@@ -14,11 +14,16 @@ pub struct Mode {
 
 impl Mode {
     pub const fn new(width: u32, height: u32) -> Self {
-        Self { width, height, bpp: 32 }
+        Self {
+            width,
+            height,
+            bpp: 32,
+        }
     }
 
     pub fn is_sane(self) -> bool {
-        self.bpp == 32 && (320..=8192).contains(&self.width)
+        self.bpp == 32
+            && (320..=8192).contains(&self.width)
             && (200..=8192).contains(&self.height)
             && u64::from(self.width) * u64::from(self.height) * 4 <= 256 * 1024 * 1024
     }
@@ -333,18 +338,32 @@ mod tests {
             self.available
         }
         fn supports_mode(&self, m: Mode) -> bool {
-            matches!((m.width, m.height, m.bpp),
-                (800, 600, 32) | (1024, 768, 32) | (1280, 800, 32))
+            matches!(
+                (m.width, m.height, m.bpp),
+                (800, 600, 32) | (1024, 768, 32) | (1280, 800, 32)
+            )
         }
         fn test_mode(&mut self, mode: Mode) -> Result<(), BackendFailure> {
             self.tested += 1;
-            if self.lost_output { return Err(BackendFailure::LostOutput); }
-            if self.fail_atomic_test { return Err(BackendFailure::Rejected); }
-            if self.supports_mode(mode) { Ok(()) } else { Err(BackendFailure::Rejected) }
+            if self.lost_output {
+                return Err(BackendFailure::LostOutput);
+            }
+            if self.fail_atomic_test {
+                return Err(BackendFailure::Rejected);
+            }
+            if self.supports_mode(mode) {
+                Ok(())
+            } else {
+                Err(BackendFailure::Rejected)
+            }
         }
         fn prepare_mode(&mut self, _: Mode) -> Result<(), BackendFailure> {
             self.prepared += 1;
-            if self.fail_prepare { Err(BackendFailure::Rejected) } else { Ok(()) }
+            if self.fail_prepare {
+                Err(BackendFailure::Rejected)
+            } else {
+                Ok(())
+            }
         }
         fn set_mode(&mut self, m: Mode) -> Result<(), BackendFailure> {
             self.writes += 1;
@@ -352,11 +371,15 @@ mod tests {
                 return Err(BackendFailure::Rejected);
             }
             self.current = m;
-            if self.lose_after_set && m.width == 1280 { self.lost_output = true; }
+            if self.lose_after_set && m.width == 1280 {
+                self.lost_output = true;
+            }
             Ok(())
         }
         fn read_mode(&mut self) -> Result<Mode, BackendFailure> {
-            if self.lost_output { return Err(BackendFailure::LostOutput); }
+            if self.lost_output {
+                return Err(BackendFailure::LostOutput);
+            }
             if self.wrong_readback && self.current.width == 1280 {
                 Ok(Mode::new(800, 600))
             } else {
@@ -374,7 +397,10 @@ mod tests {
         gpu.available = false;
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
         assert_eq!(mgr.supported_presets(&gpu), [None; 5]);
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::NotAvailable));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::NotAvailable)
+        );
         assert_eq!(gpu.writes, 0);
     }
 
@@ -394,13 +420,22 @@ mod tests {
     fn apply_confirm_and_cancel_preserve_confirmed_state() {
         let mut gpu = MockDisplay::new();
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Ok(Apply::AwaitingConfirmation));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Ok(Apply::AwaitingConfirmation)
+        );
         assert!(mgr.awaiting_confirmation());
         assert_eq!(mgr.confirmed_mode(), Mode::new(1024, 768));
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(800, 600)), Err(DisplayError::AlreadyPending));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(800, 600)),
+            Err(DisplayError::AlreadyPending)
+        );
         assert_eq!(mgr.cancel(&mut gpu), Ok(()));
         assert_eq!(mgr.current_mode(), Mode::new(1024, 768));
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Ok(Apply::AwaitingConfirmation));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Ok(Apply::AwaitingConfirmation)
+        );
         assert_eq!(mgr.confirm(&mut gpu), Ok(()));
         assert_eq!(mgr.confirmed_mode(), Mode::new(1280, 800));
     }
@@ -410,7 +445,10 @@ mod tests {
         let mut gpu = MockDisplay::new();
         gpu.failed_apply = true;
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::ApplyFailed));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::ApplyFailed)
+        );
         assert_eq!(mgr.current_mode(), Mode::new(1024, 768));
         assert!(!mgr.awaiting_confirmation());
         assert!(!mgr.is_poisoned());
@@ -421,7 +459,10 @@ mod tests {
         let mut gpu = MockDisplay::new();
         gpu.wrong_readback = true;
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::ReadbackMismatch));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::ReadbackMismatch)
+        );
         assert_eq!(gpu.current, Mode::new(1024, 768));
         assert_eq!(mgr.confirmed_mode(), Mode::new(1024, 768));
     }
@@ -432,17 +473,29 @@ mod tests {
         gpu.failed_apply = true;
         gpu.restorable = false;
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)), Err(DisplayError::RollbackFailed));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::RollbackFailed)
+        );
         assert!(mgr.is_poisoned());
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(800, 600)), Err(DisplayError::Poisoned));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(800, 600)),
+            Err(DisplayError::Poisoned)
+        );
     }
 
     #[test]
     fn unsupported_and_invalid_modes_are_rejected_without_writes() {
         let mut gpu = MockDisplay::new();
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1920, 1080)), Err(DisplayError::Unsupported));
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(0, 0)), Err(DisplayError::InvalidMode));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1920, 1080)),
+            Err(DisplayError::Unsupported)
+        );
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(0, 0)),
+            Err(DisplayError::InvalidMode)
+        );
         assert_eq!(gpu.writes, 0);
         assert_eq!(gpu.prepared, 0);
     }
@@ -452,8 +505,10 @@ mod tests {
         let mut gpu = MockDisplay::new();
         gpu.fail_prepare = true;
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
-            Err(DisplayError::PreparationFailed));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::PreparationFailed)
+        );
         assert_eq!(gpu.writes, 0);
         assert_eq!(mgr.current_mode(), Mode::new(1024, 768));
     }
@@ -474,8 +529,12 @@ mod tests {
     fn legacy_backend_without_atomic_test_fails_closed() {
         struct Legacy(MockDisplay);
         impl ModeBackend for Legacy {
-            fn runtime_switch_available(&self) -> bool { self.0.runtime_switch_available() }
-            fn supports_mode(&self, mode: Mode) -> bool { self.0.supports_mode(mode) }
+            fn runtime_switch_available(&self) -> bool {
+                self.0.runtime_switch_available()
+            }
+            fn supports_mode(&self, mode: Mode) -> bool {
+                self.0.supports_mode(mode)
+            }
             fn prepare_mode(&mut self, mode: Mode) -> Result<(), BackendFailure> {
                 self.0.prepare_mode(mode)
             }
@@ -485,12 +544,16 @@ mod tests {
             fn read_mode(&mut self) -> Result<Mode, BackendFailure> {
                 self.0.read_mode()
             }
-            fn can_restore(&self, mode: Mode) -> bool { self.0.can_restore(mode) }
+            fn can_restore(&self, mode: Mode) -> bool {
+                self.0.can_restore(mode)
+            }
         }
         let mut legacy = Legacy(MockDisplay::new());
         let mut mgr = DisplayManager::new(legacy.0.current).unwrap();
-        assert_eq!(mgr.apply(&mut legacy, Mode::new(1280, 800)),
-            Err(DisplayError::AtomicTestFailed));
+        assert_eq!(
+            mgr.apply(&mut legacy, Mode::new(1280, 800)),
+            Err(DisplayError::AtomicTestFailed)
+        );
         assert_eq!(legacy.0.writes, 0);
         assert_eq!(legacy.0.prepared, 0);
     }
@@ -500,8 +563,10 @@ mod tests {
         let mut gpu = MockDisplay::new();
         gpu.fail_atomic_test = true;
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
-            Err(DisplayError::AtomicTestFailed));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::AtomicTestFailed)
+        );
         assert_eq!(gpu.tested, 1);
         assert_eq!(gpu.prepared, 0);
         assert_eq!(gpu.writes, 0);
@@ -514,14 +579,18 @@ mod tests {
         let mut gpu = MockDisplay::new();
         gpu.lost_output = true;
         let mut mgr = DisplayManager::new(Mode::new(1024, 768)).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
-            Err(DisplayError::OutputLost));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::OutputLost)
+        );
         assert!(mgr.is_poisoned());
         assert_eq!(gpu.tested, 0);
         assert_eq!(gpu.prepared, 0);
         assert_eq!(gpu.writes, 0);
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(800, 600)),
-            Err(DisplayError::Poisoned));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(800, 600)),
+            Err(DisplayError::Poisoned)
+        );
     }
 
     #[test]
@@ -529,8 +598,10 @@ mod tests {
         let mut gpu = MockDisplay::new();
         gpu.lose_after_set = true;
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
-            Err(DisplayError::OutputLost));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::OutputLost)
+        );
         assert!(mgr.is_poisoned());
         assert_eq!(gpu.writes, 1);
         assert_eq!(mgr.confirmed_mode(), Mode::new(1024, 768));
@@ -541,8 +612,10 @@ mod tests {
         let mut gpu = MockDisplay::new();
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
         gpu.current = Mode::new(800, 600);
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1280, 800)),
-            Err(DisplayError::ReadbackMismatch));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1280, 800)),
+            Err(DisplayError::ReadbackMismatch)
+        );
         assert!(mgr.is_poisoned());
         assert_eq!(gpu.tested, 0);
         assert_eq!(gpu.writes, 0);
@@ -554,6 +627,9 @@ mod tests {
         let mut mgr = DisplayManager::new(gpu.current).unwrap();
         assert_eq!(mgr.confirm(&mut gpu), Err(DisplayError::NoPendingMode));
         assert_eq!(mgr.cancel(&mut gpu), Err(DisplayError::NoPendingMode));
-        assert_eq!(mgr.apply(&mut gpu, Mode::new(1024, 768)), Ok(Apply::AlreadyCurrent));
+        assert_eq!(
+            mgr.apply(&mut gpu, Mode::new(1024, 768)),
+            Ok(Apply::AlreadyCurrent)
+        );
     }
 }

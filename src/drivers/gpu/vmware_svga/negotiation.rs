@@ -87,10 +87,10 @@ mod tests {
         );
         assert_eq!(result, Ok(registers::SVGA_ID_1));
         assert_eq!(count, 2);
-        assert_eq!(attempts[..count], [
-            registers::SVGA_ID_2,
-            registers::SVGA_ID_1,
-        ]);
+        assert_eq!(
+            attempts[..count],
+            [registers::SVGA_ID_2, registers::SVGA_ID_1,]
+        );
     }
 
     #[test]

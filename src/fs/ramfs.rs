@@ -22,13 +22,20 @@ pub struct MemoryFile {
 }
 impl MemoryFile {
     pub const fn empty() -> Self {
-        Self { used: false, name: [0; NAME_LIMIT], name_len: 0,
-               data: [0; TEXT_LIMIT], len: 0 }
+        Self {
+            used: false,
+            name: [0; NAME_LIMIT],
+            name_len: 0,
+            data: [0; TEXT_LIMIT],
+            len: 0,
+        }
     }
     pub fn name(&self) -> &str {
         core::str::from_utf8(&self.name[..self.name_len]).unwrap_or("")
     }
-    pub fn content(&self) -> &[u8] { &self.data[..self.len] }
+    pub fn content(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,13 +45,20 @@ pub struct RamFs {
 }
 impl RamFs {
     pub const fn new() -> Self {
-        Self { files: [MemoryFile::empty(); FILE_LIMIT], revision: 0 }
+        Self {
+            files: [MemoryFile::empty(); FILE_LIMIT],
+            revision: 0,
+        }
     }
     pub fn len(&self) -> usize {
         self.files.iter().filter(|file| file.used).count()
     }
     pub fn nth(&self, row: usize) -> Option<(usize, &MemoryFile)> {
-        self.files.iter().enumerate().filter(|(_, file)| file.used).nth(row)
+        self.files
+            .iter()
+            .enumerate()
+            .filter(|(_, file)| file.used)
+            .nth(row)
     }
     pub fn get(&self, index: usize) -> Option<&MemoryFile> {
         self.files.get(index).filter(|file| file.used)
@@ -54,9 +68,15 @@ impl RamFs {
     }
     /// Atomic bounded write. Failed requests do not modify existing content.
     pub fn save(&mut self, name: &str, data: &[u8]) -> Result<usize, StorageError> {
-        if !valid_filename(name) { return Err(StorageError::InvalidName); }
-        if data.len() > TEXT_LIMIT { return Err(StorageError::TooLarge); }
-        let slot = self.find(name).or_else(|| self.files.iter().position(|f| !f.used))
+        if !valid_filename(name) {
+            return Err(StorageError::InvalidName);
+        }
+        if data.len() > TEXT_LIMIT {
+            return Err(StorageError::TooLarge);
+        }
+        let slot = self
+            .find(name)
+            .or_else(|| self.files.iter().position(|f| !f.used))
             .ok_or(StorageError::Full)?;
         let file = &mut self.files[slot];
         let mut next = MemoryFile::empty();
@@ -70,15 +90,21 @@ impl RamFs {
         Ok(slot)
     }
 }
-impl Default for RamFs { fn default() -> Self { Self::new() } }
+impl Default for RamFs {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub fn valid_filename(name: &str) -> bool {
     if name.len() < 5 || name.len() > NAME_LIMIT || !name.ends_with(".TXT") {
         return false;
     }
     let prefix = &name.as_bytes()[..name.len() - 4];
-    !prefix.is_empty() && prefix.iter().all(|b| b.is_ascii_uppercase()
-        || b.is_ascii_digit() || *b == b'_' || *b == b'-')
+    !prefix.is_empty()
+        && prefix
+            .iter()
+            .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || *b == b'_' || *b == b'-')
 }
 
 #[cfg(test)]
@@ -102,12 +128,22 @@ mod tests {
         let mut fs = RamFs::new();
         let id = fs.save("GOOD.TXT", b"good").unwrap();
         let initial = fs;
-        for name in ["../BAD.TXT", "/BAD.TXT", "C:\\BAD.TXT",
-                     "bad.txt", "BAD.EXE", "..TXT", "A B.TXT", "a.TXT"] {
+        for name in [
+            "../BAD.TXT",
+            "/BAD.TXT",
+            "C:\\BAD.TXT",
+            "bad.txt",
+            "BAD.EXE",
+            "..TXT",
+            "A B.TXT",
+            "a.TXT",
+        ] {
             assert_eq!(fs.save(name, b"evil"), Err(StorageError::InvalidName));
         }
-        assert_eq!(fs.save("GOOD.TXT", &[b'x'; TEXT_LIMIT + 1]),
-                   Err(StorageError::TooLarge));
+        assert_eq!(
+            fs.save("GOOD.TXT", &[b'x'; TEXT_LIMIT + 1]),
+            Err(StorageError::TooLarge)
+        );
         assert_eq!(fs, initial);
         assert_eq!(fs.get(id).unwrap().content(), b"good");
     }
@@ -116,8 +152,14 @@ mod tests {
         let mut fs = RamFs::new();
         for i in 0..FILE_LIMIT {
             let name = match i {
-                0 => "A.TXT", 1 => "B.TXT", 2 => "C.TXT", 3 => "D.TXT",
-                4 => "E.TXT", 5 => "F.TXT", 6 => "G.TXT", _ => "H.TXT",
+                0 => "A.TXT",
+                1 => "B.TXT",
+                2 => "C.TXT",
+                3 => "D.TXT",
+                4 => "E.TXT",
+                5 => "F.TXT",
+                6 => "G.TXT",
+                _ => "H.TXT",
             };
             fs.save(name, b"data").unwrap();
         }

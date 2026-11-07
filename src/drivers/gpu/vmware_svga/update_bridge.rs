@@ -34,11 +34,18 @@ pub fn encode_scanout_damage(
     {
         return Err(BridgeError::ScanoutModeMismatch);
     }
-    damage.validate(surface.layout).map_err(BridgeError::Surface)?;
+    damage
+        .validate(surface.layout)
+        .map_err(BridgeError::Surface)?;
     fifo::encode_update(
-        damage.x, damage.y, damage.width, damage.height,
-        surface.layout.width, surface.layout.height,
-    ).map_err(BridgeError::Update)
+        damage.x,
+        damage.y,
+        damage.width,
+        damage.height,
+        surface.layout.width,
+        surface.layout.height,
+    )
+    .map_err(BridgeError::Update)
 }
 
 #[cfg(test)]
@@ -50,7 +57,9 @@ mod tests {
         SurfaceDescriptor {
             owner: SurfaceOwner::Kernel,
             layout: BufferLayout {
-                width: 1024, height: 768, pitch_bytes: 4096,
+                width: 1024,
+                height: 768,
+                pitch_bytes: 4096,
                 format: PixelFormat::Xrgb8888,
                 byte_length: 4096 * 768,
             },
@@ -59,30 +68,57 @@ mod tests {
 
     #[test]
     fn valid_damage_generates_exactly_five_words() {
-        assert_eq!(encode_scanout_damage(
-            source(),
-            DamageRect { x: 900, y: 700, width: 124, height: 68 },
-            Mode::new(1024, 768),
-        ), Ok([1, 900, 700, 124, 68]));
+        assert_eq!(
+            encode_scanout_damage(
+                source(),
+                DamageRect {
+                    x: 900,
+                    y: 700,
+                    width: 124,
+                    height: 68
+                },
+                Mode::new(1024, 768),
+            ),
+            Ok([1, 900, 700, 124, 68])
+        );
     }
 
     #[test]
     fn rejects_unverified_mode_format_and_bounds() {
-        let damage = DamageRect { x: 0, y: 0, width: 50, height: 50 };
-        assert_eq!(encode_scanout_damage(source(), damage, Mode::new(800, 600)),
-            Err(BridgeError::ScanoutModeMismatch));
+        let damage = DamageRect {
+            x: 0,
+            y: 0,
+            width: 50,
+            height: 50,
+        };
+        assert_eq!(
+            encode_scanout_damage(source(), damage, Mode::new(800, 600)),
+            Err(BridgeError::ScanoutModeMismatch)
+        );
         let mut surface = source();
         surface.layout.format = PixelFormat::Argb8888;
-        assert_eq!(encode_scanout_damage(surface, damage, Mode::new(1024, 768)),
-            Err(BridgeError::UnsupportedFormat));
+        assert_eq!(
+            encode_scanout_damage(surface, damage, Mode::new(1024, 768)),
+            Err(BridgeError::UnsupportedFormat)
+        );
         surface = source();
         surface.layout.pitch_bytes = 4;
-        assert_eq!(encode_scanout_damage(surface, damage, Mode::new(1024, 768)),
-            Err(BridgeError::Surface(SurfaceError::InvalidStride)));
-        assert_eq!(encode_scanout_damage(
-            source(),
-            DamageRect { x: u32::MAX, y: 0, width: 2, height: 1 },
-            Mode::new(1024, 768),
-        ), Err(BridgeError::Surface(SurfaceError::InvalidDamage)));
+        assert_eq!(
+            encode_scanout_damage(surface, damage, Mode::new(1024, 768)),
+            Err(BridgeError::Surface(SurfaceError::InvalidStride))
+        );
+        assert_eq!(
+            encode_scanout_damage(
+                source(),
+                DamageRect {
+                    x: u32::MAX,
+                    y: 0,
+                    width: 2,
+                    height: 1
+                },
+                Mode::new(1024, 768),
+            ),
+            Err(BridgeError::Surface(SurfaceError::InvalidDamage))
+        );
     }
 }

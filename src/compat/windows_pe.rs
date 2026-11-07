@@ -40,14 +40,21 @@ fn u32_at(bytes: &[u8], start: usize) -> Option<u32> {
 }
 fn u64_at(bytes: &[u8], start: usize) -> Option<u64> {
     let part = bytes.get(start..start.checked_add(8)?)?;
-    Some(u64::from_le_bytes([part[0], part[1], part[2], part[3],
-                             part[4], part[5], part[6], part[7]]))
+    Some(u64::from_le_bytes([
+        part[0], part[1], part[2], part[3], part[4], part[5], part[6], part[7],
+    ]))
 }
-fn pow2(v: u32) -> bool { v != 0 && v.is_power_of_two() }
+fn pow2(v: u32) -> bool {
+    v != 0 && v.is_power_of_two()
+}
 
 pub fn inspect_pe64(bytes: &[u8]) -> Result<PeInfo, PeError> {
-    if bytes.len() < 0x40 { return Err(PeError::TooShort); }
-    if &bytes[..2] != b"MZ" { return Err(PeError::BadDosSignature); }
+    if bytes.len() < 0x40 {
+        return Err(PeError::TooShort);
+    }
+    if &bytes[..2] != b"MZ" {
+        return Err(PeError::BadDosSignature);
+    }
     let pe = u32_at(bytes, 0x3c).ok_or(PeError::BadPeOffset)? as usize;
     if pe < 0x40 || pe > bytes.len().saturating_sub(24) {
         return Err(PeError::BadPeOffset);
@@ -59,12 +66,18 @@ pub fn inspect_pe64(bytes: &[u8]) -> Result<PeInfo, PeError> {
         return Err(PeError::UnsupportedMachine);
     }
     let count = u16_at(bytes, pe + 6).ok_or(PeError::OutOfBounds)?;
-    if count == 0 || count > 96 { return Err(PeError::BadSectionCount); }
+    if count == 0 || count > 96 {
+        return Err(PeError::BadSectionCount);
+    }
     let opt_size = u16_at(bytes, pe + 20).ok_or(PeError::OutOfBounds)? as usize;
-    if opt_size < 112 { return Err(PeError::UnsupportedOptionalHeader); }
+    if opt_size < 112 {
+        return Err(PeError::UnsupportedOptionalHeader);
+    }
     let opt = pe.checked_add(24).ok_or(PeError::OutOfBounds)?;
     let end = opt.checked_add(opt_size).ok_or(PeError::OutOfBounds)?;
-    if end > bytes.len() { return Err(PeError::OutOfBounds); }
+    if end > bytes.len() {
+        return Err(PeError::OutOfBounds);
+    }
     if u16_at(bytes, opt) != Some(0x020b) {
         return Err(PeError::UnsupportedOptionalHeader);
     }
@@ -76,19 +89,22 @@ pub fn inspect_pe64(bytes: &[u8]) -> Result<PeInfo, PeError> {
     let header_size = u32_at(bytes, opt + 60).ok_or(PeError::OutOfBounds)?;
     let subsystem = u16_at(bytes, opt + 68).ok_or(PeError::OutOfBounds)?;
     let flags = u16_at(bytes, pe + 22).ok_or(PeError::OutOfBounds)?;
-    if !pow2(section_alignment) || !pow2(file_alignment)
-        || image_base & 0xffff != 0 {
+    if !pow2(section_alignment) || !pow2(file_alignment) || image_base & 0xffff != 0 {
         return Err(PeError::InvalidAlignment);
     }
     if section_alignment < file_alignment && section_alignment != file_alignment {
         return Err(PeError::InvalidAlignment);
     }
-    if image_size == 0 || image_size > 512 * 1024 * 1024
-        || header_size == 0 || header_size > image_size
-        || entry_rva >= image_size {
+    if image_size == 0
+        || image_size > 512 * 1024 * 1024
+        || header_size == 0
+        || header_size > image_size
+        || entry_rva >= image_size
+    {
         return Err(PeError::InvalidImage);
     }
-    let section_end = end.checked_add((count as usize) * 40)
+    let section_end = end
+        .checked_add((count as usize) * 40)
         .ok_or(PeError::OutOfBounds)?;
     if section_end > bytes.len() || section_end > header_size as usize {
         return Err(PeError::InvalidSections);
@@ -102,12 +118,18 @@ pub fn inspect_pe64(bytes: &[u8]) -> Result<PeInfo, PeError> {
         let raw_size = u32_at(bytes, sh + 16).ok_or(PeError::InvalidSections)?;
         let raw_offset = u32_at(bytes, sh + 20).ok_or(PeError::InvalidSections)?;
         let span = virtual_size.max(raw_size);
-        if virtual_address.checked_add(span).is_none_or(|end| end > image_size) {
+        if virtual_address
+            .checked_add(span)
+            .is_none_or(|end| end > image_size)
+        {
             return Err(PeError::InvalidSections);
         }
-        if raw_size > 0 && (raw_offset < header_size ||
-            (raw_offset as usize).checked_add(raw_size as usize)
-                .is_none_or(|end| end > bytes.len())) {
+        if raw_size > 0
+            && (raw_offset < header_size
+                || (raw_offset as usize)
+                    .checked_add(raw_size as usize)
+                    .is_none_or(|end| end > bytes.len()))
+        {
             return Err(PeError::InvalidSections);
         }
     }
@@ -121,29 +143,40 @@ pub fn inspect_pe64(bytes: &[u8]) -> Result<PeInfo, PeError> {
         let import_rva = u32_at(bytes, opt + 120).ok_or(PeError::OutOfBounds)?;
         let import_size = u32_at(bytes, opt + 124).ok_or(PeError::OutOfBounds)?;
         if import_rva != 0 || import_size != 0 {
-            if import_rva == 0 || import_size == 0 ||
-                import_rva.checked_add(import_size).is_none_or(|end| end > image_size) {
+            if import_rva == 0
+                || import_size == 0
+                || import_rva
+                    .checked_add(import_size)
+                    .is_none_or(|end| end > image_size)
+            {
                 return Err(PeError::InvalidImage);
             }
             has_imports = true;
         }
     }
     if directory_count >= 6 {
-        if opt_size < 112 + 6 * 8 { return Err(PeError::UnsupportedOptionalHeader); }
+        if opt_size < 112 + 6 * 8 {
+            return Err(PeError::UnsupportedOptionalHeader);
+        }
         let rva = u32_at(bytes, opt + 112 + 5 * 8).ok_or(PeError::OutOfBounds)?;
         let size = u32_at(bytes, opt + 116 + 5 * 8).ok_or(PeError::OutOfBounds)?;
         if rva != 0 || size != 0 {
-            if rva == 0 || size == 0 ||
-                rva.checked_add(size).is_none_or(|end| end > image_size) {
+            if rva == 0 || size == 0 || rva.checked_add(size).is_none_or(|end| end > image_size) {
                 return Err(PeError::InvalidImage);
             }
             has_relocations = true;
         }
     }
     Ok(PeInfo {
-        entry_rva, image_base, image_size, header_size, sections: count,
-        subsystem, is_dll: flags & 0x2000 != 0,
-        has_imports, has_relocations,
+        entry_rva,
+        image_base,
+        image_size,
+        header_size,
+        sections: count,
+        subsystem,
+        is_dll: flags & 0x2000 != 0,
+        has_imports,
+        has_relocations,
     })
 }
 
@@ -159,21 +192,21 @@ mod tests {
         b[0x86..0x88].copy_from_slice(&1u16.to_le_bytes());
         b[0x94..0x96].copy_from_slice(&0xf0u16.to_le_bytes());
         let o = 0x98usize;
-        b[o..o+2].copy_from_slice(&0x20bu16.to_le_bytes());
-        b[o+16..o+20].copy_from_slice(&0x1000u32.to_le_bytes());
-        b[o+24..o+32].copy_from_slice(&0x140000000u64.to_le_bytes());
-        b[o+32..o+36].copy_from_slice(&0x1000u32.to_le_bytes());
-        b[o+36..o+40].copy_from_slice(&0x200u32.to_le_bytes());
-        b[o+56..o+60].copy_from_slice(&0x2000u32.to_le_bytes());
-        b[o+60..o+64].copy_from_slice(&0x200u32.to_le_bytes());
-        b[o+68..o+70].copy_from_slice(&3u16.to_le_bytes());
-        b[o+108..o+112].copy_from_slice(&16u32.to_le_bytes());
+        b[o..o + 2].copy_from_slice(&0x20bu16.to_le_bytes());
+        b[o + 16..o + 20].copy_from_slice(&0x1000u32.to_le_bytes());
+        b[o + 24..o + 32].copy_from_slice(&0x140000000u64.to_le_bytes());
+        b[o + 32..o + 36].copy_from_slice(&0x1000u32.to_le_bytes());
+        b[o + 36..o + 40].copy_from_slice(&0x200u32.to_le_bytes());
+        b[o + 56..o + 60].copy_from_slice(&0x2000u32.to_le_bytes());
+        b[o + 60..o + 64].copy_from_slice(&0x200u32.to_le_bytes());
+        b[o + 68..o + 70].copy_from_slice(&3u16.to_le_bytes());
+        b[o + 108..o + 112].copy_from_slice(&16u32.to_le_bytes());
         let sh = 0x188usize;
-        b[sh..sh+5].copy_from_slice(b".text");
-        b[sh+8..sh+12].copy_from_slice(&0x100u32.to_le_bytes());
-        b[sh+12..sh+16].copy_from_slice(&0x1000u32.to_le_bytes());
-        b[sh+16..sh+20].copy_from_slice(&0x200u32.to_le_bytes());
-        b[sh+20..sh+24].copy_from_slice(&0x200u32.to_le_bytes());
+        b[sh..sh + 5].copy_from_slice(b".text");
+        b[sh + 8..sh + 12].copy_from_slice(&0x100u32.to_le_bytes());
+        b[sh + 12..sh + 16].copy_from_slice(&0x1000u32.to_le_bytes());
+        b[sh + 16..sh + 20].copy_from_slice(&0x200u32.to_le_bytes());
+        b[sh + 20..sh + 24].copy_from_slice(&0x200u32.to_le_bytes());
         b
     }
     #[test]
@@ -193,25 +226,32 @@ mod tests {
         let mut v = b;
         v[0] = 0;
         assert_eq!(inspect_pe64(&v), Err(PeError::BadDosSignature));
-        v = b; v[0x84] = 0x4c;
+        v = b;
+        v[0x84] = 0x4c;
         assert_eq!(inspect_pe64(&v), Err(PeError::UnsupportedMachine));
-        v = b; v[0x3c..0x40].copy_from_slice(&u32::MAX.to_le_bytes());
+        v = b;
+        v[0x3c..0x40].copy_from_slice(&u32::MAX.to_le_bytes());
         assert_eq!(inspect_pe64(&v), Err(PeError::BadPeOffset));
-        v = b; v[0x98] = 0x0b; v[0x99] = 0x01;
+        v = b;
+        v[0x98] = 0x0b;
+        v[0x99] = 0x01;
         assert_eq!(inspect_pe64(&v), Err(PeError::UnsupportedOptionalHeader));
     }
     #[test]
     fn refuses_out_of_range_sections_imports_and_image_sizes() {
         let b = sample();
         let mut v = b;
-        v[0x188+20..0x188+24].copy_from_slice(&u32::MAX.to_le_bytes());
+        v[0x188 + 20..0x188 + 24].copy_from_slice(&u32::MAX.to_le_bytes());
         assert_eq!(inspect_pe64(&v), Err(PeError::InvalidSections));
-        v = b; v[0x98+120..0x98+124].copy_from_slice(&0x1ff0u32.to_le_bytes());
-        v[0x98+124..0x98+128].copy_from_slice(&0x100u32.to_le_bytes());
+        v = b;
+        v[0x98 + 120..0x98 + 124].copy_from_slice(&0x1ff0u32.to_le_bytes());
+        v[0x98 + 124..0x98 + 128].copy_from_slice(&0x100u32.to_le_bytes());
         assert_eq!(inspect_pe64(&v), Err(PeError::InvalidImage));
-        v = b; v[0x98+56..0x98+60].copy_from_slice(&0u32.to_le_bytes());
+        v = b;
+        v[0x98 + 56..0x98 + 60].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(inspect_pe64(&v), Err(PeError::InvalidImage));
-        v = b; v[0x86..0x88].copy_from_slice(&100u16.to_le_bytes());
+        v = b;
+        v[0x86..0x88].copy_from_slice(&100u16.to_le_bytes());
         assert_eq!(inspect_pe64(&v), Err(PeError::BadSectionCount));
     }
 }

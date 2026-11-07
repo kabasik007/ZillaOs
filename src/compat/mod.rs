@@ -39,12 +39,30 @@ pub struct RuntimeBackend {
 /// All future compatibility backends are explicit and disabled until there
 /// is a process model, memory isolation, syscall layer and test coverage.
 pub const BACKENDS: [RuntimeBackend; 6] = [
-    RuntimeBackend { target: TargetPlatform::ZillaNative, status: RuntimeStatus::NotImplemented },
-    RuntimeBackend { target: TargetPlatform::Linux, status: RuntimeStatus::NotImplemented },
-    RuntimeBackend { target: TargetPlatform::Windows, status: RuntimeStatus::NotImplemented },
-    RuntimeBackend { target: TargetPlatform::Android, status: RuntimeStatus::NotImplemented },
-    RuntimeBackend { target: TargetPlatform::PlayStation, status: RuntimeStatus::NotImplemented },
-    RuntimeBackend { target: TargetPlatform::Xbox, status: RuntimeStatus::NotImplemented },
+    RuntimeBackend {
+        target: TargetPlatform::ZillaNative,
+        status: RuntimeStatus::NotImplemented,
+    },
+    RuntimeBackend {
+        target: TargetPlatform::Linux,
+        status: RuntimeStatus::NotImplemented,
+    },
+    RuntimeBackend {
+        target: TargetPlatform::Windows,
+        status: RuntimeStatus::NotImplemented,
+    },
+    RuntimeBackend {
+        target: TargetPlatform::Android,
+        status: RuntimeStatus::NotImplemented,
+    },
+    RuntimeBackend {
+        target: TargetPlatform::PlayStation,
+        status: RuntimeStatus::NotImplemented,
+    },
+    RuntimeBackend {
+        target: TargetPlatform::Xbox,
+        status: RuntimeStatus::NotImplemented,
+    },
 ];
 
 /// A signature is not evidence that an executable is safe or compatible.
@@ -54,9 +72,8 @@ pub fn detect_format(bytes: &[u8]) -> ExecutableFormat {
         return ExecutableFormat::Elf;
     }
     if bytes.len() >= 0x40 && bytes.starts_with(b"MZ") {
-        let pe_offset = u32::from_le_bytes([
-            bytes[0x3c], bytes[0x3d], bytes[0x3e], bytes[0x3f],
-        ]) as usize;
+        let pe_offset =
+            u32::from_le_bytes([bytes[0x3c], bytes[0x3d], bytes[0x3e], bytes[0x3f]]) as usize;
         if let Some(signature) = bytes.get(pe_offset..pe_offset.saturating_add(4)) {
             if signature == b"PE\0\0" {
                 return ExecutableFormat::PortableExecutable;
@@ -80,8 +97,10 @@ mod tests {
     #[test]
     fn recognizes_formats_without_misidentifying_archives_as_android() {
         assert_eq!(detect_format(b"\x7fELF\x02"), ExecutableFormat::Elf);
-        assert_eq!(detect_format(b"PK\x03\x04.apk data"),
-                   ExecutableFormat::ZipArchive);
+        assert_eq!(
+            detect_format(b"PK\x03\x04.apk data"),
+            ExecutableFormat::ZipArchive
+        );
         assert_eq!(detect_format(b"MZ"), ExecutableFormat::Unknown);
         assert_eq!(detect_format(&[]), ExecutableFormat::Unknown);
         let mut pe = [0u8; 128];

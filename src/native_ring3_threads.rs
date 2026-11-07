@@ -1,16 +1,20 @@
 //! Controlled two-thread CPL3 cooperative switching fixture, single CPU0.
 //! This is a real trap-frame IRETQ switch with two distinct user stacks,
 //! but NOT preemption, SMP, a production process runner, or a general loader.
+use crate::{
+    native_ring3::{self, Ring3Error},
+    native_vm_staging::StagedSpace,
+    serial,
+};
 use core::cell::UnsafeCell;
 use core::ptr;
 use zillaos_kernel::{
     memory::PAGE_SIZE,
-    process::{ExitReason, ProcessTable},
     process::address_space::{Permissions, UserRegion},
-    process::thread::{Tid, ThreadState, ThreadTable},
     process::syscall::{SYS_EXIT, SYS_YIELD},
+    process::thread::{ThreadState, ThreadTable, Tid},
+    process::{ExitReason, ProcessTable},
 };
-use crate::{native_ring3::{self, Ring3Error}, native_vm_staging::StagedSpace, serial};
 
 const CODE: u64 = 0x0040_0000;
 const STACK_A: u64 = 0x0080_0000;
@@ -34,8 +38,14 @@ pub struct UserTrapFrame {
 
 impl UserTrapFrame {
     const fn initial(entry: u64, stack: u64) -> Self {
-        Self { gp: [0; 14], rip: entry, cs: 0x23, rflags: 0x2,
-               rsp: stack, ss: 0x1b }
+        Self {
+            gp: [0; 14],
+            rip: entry,
+            cs: 0x23,
+            rflags: 0x2,
+            rsp: stack,
+            ss: 0x1b,
+        }
     }
 }
 
@@ -55,26 +65,28 @@ unsafe impl<T> Sync for CpuLocal<T> {}
 static STATE: CpuLocal<Option<Runtime>> = CpuLocal(UnsafeCell::new(None));
 
 const CODE_BYTES: [u8; 42] = [
-    0xbb, 1, 0, 0, 0,                 // mov ebx, 1 or 2
-    0x49, 0x89, 0xdc,                 // mov r12, rbx
-    0x41, 0xbd, 3, 0, 0, 0,          // mov r13d, 3
-    0xb8, 3, 0, 0, 0,                 // .loop: mov eax, SYS_YIELD
-    0xcd, 0x80,                      // int 0x80
-    0x4c, 0x39, 0xe3,                // cmp rbx, r12; both MUST survive
-    0x75, 14,                        // jne .bad: UD2
-    0x49, 0xff, 0xcd,                // dec r13
-    0x75, 0xef,                      // jnz .loop
-    0xb8, 2, 0, 0, 0,                 // mov eax, SYS_EXIT
-    0x31, 0xff,                      // xor edi, edi
-    0xcd, 0x80,                      // int 0x80
-    0x0f, 0x0b,                      // .bad: UD2, never reached
+    0xbb, 1, 0, 0, 0, // mov ebx, 1 or 2
+    0x49, 0x89, 0xdc, // mov r12, rbx
+    0x41, 0xbd, 3, 0, 0, 0, // mov r13d, 3
+    0xb8, 3, 0, 0, 0, // .loop: mov eax, SYS_YIELD
+    0xcd, 0x80, // int 0x80
+    0x4c, 0x39, 0xe3, // cmp rbx, r12; both MUST survive
+    0x75, 14, // jne .bad: UD2
+    0x49, 0xff, 0xcd, // dec r13
+    0x75, 0xef, // jnz .loop
+    0xb8, 2, 0, 0, 0, // mov eax, SYS_EXIT
+    0x31, 0xff, // xor edi, edi
+    0xcd, 0x80, // int 0x80
+    0x0f, 0x0b, // .bad: UD2, never reached
 ];
 
 fn install_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
-    let code = hhdm.checked_add(staged.code_frame)
+    let code = hhdm
+        .checked_add(staged.code_frame)
         .ok_or(Ring3Error::InvalidFixture)? as *mut u8;
     let stack_b = staged.stack2_frame;
-    let physical = hhdm.checked_add(stack_b)
+    let physical = hhdm
+        .checked_add(stack_b)
         .ok_or(Ring3Error::InvalidFixture)?;
     if code as u64 % PAGE_SIZE != 0 || physical % PAGE_SIZE != 0 {
         return Err(Ring3Error::InvalidFixture);
@@ -98,10 +110,14 @@ fn valid_frame(frame: &UserTrapFrame, idx: usize) -> bool {
     } else {
         (STACK_B - PAGE_SIZE, STACK_B)
     };
-    frame.cs == 0x23 && frame.ss == 0x1b
-        && frame.rflags & 0x2 != 0 && frame.rflags & 0x200 == 0
-        && frame.rip >= CODE && frame.rip < CODE + PAGE_SIZE
-        && frame.rsp > start && frame.rsp <= end
+    frame.cs == 0x23
+        && frame.ss == 0x1b
+        && frame.rflags & 0x2 != 0
+        && frame.rflags & 0x200 == 0
+        && frame.rip >= CODE
+        && frame.rip < CODE + PAGE_SIZE
+        && frame.rsp > start
+        && frame.rsp <= end
 }
 
 fn fail(state: &mut Runtime) -> u64 {
@@ -110,14 +126,21 @@ fn fail(state: &mut Runtime) -> u64 {
 }
 
 /// Executed only on INT 0x80 from verified CPL3.
-pub fn dispatch(number: u64, arg0: u64, _arg1: u64, _arg2: u64,
-                saved_user_frame: *mut UserTrapFrame) -> u64 {
+pub fn dispatch(
+    number: u64,
+    arg0: u64,
+    _arg1: u64,
+    _arg2: u64,
+    saved_user_frame: *mut UserTrapFrame,
+) -> u64 {
     // SAFETY: single CPU0 with interrupts off, pointer is the saved Ring3
     // trap frame on the verified TSS.RSP0 stack (not a user pointer).
     let Some(state) = (unsafe { &mut *STATE.0.get() }).as_mut() else {
         return u64::MAX;
     };
-    if saved_user_frame.is_null() { return fail(state); }
+    if saved_user_frame.is_null() {
+        return fail(state);
+    }
     let current = state.current;
     // SAFETY: trap assembly pushes exactly 19 qwords before dispatch.
     let current_frame = unsafe { ptr::read(saved_user_frame) };
@@ -141,7 +164,9 @@ pub fn dispatch(number: u64, arg0: u64, _arg1: u64, _arg2: u64,
             state.yield_count += 1;
         }
         SYS_EXIT => {
-            if arg0 != 0 { return fail(state); }
+            if arg0 != 0 {
+                return fail(state);
+            }
             if state.yield_count != EXPECTED.len()
                 || state.threads.exit(state.tids[current]).is_err()
             {
@@ -164,10 +189,15 @@ pub fn dispatch(number: u64, arg0: u64, _arg1: u64, _arg2: u64,
     let Some(next_tid) = state.threads.next_ready(0) else {
         return fail(state);
     };
-    let next = if next_tid == state.tids[0] { 0 }
-        else if next_tid == state.tids[1] { 1 }
-        else { return fail(state) };
-    if next == current || state.finished[next]
+    let next = if next_tid == state.tids[0] {
+        0
+    } else if next_tid == state.tids[1] {
+        1
+    } else {
+        return fail(state);
+    };
+    if next == current
+        || state.finished[next]
         || state.threads.mark_running(0, next_tid).is_err()
         || !valid_frame(&state.saved[next], next)
     {
@@ -188,38 +218,63 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     install_fixture(staged, hhdm)?;
 
     let mut processes = ProcessTable::new();
-    let pid = processes.create("ring3-cooperative-threads", CODE, STACK_A, 1)
+    let pid = processes
+        .create("ring3-cooperative-threads", CODE, STACK_A, 1)
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    processes.map_region(pid, UserRegion::checked(
-        CODE, PAGE_SIZE, Permissions::READ_EXECUTE,
-    ).map_err(|_| Ring3Error::InvalidFixture)?)
+    processes
+        .map_region(
+            pid,
+            UserRegion::checked(CODE, PAGE_SIZE, Permissions::READ_EXECUTE)
+                .map_err(|_| Ring3Error::InvalidFixture)?,
+        )
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    processes.map_region(pid, UserRegion::checked(
-        STACK_B - PAGE_SIZE, PAGE_SIZE, Permissions::READ_WRITE,
-    ).map_err(|_| Ring3Error::InvalidFixture)?)
+    processes
+        .map_region(
+            pid,
+            UserRegion::checked(STACK_B - PAGE_SIZE, PAGE_SIZE, Permissions::READ_WRITE)
+                .map_err(|_| Ring3Error::InvalidFixture)?,
+        )
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    processes.prepare(pid).map_err(|_| Ring3Error::InvalidFixture)?;
+    processes
+        .prepare(pid)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
 
     let mut threads = ThreadTable::new();
-    let a = threads.create(&processes, pid, CODE, STACK_A, 1)
+    let a = threads
+        .create(&processes, pid, CODE, STACK_A, 1)
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    let b = threads.create(&processes, pid, ENTRY_B, STACK_B, 1)
+    let b = threads
+        .create(&processes, pid, ENTRY_B, STACK_B, 1)
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    threads.prepare(&processes, a).map_err(|_| Ring3Error::InvalidFixture)?;
-    threads.prepare(&processes, b).map_err(|_| Ring3Error::InvalidFixture)?;
+    threads
+        .prepare(&processes, a)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
+    threads
+        .prepare(&processes, b)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
     if threads.next_ready(0) != Some(a) {
         return Err(Ring3Error::InvalidFixture);
     }
-    threads.mark_running(0, a).map_err(|_| Ring3Error::InvalidFixture)?;
-    processes.mark_running(pid).map_err(|_| Ring3Error::InvalidFixture)?;
+    threads
+        .mark_running(0, a)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
+    processes
+        .mark_running(pid)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
     // SAFETY: static BSP-only execution; no dynamic buffers, no preemption.
     unsafe {
         *STATE.0.get() = Some(Runtime {
-            threads, tids: [a,b],
-            saved: [UserTrapFrame::initial(CODE, STACK_A),
-                    UserTrapFrame::initial(ENTRY_B, STACK_B)],
-            current: 0, finished: [false,false],
-            yields: [0;6], yield_count: 0, faulted: false,
+            threads,
+            tids: [a, b],
+            saved: [
+                UserTrapFrame::initial(CODE, STACK_A),
+                UserTrapFrame::initial(ENTRY_B, STACK_B),
+            ],
+            current: 0,
+            finished: [false, false],
+            yields: [0; 6],
+            yield_count: 0,
+            faulted: false,
         });
     }
     native_ring3::install_gdt_tss_and_idt()?;
@@ -228,20 +283,31 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     unsafe { native_ring3::enter_staged(staged.root, CODE, STACK_A) };
     serial::write("ZILLAOS_NATIVE_THREADS_RETURNED\n");
 
-    let runtime = unsafe { &mut *STATE.0.get() }.take()
+    let runtime = unsafe { &mut *STATE.0.get() }
+        .take()
         .ok_or(Ring3Error::UnexpectedExit)?;
-    if runtime.faulted || runtime.yield_count != EXPECTED.len()
+    if runtime.faulted
+        || runtime.yield_count != EXPECTED.len()
         || runtime.yields != *EXPECTED
         || !runtime.finished.iter().all(|done| *done)
-        || runtime.threads.get(a).is_none_or(|t| t.state != ThreadState::Exited)
-        || runtime.threads.get(b).is_none_or(|t| t.state != ThreadState::Exited)
+        || runtime
+            .threads
+            .get(a)
+            .is_none_or(|t| t.state != ThreadState::Exited)
+        || runtime
+            .threads
+            .get(b)
+            .is_none_or(|t| t.state != ThreadState::Exited)
     {
         return Err(Ring3Error::UnexpectedExit);
     }
     let mut proc_state = processes;
-    proc_state.mark_exited(pid, ExitReason::Normal(0))
+    proc_state
+        .mark_exited(pid, ExitReason::Normal(0))
         .map_err(|_| Ring3Error::UnexpectedExit)?;
-    proc_state.reap(pid).map_err(|_| Ring3Error::UnexpectedExit)?;
+    proc_state
+        .reap(pid)
+        .map_err(|_| Ring3Error::UnexpectedExit)?;
 
     serial::write("ZILLAOS_NATIVE_THREAD_TRACE=ABABAB\n");
     serial::write("ZILLAOS_NATIVE_THREADS_BOTH_EXITED\n");

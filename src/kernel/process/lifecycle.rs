@@ -9,7 +9,7 @@
 //! ProcessTable and ThreadTable mutations have committed and publish() runs.
 //! The model has NO cross-core synchronization; a real SMP implementation
 //! must serialize lifecycle/handles/IPC and pin task objects before teardown.
-use super::{ExitReason, Pid, MAX_PROCESSES};
+use super::{ExitReason, MAX_PROCESSES, Pid};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CleanupPhase {
@@ -68,14 +68,10 @@ pub enum CleanupHookError {
 /// ServiceManager must never mint a PID or grant capabilities through this
 /// interface. A fault/exit report is kernel-issued data only.
 pub trait CleanupBackend {
-    fn revoke_capabilities(&mut self, exit: ExitNotification)
-        -> Result<(), CleanupHookError>;
-    fn cancel_ipc_and_wake(&mut self, exit: ExitNotification)
-        -> Result<(), CleanupHookError>;
-    fn notify_services(&mut self, exit: ExitNotification)
-        -> Result<(), CleanupHookError>;
-    fn release_address_space(&mut self, exit: ExitNotification)
-        -> Result<(), CleanupHookError>;
+    fn revoke_capabilities(&mut self, exit: ExitNotification) -> Result<(), CleanupHookError>;
+    fn cancel_ipc_and_wake(&mut self, exit: ExitNotification) -> Result<(), CleanupHookError>;
+    fn notify_services(&mut self, exit: ExitNotification) -> Result<(), CleanupHookError>;
+    fn release_address_space(&mut self, exit: ExitNotification) -> Result<(), CleanupHookError>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,26 +101,44 @@ pub struct ExitCoordinator {
 }
 
 impl Default for ExitCoordinator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ExitCoordinator {
     pub const fn new() -> Self {
-        Self { records: [None; MAX_PROCESSES], next_ticket: 1 }
+        Self {
+            records: [None; MAX_PROCESSES],
+            next_ticket: 1,
+        }
     }
 
     pub fn pending_for(&self, pid: Pid) -> Option<CleanupWork> {
-        self.records.iter().flatten()
+        self.records
+            .iter()
+            .flatten()
             .find(|r| r.published && r.event.pid == pid)
-            .map(|r| CleanupWork { event: r.event, phase: r.phase })
+            .map(|r| CleanupWork {
+                event: r.event,
+                phase: r.phase,
+            })
     }
 
     pub fn work(&self, ticket: u64) -> Result<CleanupWork, CleanupError> {
-        let r = self.records.iter().flatten()
+        let r = self
+            .records
+            .iter()
+            .flatten()
             .find(|r| r.event.ticket == ticket)
             .ok_or(CleanupError::UnknownTicket)?;
-        if !r.published { return Err(CleanupError::NotPublished); }
-        Ok(CleanupWork { event: r.event, phase: r.phase })
+        if !r.published {
+            return Err(CleanupError::NotPublished);
+        }
+        Ok(CleanupWork {
+            event: r.event,
+            phase: r.phase,
+        })
     }
 
     /// First half of a two-phase publication. Exclusive ProcessManager access
@@ -133,13 +147,23 @@ impl ExitCoordinator {
         if self.records.iter().flatten().any(|r| r.event.pid == pid) {
             return Err(CleanupError::Duplicate);
         }
-        let slot = self.records.iter().position(Option::is_none)
+        let slot = self
+            .records
+            .iter()
+            .position(Option::is_none)
             .ok_or(CleanupError::Capacity)?;
-        let next = self.next_ticket.checked_add(1).ok_or(CleanupError::Exhausted)?;
+        let next = self
+            .next_ticket
+            .checked_add(1)
+            .ok_or(CleanupError::Exhausted)?;
         let ticket = self.next_ticket;
         self.next_ticket = next;
         self.records[slot] = Some(CleanupRecord {
-            event: ExitNotification { pid, reason, ticket },
+            event: ExitNotification {
+                pid,
+                reason,
+                ticket,
+            },
             phase: CleanupPhase::Capabilities,
             published: false,
         });
@@ -147,17 +171,24 @@ impl ExitCoordinator {
     }
 
     pub fn publish(&mut self, ticket: u64) -> Result<ExitNotification, CleanupError> {
-        let r = self.records.iter_mut().flatten()
+        let r = self
+            .records
+            .iter_mut()
+            .flatten()
             .find(|r| r.event.ticket == ticket)
             .ok_or(CleanupError::UnknownTicket)?;
-        if r.published { return Err(CleanupError::AlreadyPublished); }
+        if r.published {
+            return Err(CleanupError::AlreadyPublished);
+        }
         r.published = true;
         Ok(r.event)
     }
 
     /// Rollback ONLY an unpublished staging reservation. Ticket stays burned.
     pub fn rollback_unpublished(&mut self, ticket: u64) -> Result<(), CleanupError> {
-        let slot = self.records.iter_mut()
+        let slot = self
+            .records
+            .iter_mut()
             .find(|s| s.as_ref().is_some_and(|r| r.event.ticket == ticket))
             .ok_or(CleanupError::UnknownTicket)?;
         if slot.as_ref().is_some_and(|r| r.published) {
@@ -171,28 +202,44 @@ impl ExitCoordinator {
     /// the current work for retry. ACK is privileged; no untrusted process may
     /// assert handle/queue/memory cleanup occurred.
     pub fn acknowledge(
-        &mut self, ticket: u64, completed: CleanupPhase,
+        &mut self,
+        ticket: u64,
+        completed: CleanupPhase,
     ) -> Result<CleanupWork, CleanupError> {
-        let r = self.records.iter_mut().flatten()
+        let r = self
+            .records
+            .iter_mut()
+            .flatten()
             .find(|r| r.event.ticket == ticket)
             .ok_or(CleanupError::UnknownTicket)?;
-        if !r.published { return Err(CleanupError::NotPublished); }
+        if !r.published {
+            return Err(CleanupError::NotPublished);
+        }
         if r.phase != completed || completed == CleanupPhase::Complete {
             return Err(CleanupError::PhaseMismatch);
         }
         r.phase = r.phase.next();
-        Ok(CleanupWork { event: r.event, phase: r.phase })
+        Ok(CleanupWork {
+            event: r.event,
+            phase: r.phase,
+        })
     }
 
     /// Called by ProcessManager after ALL owned TIDs and kernel stack leases
     /// have been reaped and ProcessTable::reap has succeeded.
     pub fn retire(&mut self, ticket: u64) -> Result<ExitNotification, CleanupError> {
-        let slot = self.records.iter_mut()
+        let slot = self
+            .records
+            .iter_mut()
             .find(|s| s.as_ref().is_some_and(|r| r.event.ticket == ticket))
             .ok_or(CleanupError::UnknownTicket)?;
         let r = slot.as_ref().ok_or(CleanupError::UnknownTicket)?;
-        if !r.published { return Err(CleanupError::NotPublished); }
-        if r.phase != CleanupPhase::Complete { return Err(CleanupError::Incomplete); }
+        if !r.published {
+            return Err(CleanupError::NotPublished);
+        }
+        if r.phase != CleanupPhase::Complete {
+            return Err(CleanupError::Incomplete);
+        }
         let event = r.event;
         *slot = None;
         Ok(event)
@@ -210,8 +257,10 @@ mod tests {
         let ticket = x.reserve(pid, ExitReason::Normal(0)).unwrap();
         assert_eq!(x.work(ticket), Err(CleanupError::NotPublished));
         assert_eq!(x.pending_for(pid), None);
-        assert_eq!(x.acknowledge(ticket, CleanupPhase::Capabilities),
-            Err(CleanupError::NotPublished));
+        assert_eq!(
+            x.acknowledge(ticket, CleanupPhase::Capabilities),
+            Err(CleanupError::NotPublished)
+        );
         let event = x.publish(ticket).unwrap();
         assert_eq!((event.pid, event.ticket), (pid, ticket));
         assert_eq!(x.publish(ticket), Err(CleanupError::AlreadyPublished));
@@ -224,8 +273,10 @@ mod tests {
             assert_eq!(x.work(ticket).unwrap().phase, completed);
             assert_eq!(x.acknowledge(ticket, completed).unwrap().phase, following);
         }
-        assert_eq!(x.acknowledge(ticket, CleanupPhase::Memory),
-            Err(CleanupError::PhaseMismatch));
+        assert_eq!(
+            x.acknowledge(ticket, CleanupPhase::Memory),
+            Err(CleanupError::PhaseMismatch)
+        );
         assert_eq!(x.retire(ticket), Ok(event));
         assert_eq!(x.work(ticket), Err(CleanupError::UnknownTicket));
         let later = x.reserve(pid, ExitReason::Killed).unwrap();
@@ -237,16 +288,23 @@ mod tests {
         let mut x = ExitCoordinator::new();
         let id = x.reserve(Pid(3), ExitReason::Killed).unwrap();
         x.publish(id).unwrap();
-        assert_eq!(x.reserve(Pid(3), ExitReason::Killed), Err(CleanupError::Duplicate));
-        assert_eq!(x.acknowledge(id, CleanupPhase::Ipc),
-            Err(CleanupError::PhaseMismatch));
+        assert_eq!(
+            x.reserve(Pid(3), ExitReason::Killed),
+            Err(CleanupError::Duplicate)
+        );
+        assert_eq!(
+            x.acknowledge(id, CleanupPhase::Ipc),
+            Err(CleanupError::PhaseMismatch)
+        );
         assert_eq!(x.retire(id), Err(CleanupError::Incomplete));
         // Mock backend fails: no acknowledgment. Same action remains available.
         assert_eq!(x.work(id).unwrap().phase, CleanupPhase::Capabilities);
         assert_eq!(x.work(id).unwrap().phase, CleanupPhase::Capabilities);
         x.acknowledge(id, CleanupPhase::Capabilities).unwrap();
-        assert_eq!(x.acknowledge(id, CleanupPhase::Capabilities),
-            Err(CleanupError::PhaseMismatch));
+        assert_eq!(
+            x.acknowledge(id, CleanupPhase::Capabilities),
+            Err(CleanupError::PhaseMismatch)
+        );
     }
 
     #[test]
@@ -258,7 +316,10 @@ mod tests {
         let b = x.reserve(Pid(1), ExitReason::Killed).unwrap();
         assert!(b > a);
         x.publish(b).unwrap();
-        assert_eq!(x.rollback_unpublished(b), Err(CleanupError::AlreadyPublished));
+        assert_eq!(
+            x.rollback_unpublished(b),
+            Err(CleanupError::AlreadyPublished)
+        );
         assert_eq!(x.work(a), Err(CleanupError::UnknownTicket));
     }
 
@@ -269,7 +330,13 @@ mod tests {
             let id = x.reserve(Pid(i as u64 + 1), ExitReason::Killed).unwrap();
             x.publish(id).unwrap();
         }
-        assert_eq!(x.reserve(Pid(100), ExitReason::Killed), Err(CleanupError::Capacity));
-        assert_eq!(x.pending_for(Pid(1)).unwrap().phase, CleanupPhase::Capabilities);
+        assert_eq!(
+            x.reserve(Pid(100), ExitReason::Killed),
+            Err(CleanupError::Capacity)
+        );
+        assert_eq!(
+            x.pending_for(Pid(1)).unwrap().phase,
+            CleanupPhase::Capabilities
+        );
     }
 }

@@ -237,8 +237,12 @@ impl Wizard {
         self.localized3(uk, en, en)
     }
 
-    pub const fn localized3(&self, uk: &'static str, en: &'static str,
-                            ru: &'static str) -> &'static str {
+    pub const fn localized3(
+        &self,
+        uk: &'static str,
+        en: &'static str,
+        ru: &'static str,
+    ) -> &'static str {
         match self.language {
             Language::Ukrainian => uk,
             Language::English => en,
@@ -260,20 +264,29 @@ impl Wizard {
         if self.finished() {
             return false;
         }
-        let before = (self.step, self.language, self.region, self.timezone,
-                      self.hostname, self.hostname_pristine, self.dark, self.selection);
+        let before = (
+            self.step,
+            self.language,
+            self.region,
+            self.timezone,
+            self.hostname,
+            self.hostname_pristine,
+            self.dark,
+            self.selection,
+        );
         match key {
             Key::Confirm => self.next(),
             Key::Escape => self.previous(),
-            Key::NextApp | Key::Move(Move::Right) | Key::Move(Move::Down) => self.shift_choice(true),
+            Key::NextApp | Key::Move(Move::Right) | Key::Move(Move::Down) => {
+                self.shift_choice(true)
+            }
             Key::Move(Move::Left) | Key::Move(Move::Up) => self.shift_choice(false),
             Key::Backspace if self.step == Step::Device => {
                 self.hostname_pristine = false;
                 self.hostname.pop();
             }
             Key::Text(ch) if self.step == Step::Device => {
-                if ch.is_ascii_alphanumeric() && self.hostname_pristine
-                {
+                if ch.is_ascii_alphanumeric() && self.hostname_pristine {
                     self.hostname.clear();
                     self.hostname_pristine = false;
                 }
@@ -282,8 +295,17 @@ impl Wizard {
             _ => {}
         }
         self.apply_choice();
-        let changed = before != (self.step, self.language, self.region, self.timezone,
-                                 self.hostname, self.hostname_pristine, self.dark, self.selection);
+        let changed = before
+            != (
+                self.step,
+                self.language,
+                self.region,
+                self.timezone,
+                self.hostname,
+                self.hostname_pristine,
+                self.dark,
+                self.selection,
+            );
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -304,22 +326,28 @@ impl Wizard {
 
     fn apply_choice(&mut self) {
         match self.step {
-            Step::Language => self.language = match self.selection {
-                1 => Language::English,
-                2 => Language::Russian,
-                _ => Language::Ukrainian,
-            },
-            Step::Region => self.region = match self.selection {
-                1 => Region::Poland,
-                2 => Region::UnitedStates,
-                _ => Region::Ukraine,
-            },
-            Step::TimeZone => self.timezone = match self.selection {
-                1 => TimeZone::Warsaw,
-                2 => TimeZone::NewYork,
-                3 => TimeZone::Utc,
-                _ => TimeZone::Kyiv,
-            },
+            Step::Language => {
+                self.language = match self.selection {
+                    1 => Language::English,
+                    2 => Language::Russian,
+                    _ => Language::Ukrainian,
+                }
+            }
+            Step::Region => {
+                self.region = match self.selection {
+                    1 => Region::Poland,
+                    2 => Region::UnitedStates,
+                    _ => Region::Ukraine,
+                }
+            }
+            Step::TimeZone => {
+                self.timezone = match self.selection {
+                    1 => TimeZone::Warsaw,
+                    2 => TimeZone::NewYork,
+                    3 => TimeZone::Utc,
+                    _ => TimeZone::Kyiv,
+                }
+            }
             Step::Appearance => self.dark = self.selection == 0,
             _ => {}
         }
@@ -343,7 +371,13 @@ impl Wizard {
                 TimeZone::NewYork => 2,
                 TimeZone::Utc => 3,
             },
-            Step::Appearance => if self.dark { 0 } else { 1 },
+            Step::Appearance => {
+                if self.dark {
+                    0
+                } else {
+                    1
+                }
+            }
             _ => 0,
         }
     }
@@ -370,10 +404,14 @@ impl Wizard {
             return false;
         }
         let old = *self;
-        self.pointer.x = self.pointer.x
+        self.pointer.x = self
+            .pointer
+            .x
             .saturating_add_signed(packet.dx as isize)
             .min(self.layout.width.saturating_sub(1));
-        self.pointer.y = self.pointer.y
+        self.pointer.y = self
+            .pointer
+            .y
             .saturating_add_signed(packet.dy as isize)
             .min(self.layout.height.saturating_sub(1));
         if packet.left && !self.pointer.left {
@@ -429,8 +467,17 @@ impl WizardGeometry {
         let option_height = option_gap.saturating_sub(6);
         let footer_y = y + height.saturating_sub(72);
         Self {
-            x, y, width, height, sidebar, body_x, body_width,
-            option_y, option_gap, option_height, footer_y,
+            x,
+            y,
+            width,
+            height,
+            sidebar,
+            body_x,
+            body_width,
+            option_y,
+            option_gap,
+            option_height,
+            footer_y,
         }
     }
 
@@ -446,13 +493,11 @@ impl WizardGeometry {
 
     pub fn next_contains(self, x: usize, y: usize) -> bool {
         let start = self.body_x + self.body_width.saturating_sub(162);
-        x >= start && x < start + 162
-            && y >= self.footer_y && y < self.footer_y + 44
+        x >= start && x < start + 162 && y >= self.footer_y && y < self.footer_y + 44
     }
 
     pub fn back_contains(self, x: usize, y: usize) -> bool {
-        x >= self.body_x && x < self.body_x + 112
-            && y >= self.footer_y && y < self.footer_y + 44
+        x >= self.body_x && x < self.body_x + 112 && y >= self.footer_y && y < self.footer_y + 44
     }
 }
 
@@ -481,13 +526,21 @@ mod tests {
         let mut s = wizard();
         let mut inventory = StorageInventory::new();
         inventory.push(StorageController {
-            location: PciLocation { bus: 0, device: 3, function: 0 },
-            vendor: 0x15ad, device_id: 0x07e0,
-            subclass: 6, programming_interface: 1,
+            location: PciLocation {
+                bus: 0,
+                device: 3,
+                function: 0,
+            },
+            vendor: 0x15ad,
+            device_id: 0x07e0,
+            subclass: 6,
+            programming_interface: 1,
             kind: StorageKind::SataAhci,
         });
         s.set_storage_inventory(inventory);
-        for _ in 0..6 { s.handle_key(Key::Confirm); }
+        for _ in 0..6 {
+            s.handle_key(Key::Confirm);
+        }
         assert_eq!(s.step, Step::Storage);
         assert_eq!(s.storage.count, 1);
         assert_eq!(s.storage.selectable_disks(), 0);
@@ -503,7 +556,9 @@ mod tests {
     #[test]
     fn installer_plan_screen_is_navigation_only_not_a_disk_operation() {
         let mut wizard = wizard();
-        for _ in 0..7 { wizard.handle_key(Key::Confirm); }
+        for _ in 0..7 {
+            wizard.handle_key(Key::Confirm);
+        }
         assert_eq!(wizard.step, Step::InstallPlan);
         assert_eq!(wizard.storage.selectable_disks(), 0);
         assert_eq!(wizard.option_count(), 0);
@@ -573,28 +628,38 @@ mod tests {
     #[test]
     fn hostname_is_bounded_and_rejects_invalid_labels() {
         let mut s = wizard();
-        for _ in 0..4 { s.handle_key(Key::Confirm); }
+        for _ in 0..4 {
+            s.handle_key(Key::Confirm);
+        }
         assert_eq!(s.step, Step::Device);
-        for _ in 0..8 { s.handle_key(Key::Backspace); }
+        for _ in 0..8 {
+            s.handle_key(Key::Backspace);
+        }
         assert!(!s.hostname.is_valid());
         assert!(!s.handle_key(Key::Confirm));
         assert_eq!(s.step, Step::Device);
         assert!(!s.handle_key(Key::Text(b'-')));
-        for c in b"my-laptop" { s.handle_key(Key::Text(*c)); }
+        for c in b"my-laptop" {
+            s.handle_key(Key::Text(*c));
+        }
         assert_eq!(s.hostname.as_str(), "my-laptop");
         assert!(s.hostname.is_valid());
         s.handle_key(Key::Confirm);
         assert_eq!(s.step, Step::Appearance);
         let mut name = DeviceName::new();
         name.clear();
-        for _ in 0..30 { name.push(b'x'); }
+        for _ in 0..30 {
+            name.push(b'x');
+        }
         assert_eq!(name.as_str().len(), DEVICE_NAME_MAX);
     }
 
     #[test]
     fn typing_custom_name_replaces_initial_suggestion() {
         let mut s = wizard();
-        for _ in 0..4 { s.handle_key(Key::Confirm); }
+        for _ in 0..4 {
+            s.handle_key(Key::Confirm);
+        }
         assert!(s.hostname_pristine);
         for letter in b"workstation-1" {
             s.handle_key(Key::Text(*letter));
@@ -637,12 +702,30 @@ mod tests {
         let g = s.geometry();
         s.pointer.x = g.body_x + g.body_width - 18;
         s.pointer.y = g.footer_y + 18;
-        s.handle_mouse(MousePacket { dx: 0, dy: 0, left: true, right: false, middle: false });
+        s.handle_mouse(MousePacket {
+            dx: 0,
+            dy: 0,
+            left: true,
+            right: false,
+            middle: false,
+        });
         assert_eq!(s.step, Step::Language);
-        s.handle_mouse(MousePacket { dx: 0, dy: 0, left: false, right: false, middle: false });
+        s.handle_mouse(MousePacket {
+            dx: 0,
+            dy: 0,
+            left: false,
+            right: false,
+            middle: false,
+        });
         s.pointer.x = g.body_x + 20;
         s.pointer.y = g.option_y + g.option_gap + 10;
-        s.handle_mouse(MousePacket { dx: 0, dy: 0, left: true, right: false, middle: false });
+        s.handle_mouse(MousePacket {
+            dx: 0,
+            dy: 0,
+            left: true,
+            right: false,
+            middle: false,
+        });
         assert_eq!(s.language, Language::English);
     }
 }

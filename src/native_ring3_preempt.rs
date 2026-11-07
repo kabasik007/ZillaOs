@@ -2,16 +2,20 @@
 //! Only compiled into the disposable QEMU `ring3-preempt` ISO.
 //! Local xAPIC MMIO timer interrupt-driven switching, not production APIC/SMP
 //! scheduling, process isolation across CR3s, or a GUI.
+use crate::{
+    native_ring3::{self, Ring3Error},
+    native_vm_staging::{LAPIC_MMIO_VA, StagedSpace},
+    serial,
+};
 use core::arch::{asm, global_asm};
 use core::cell::UnsafeCell;
 use core::ptr;
 use zillaos_kernel::{
     memory::PAGE_SIZE,
-    process::{ExitReason, ProcessTable},
     process::address_space::{Permissions, UserRegion},
     process::thread::{ThreadState, ThreadTable, Tid},
+    process::{ExitReason, ProcessTable},
 };
-use crate::{native_ring3::{self, Ring3Error}, native_vm_staging::{StagedSpace, LAPIC_MMIO_VA}, serial};
 
 const CODE: u64 = 0x0040_0000;
 const STACK_A: u64 = 0x0080_0000;
@@ -50,9 +54,12 @@ pub struct TimerFrame {
 impl TimerFrame {
     const fn initial(entry: u64, stack: u64) -> Self {
         Self {
-            gp: [0; 15], rip: entry, cs: 0x23,
+            gp: [0; 15],
+            rip: entry,
+            cs: 0x23,
             rflags: 0x202, // architectural reserved bit and IF=1
-            rsp: stack, ss: 0x1b,
+            rsp: stack,
+            ss: 0x1b,
         }
     }
 }
@@ -85,7 +92,8 @@ unsafe extern "C" {
 // preserve). On success we overwrite the 20-qword context and IRETQ to the
 // next user thread with IF=1. On completion we jump to the saved kernel
 // continuation (which resets CR3 and RSP) with IF already disabled.
-global_asm!(r#"
+global_asm!(
+    r#"
     .section .text
     .global zilla_native_timer_irq
 zilla_native_timer_irq:
@@ -150,7 +158,8 @@ zilla_native_timer_bad_cpl:
     xor ecx, ecx
     and rsp, -16
     call zilla_exception_fatal
-"#);
+"#
+);
 
 /// One disposable QEMU test-only xAPIC timer, using a verified
 /// supervisor-only UC/NX mapping in the independent staged page tables.
@@ -225,8 +234,12 @@ fn initialize_timer() -> Result<SavedTimer, Ring3Error> {
             return Err(Ring3Error::InvalidFixture);
         }
         serial::write("ZILLAOS_TIMER_LAPIC_PERIODIC_ARMED\n");
-        Ok(SavedTimer { previous_tpr, previous_svr, previous_lvt,
-                        previous_divide })
+        Ok(SavedTimer {
+            previous_tpr,
+            previous_svr,
+            previous_lvt,
+            previous_divide,
+        })
     }
 }
 fn stop_timer(previous: SavedTimer) {
@@ -273,7 +286,9 @@ pub extern "C" fn zilla_native_timer_dispatch(frame: *mut TimerFrame) -> u64 {
     let Some(runtime) = (unsafe { &mut *STATE.0.get() }).as_mut() else {
         return u64::MAX;
     };
-    if frame.is_null() { return fail(runtime); }
+    if frame.is_null() {
+        return fail(runtime);
+    }
     if runtime.ticks == 0 {
         serial::write("ZILLAOS_TIMER_FIRST_LAPIC_IRQ_ENTERED\n");
     }
@@ -286,14 +301,16 @@ pub extern "C" fn zilla_native_timer_dispatch(frame: *mut TimerFrame) -> u64 {
     // No voluntary yield or syscalls: RBX advances in the user spin loop,
     // while R12 remains a per-thread sentinel across forced switches.
     let counter = saved.gp[GP_RBX];
-    if saved.gp[GP_R12] != SENTINELS[current]
-        || counter <= runtime.previous_counter[current]
-    {
+    if saved.gp[GP_R12] != SENTINELS[current] || counter <= runtime.previous_counter[current] {
         return fail(runtime);
     }
     // Account exactly this delivered, verified timer interrupt for the
     // interrupted running TID before changing its Running->Ready state.
-    if runtime.threads.charge_timer_tick(0, runtime.tids[current]).is_err() {
+    if runtime
+        .threads
+        .charge_timer_tick(0, runtime.tids[current])
+        .is_err()
+    {
         return fail(runtime);
     }
     runtime.previous_counter[current] = counter;
@@ -302,7 +319,11 @@ pub extern "C" fn zilla_native_timer_dispatch(frame: *mut TimerFrame) -> u64 {
     runtime.trace[runtime.ticks] = b'A' + current as u8;
     runtime.ticks += 1;
 
-    if runtime.threads.preempt_running(0, runtime.tids[current]).is_err() {
+    if runtime
+        .threads
+        .preempt_running(0, runtime.tids[current])
+        .is_err()
+    {
         return fail(runtime);
     }
     if runtime.ticks == SAMPLES {
@@ -316,10 +337,15 @@ pub extern "C" fn zilla_native_timer_dispatch(frame: *mut TimerFrame) -> u64 {
     let Some(next_tid) = runtime.threads.next_ready(0) else {
         return fail(runtime);
     };
-    let next = if next_tid == runtime.tids[0] { 0 }
-        else if next_tid == runtime.tids[1] { 1 }
-        else { return fail(runtime) };
-    if next == current || !frame_valid(&runtime.frames[next], next)
+    let next = if next_tid == runtime.tids[0] {
+        0
+    } else if next_tid == runtime.tids[1] {
+        1
+    } else {
+        return fail(runtime);
+    };
+    if next == current
+        || !frame_valid(&runtime.frames[next], next)
         || runtime.threads.mark_running(0, next_tid).is_err()
     {
         return fail(runtime);
@@ -332,14 +358,15 @@ pub extern "C" fn zilla_native_timer_dispatch(frame: *mut TimerFrame) -> u64 {
 }
 
 fn install_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
-    let code = hhdm.checked_add(staged.code_frame)
+    let code = hhdm
+        .checked_add(staged.code_frame)
         .ok_or(Ring3Error::InvalidFixture)? as *mut u8;
     // Two unique register canaries and two independent spin counters.
     let template = [
-        0x31, 0xdb,                         // xor ebx, ebx
+        0x31, 0xdb, // xor ebx, ebx
         0x49, 0xbc, 0, 0, 0, 0, 0, 0, 0, 0, // mov r12, imm64
-        0x48, 0xff, 0xc3,                   // spin: inc rbx
-        0xeb, 0xfb,                         // jmp -5 (back to inc)
+        0x48, 0xff, 0xc3, // spin: inc rbx
+        0xeb, 0xfb, // jmp -5 (back to inc)
     ];
     let mut first = template;
     let mut second = template;
@@ -360,28 +387,43 @@ fn install_fixture(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
 /// No APs, external IRQ consumers, or untrusted programs are permitted.
 pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     install_fixture(staged, hhdm)?;
-    let mut processes=ProcessTable::new();
-    let pid=processes.create("timer-preempt-two", CODE, STACK_A, 1)
+    let mut processes = ProcessTable::new();
+    let pid = processes
+        .create("timer-preempt-two", CODE, STACK_A, 1)
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    processes.map_region(pid, UserRegion::checked(
-        CODE, PAGE_SIZE, Permissions::READ_EXECUTE,
-    ).map_err(|_| Ring3Error::InvalidFixture)?)
+    processes
+        .map_region(
+            pid,
+            UserRegion::checked(CODE, PAGE_SIZE, Permissions::READ_EXECUTE)
+                .map_err(|_| Ring3Error::InvalidFixture)?,
+        )
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    processes.map_region(pid, UserRegion::checked(
-        STACK_B-PAGE_SIZE, PAGE_SIZE, Permissions::READ_WRITE,
-    ).map_err(|_| Ring3Error::InvalidFixture)?)
+    processes
+        .map_region(
+            pid,
+            UserRegion::checked(STACK_B - PAGE_SIZE, PAGE_SIZE, Permissions::READ_WRITE)
+                .map_err(|_| Ring3Error::InvalidFixture)?,
+        )
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    processes.prepare(pid).map_err(|_| Ring3Error::InvalidFixture)?;
+    processes
+        .prepare(pid)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
 
-    let mut threads=ThreadTable::new();
-    let a=threads.create(&processes,pid,CODE,STACK_A,1)
+    let mut threads = ThreadTable::new();
+    let a = threads
+        .create(&processes, pid, CODE, STACK_A, 1)
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    let b=threads.create(&processes,pid,ENTRY_B,STACK_B,1)
+    let b = threads
+        .create(&processes, pid, ENTRY_B, STACK_B, 1)
         .map_err(|_| Ring3Error::InvalidFixture)?;
-    threads.prepare(&processes,a).map_err(|_| Ring3Error::InvalidFixture)?;
-    threads.prepare(&processes,b).map_err(|_| Ring3Error::InvalidFixture)?;
-    if threads.next_ready(0)!=Some(a)
-        || threads.mark_running(0,a).is_err()
+    threads
+        .prepare(&processes, a)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
+    threads
+        .prepare(&processes, b)
+        .map_err(|_| Ring3Error::InvalidFixture)?;
+    if threads.next_ready(0) != Some(a)
+        || threads.mark_running(0, a).is_err()
         || processes.mark_running(pid).is_err()
     {
         return Err(Ring3Error::InvalidFixture);
@@ -390,11 +432,18 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     // SAFETY: only BSP enters this opt-in test with maskable interrupts off.
     unsafe {
         *STATE.0.get() = Some(Runtime {
-            threads, tids: [a,b],
-            frames: [TimerFrame::initial(CODE,STACK_A),
-                     TimerFrame::initial(ENTRY_B,STACK_B)],
-            current: 0, ticks: 0, trace: [0; SAMPLES],
-            previous_counter: [0;2], observed:[0;2], failed:false,
+            threads,
+            tids: [a, b],
+            frames: [
+                TimerFrame::initial(CODE, STACK_A),
+                TimerFrame::initial(ENTRY_B, STACK_B),
+            ],
+            current: 0,
+            ticks: 0,
+            trace: [0; SAMPLES],
+            previous_counter: [0; 2],
+            observed: [0; 2],
+            failed: false,
         });
     }
     native_ring3::install_gdt_tss_and_idt()?;
@@ -407,25 +456,38 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     // SAFETY: use the *timer-enabled* entry; the normal entry forces IF=0
     // and silently prevents all IRQ delivery. The APIC IRQ handler restores
     // the original supervisor continuation with interrupts disabled.
-    unsafe { native_ring3::enter_staged_with_timer(staged.root,CODE,STACK_A) };
+    unsafe { native_ring3::enter_staged_with_timer(staged.root, CODE, STACK_A) };
     unsafe { with_staged_cr3(staged.root, || stop_timer(timer_state)) };
     serial::write("ZILLAOS_TIMER_PREEMPT_RETURNED\n");
 
-    let state=unsafe { &mut *STATE.0.get() }.take()
+    let state = unsafe { &mut *STATE.0.get() }
+        .take()
         .ok_or(Ring3Error::UnexpectedExit)?;
-    if state.failed || state.trace != *EXPECTED || state.ticks!=SAMPLES
-        || state.observed[0]==0 || state.observed[1]==0
-        || state.threads.get(a).is_none_or(|t|t.timer_ticks!=4)
-        || state.threads.get(b).is_none_or(|t|t.timer_ticks!=4)
-        || state.threads.get(a).is_none_or(|t|t.state!=ThreadState::Exited)
-        || state.threads.get(b).is_none_or(|t|t.state!=ThreadState::Exited)
+    if state.failed
+        || state.trace != *EXPECTED
+        || state.ticks != SAMPLES
+        || state.observed[0] == 0
+        || state.observed[1] == 0
+        || state.threads.get(a).is_none_or(|t| t.timer_ticks != 4)
+        || state.threads.get(b).is_none_or(|t| t.timer_ticks != 4)
+        || state
+            .threads
+            .get(a)
+            .is_none_or(|t| t.state != ThreadState::Exited)
+        || state
+            .threads
+            .get(b)
+            .is_none_or(|t| t.state != ThreadState::Exited)
     {
         serial::write("ZILLAOS_TIMER_PREEMPT_VERIFICATION_FAILED\n");
         return Err(Ring3Error::UnexpectedExit);
     }
-    processes.mark_exited(pid,ExitReason::Normal(0))
+    processes
+        .mark_exited(pid, ExitReason::Normal(0))
         .map_err(|_| Ring3Error::UnexpectedExit)?;
-    processes.reap(pid).map_err(|_| Ring3Error::UnexpectedExit)?;
+    processes
+        .reap(pid)
+        .map_err(|_| Ring3Error::UnexpectedExit)?;
     serial::write("ZILLAOS_TIMER_PREEMPT_TRACE=ABABABAB\n");
     serial::write("ZILLAOS_TIMER_PREEMPT_TICKS=0x0000000000000008\n");
     serial::write("ZILLAOS_TIMER_THREAD_A_TICKS=0x0000000000000004\n");

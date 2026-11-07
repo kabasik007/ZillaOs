@@ -5,7 +5,7 @@
 //! a future UC-mapped driver must implement ordering and exclusive access.
 //! Creating this object does NOT enable device FIFO or display hardware.
 
-use core::sync::atomic::{compiler_fence, Ordering};
+use core::sync::atomic::{Ordering, compiler_fence};
 
 use super::fifo::{FifoError, FifoPointers};
 
@@ -98,7 +98,9 @@ impl FifoQueue {
             .ok_or(QueueError::InvalidCommand)?;
         let mut raw = [0u32; 4];
         for (index, value) in raw.iter_mut().enumerate() {
-            *value = backend.read_word(index).map_err(|e| self.backend_failure(e))?;
+            *value = backend
+                .read_word(index)
+                .map_err(|e| self.backend_failure(e))?;
         }
         let pointers = FifoPointers {
             min: raw[0],
@@ -114,7 +116,8 @@ impl FifoQueue {
             self.faulted = true;
             return Err(QueueError::InvalidAperture);
         }
-        if !pointers.can_enqueue(self.aperture_bytes, bytes)
+        if !pointers
+            .can_enqueue(self.aperture_bytes, bytes)
             .map_err(QueueError::BadMetadata)?
         {
             return Err(QueueError::InsufficientSpace);
@@ -242,9 +245,7 @@ mod tests {
     fn command_is_published_once_after_all_payload_words() {
         let mut memory = MockFifo::new(4096 * 4 - 8, 64);
         let mut queue = FifoQueue::new(4096 * 4);
-        let cmd = super::super::fifo::encode_update(
-            0, 0, 40, 30, 1920, 1080
-        ).unwrap();
+        let cmd = super::super::fifo::encode_update(0, 0, 40, 30, 1920, 1080).unwrap();
         assert_eq!(queue.try_enqueue(&mut memory, &cmd), Ok(28));
         assert_eq!(memory.words[4094], 1);
         assert_eq!(memory.words[4095], 0);
@@ -322,7 +323,10 @@ mod tests {
             requests: 0,
             broken: false,
         };
-        assert_eq!(queue.synchronize(&mut sync, 4), Err(QueueError::SyncTimeout));
+        assert_eq!(
+            queue.synchronize(&mut sync, 4),
+            Err(QueueError::SyncTimeout)
+        );
         assert!(queue.is_faulted());
         assert_eq!(sync.polls, 4);
         assert_eq!(queue.synchronize(&mut sync, 4), Err(QueueError::Faulted));

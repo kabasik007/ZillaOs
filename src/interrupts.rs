@@ -40,7 +40,7 @@ impl IdtGate {
         Self {
             offset_low: handler as u16,
             selector: code_selector,
-            ist: 0, // No TSS/IST until we own GDT and guarded kernel stacks.
+            ist: 0,           // No TSS/IST until we own GDT and guarded kernel stacks.
             attributes: 0x8e, // Present, DPL=0, 64-bit interrupt gate.
             offset_middle: (handler >> 16) as u16,
             offset_high: (handler >> 32) as u32,
@@ -160,12 +160,7 @@ pub fn install() -> Result<(), &'static str> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn zilla_exception_fatal(
-    vector: u64,
-    error: u64,
-    rip: u64,
-    cr2: u64,
-) -> ! {
+pub extern "C" fn zilla_exception_fatal(vector: u64, error: u64, rip: u64, cr2: u64) -> ! {
     serial::write("ZILLAOS_EXCEPTION_VECTOR=");
     serial::write_hex(vector);
     serial::write("\nZILLAOS_EXCEPTION_ERROR=");

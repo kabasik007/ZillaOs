@@ -4,7 +4,7 @@
 
 use core::ptr;
 use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
-use zillaos_kernel::memory::{MemoryRegion, MAX_MEMORY_REGIONS};
+use zillaos_kernel::memory::{MAX_MEMORY_REGIONS, MemoryRegion};
 
 #[repr(C)]
 struct RevisionTag {
@@ -111,8 +111,10 @@ struct MemoryMapEntry {
 #[used]
 #[unsafe(link_section = ".limine_requests_start")]
 static REQUESTS_START: [u64; 4] = [
-    0xf6b8f4b39de7d1ae, 0xfab91a6940fcb9cf,
-    0x785c6ed015d3e316, 0x181e920a7852b9d9,
+    0xf6b8f4b39de7d1ae,
+    0xfab91a6940fcb9cf,
+    0x785c6ed015d3e316,
+    0x181e920a7852b9d9,
 ];
 
 #[used]
@@ -191,9 +193,7 @@ static MODULES: Request<ModuleResponse> = Request {
 
 #[used]
 #[unsafe(link_section = ".limine_requests_end")]
-static REQUESTS_END: [u64; 2] = [
-    0xadc0e0531bb10d03, 0x9572709f31764c62,
-];
+static REQUESTS_END: [u64; 2] = [0xadc0e0531bb10d03, 0x9572709f31764c62];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootError {
@@ -203,7 +203,6 @@ pub enum BootError {
     MissingHhdm,
     InvalidHhdm,
 }
-
 
 /// Limine's mapped higher-half offset, discovered dynamically per boot.
 ///
@@ -223,7 +222,6 @@ pub fn hhdm_offset() -> Result<u64, BootError> {
     Ok(offset)
 }
 
-
 /// Copy/inspect an optional, bounded image module synchronously.
 /// The callback MUST consume the bytes immediately: bootloader module pages
 /// may be reclaimed in the future. Only the module with the exact
@@ -238,15 +236,21 @@ pub fn with_wallpaper_module<R>(inspect: impl FnOnce(&[u8]) -> R) -> Option<R> {
         return None;
     }
     let response_ptr = MODULES.response.load(Ordering::Acquire);
-    if response_ptr.is_null() { return None; }
+    if response_ptr.is_null() {
+        return None;
+    }
     // SAFETY: Limine mapped response pointer, not reclaimed in early boot.
     let response = unsafe { &*response_ptr };
     let count = usize::try_from(response.module_count).ok()?;
-    if count == 0 || count > 16 || response.modules.is_null() { return None; }
+    if count == 0 || count > 16 || response.modules.is_null() {
+        return None;
+    }
     for index in 0..count {
         // SAFETY: response contains exactly module_count descriptors.
         let file_ptr = unsafe { *response.modules.add(index) };
-        if file_ptr.is_null() { continue; }
+        if file_ptr.is_null() {
+            continue;
+        }
         // SAFETY: descriptor pointer is Limine-owned until boot reclamation.
         let file = unsafe { &*file_ptr };
         if file.string.is_null() || file.address.is_null() {
@@ -255,10 +259,13 @@ pub fn with_wallpaper_module<R>(inspect: impl FnOnce(&[u8]) -> R) -> Option<R> {
         const LABEL: &[u8] = b"zillaos-wallpaper\0";
         // SAFETY: Limine provides a zero-terminated ASCII module string;
         // stop comparing after the first short-circuit mismatch.
-        let name_matches = LABEL.iter().enumerate().all(|(n, b)| {
-            unsafe { *file.string.add(n) == *b }
-        });
-        if !name_matches { continue; }
+        let name_matches = LABEL
+            .iter()
+            .enumerate()
+            .all(|(n, b)| unsafe { *file.string.add(n) == *b });
+        if !name_matches {
+            continue;
+        }
         let length = usize::try_from(file.size).ok()?;
         if !(54..=zillaos_kernel::video::bmp::MAX_FILE_BYTES).contains(&length)
             || (file.address as usize).checked_add(length).is_none()

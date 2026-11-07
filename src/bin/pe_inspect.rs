@@ -16,7 +16,10 @@ fn main() {
     }
     let file = match fs::File::open(&path) {
         Ok(file) => file,
-        Err(err) => { eprintln!("Could not open EXE: {err}"); process::exit(1); }
+        Err(err) => {
+            eprintln!("Could not open EXE: {err}");
+            process::exit(1);
+        }
     };
     match file.metadata() {
         Ok(meta) if meta.is_file() && meta.len() <= LIMIT => {}
@@ -27,7 +30,10 @@ fn main() {
     }
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
-        Err(err) => { eprintln!("Could not read EXE: {err}"); process::exit(1); }
+        Err(err) => {
+            eprintln!("Could not read EXE: {err}");
+            process::exit(1);
+        }
     };
     if bytes.len() as u64 > LIMIT {
         eprintln!("Input grew beyond 64 MiB");

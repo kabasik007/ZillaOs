@@ -81,16 +81,30 @@ mod tests {
 
     #[test]
     fn positive_x_and_device_y_up_becomes_screen_y_down() {
-        assert_eq!(packet([0x08, 15, 8]), MousePacket {
-            dx: 15, dy: -8, left: false, right: false, middle: false,
-        });
+        assert_eq!(
+            packet([0x08, 15, 8]),
+            MousePacket {
+                dx: 15,
+                dy: -8,
+                left: false,
+                right: false,
+                middle: false,
+            }
+        );
     }
 
     #[test]
     fn signed_nine_bit_deltas_and_buttons_are_respected() {
-        assert_eq!(packet([0x3b, 0xfe, 0xfd]), MousePacket {
-            dx: -2, dy: 3, left: true, right: true, middle: false,
-        });
+        assert_eq!(
+            packet([0x3b, 0xfe, 0xfd]),
+            MousePacket {
+                dx: -2,
+                dy: 3,
+                left: true,
+                right: true,
+                middle: false,
+            }
+        );
     }
 
     #[test]
@@ -102,9 +116,16 @@ mod tests {
         assert_eq!(decoder.feed(0), None);
         assert_eq!(decoder.feed(0x08), None);
         assert_eq!(decoder.feed(0), None);
-        assert_eq!(decoder.feed(0), Some(MousePacket {
-            dx: 0, dy: 0, left: false, right: false, middle: false
-        }));
+        assert_eq!(
+            decoder.feed(0),
+            Some(MousePacket {
+                dx: 0,
+                dy: 0,
+                left: false,
+                right: false,
+                middle: false
+            })
+        );
     }
 
     #[test]
@@ -121,8 +142,15 @@ mod tests {
         decoder.reset();
         assert_eq!(decoder.feed(0x08), None);
         assert_eq!(decoder.feed(0), None);
-        assert_eq!(decoder.feed(0), Some(MousePacket {
-            dx: 0, dy: 0, left: false, right: false, middle: false
-        }));
+        assert_eq!(
+            decoder.feed(0),
+            Some(MousePacket {
+                dx: 0,
+                dy: 0,
+                left: false,
+                right: false,
+                middle: false
+            })
+        );
     }
 }

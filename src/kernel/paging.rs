@@ -154,17 +154,12 @@ mod tests {
             indices(0x0000_8000_0000_0000, 48),
             Err(PagingError::NonCanonicalAddress)
         );
-        assert_eq!(
-            indices(0, 32),
-            Err(PagingError::InvalidVirtualWidth)
-        );
+        assert_eq!(indices(0, 32), Err(PagingError::InvalidVirtualWidth));
     }
 
     #[test]
     fn safe_table_entry_building() {
-        let entry = PageTableEntry::table_pointer(
-            0x1234_5000, 36, PRESENT | WRITABLE
-        ).unwrap();
+        let entry = PageTableEntry::table_pointer(0x1234_5000, 36, PRESENT | WRITABLE).unwrap();
         assert_eq!(entry.physical_address(), 0x1234_5000);
         assert!(entry.is_present());
     }

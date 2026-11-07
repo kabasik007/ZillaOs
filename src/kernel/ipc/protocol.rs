@@ -9,22 +9,37 @@ pub const HEADER_BYTES: usize = 32;
 pub const HANDLE_DESCRIPTOR_BYTES: usize = 16;
 pub const MAX_PAYLOAD_BYTES: usize = 4096;
 pub const MAX_MESSAGE_HANDLES: usize = 4;
-pub const MAX_WIRE_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD_BYTES
-    + MAX_MESSAGE_HANDLES * HANDLE_DESCRIPTOR_BYTES;
+pub const MAX_WIRE_BYTES: usize =
+    HEADER_BYTES + MAX_PAYLOAD_BYTES + MAX_MESSAGE_HANDLES * HANDLE_DESCRIPTOR_BYTES;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IpcError {
-    ShortHeader, InvalidMagic, UnsupportedVersion, InvalidHeader,
-    InvalidKind, InvalidRequestId, InvalidOpcode, Oversized,
-    MalformedLength, InvalidDescriptor,
+    ShortHeader,
+    InvalidMagic,
+    UnsupportedVersion,
+    InvalidHeader,
+    InvalidKind,
+    InvalidRequestId,
+    InvalidOpcode,
+    Oversized,
+    MalformedLength,
+    InvalidDescriptor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MessageKind { Event, Request, Reply }
+pub enum MessageKind {
+    Event,
+    Request,
+    Reply,
+}
 impl MessageKind {
     fn decode(value: u16) -> Result<Self, IpcError> {
-        match value { 0 => Ok(Self::Event), 1 => Ok(Self::Request), 2 => Ok(Self::Reply),
-            _ => Err(IpcError::InvalidKind) }
+        match value {
+            0 => Ok(Self::Event),
+            1 => Ok(Self::Request),
+            2 => Ok(Self::Reply),
+            _ => Err(IpcError::InvalidKind),
+        }
     }
 }
 
@@ -49,7 +64,9 @@ pub struct ParsedMessage<'a> {
 }
 impl<'a> ParsedMessage<'a> {
     pub fn handle_request(&self, index: usize) -> Option<HandleRequest> {
-        if index >= self.header.handle_count { return None; }
+        if index >= self.header.handle_count {
+            return None;
+        }
         let offset = index * HANDLE_DESCRIPTOR_BYTES;
         let raw = read_u64(self.descriptors, offset);
         let requested = read_u64(self.descriptors, offset + 8);
@@ -68,8 +85,14 @@ fn read_u32(buf: &[u8], i: usize) -> u32 {
 }
 fn read_u64(buf: &[u8], i: usize) -> u64 {
     u64::from_le_bytes([
-        buf[i], buf[i + 1], buf[i + 2], buf[i + 3],
-        buf[i + 4], buf[i + 5], buf[i + 6], buf[i + 7],
+        buf[i],
+        buf[i + 1],
+        buf[i + 2],
+        buf[i + 3],
+        buf[i + 4],
+        buf[i + 5],
+        buf[i + 6],
+        buf[i + 7],
     ])
 }
 
@@ -79,8 +102,12 @@ fn read_u64(buf: &[u8], i: usize) -> u64 {
 /// 28 handle_count:u16, 30 reserved:u16; then payload, then 16-byte
 /// (untrusted handle:u64, requested_rights:u64) descriptors.
 pub fn parse(bytes: &[u8]) -> Result<ParsedMessage<'_>, IpcError> {
-    if bytes.len() < HEADER_BYTES { return Err(IpcError::ShortHeader); }
-    if read_u32(bytes, 0) != MAGIC { return Err(IpcError::InvalidMagic); }
+    if bytes.len() < HEADER_BYTES {
+        return Err(IpcError::ShortHeader);
+    }
+    if read_u32(bytes, 0) != MAGIC {
+        return Err(IpcError::InvalidMagic);
+    }
     if read_u16(bytes, 4) != VERSION_MAJOR || read_u16(bytes, 6) != VERSION_MINOR {
         return Err(IpcError::UnsupportedVersion);
     }
@@ -90,20 +117,31 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMessage<'_>, IpcError> {
     let kind = MessageKind::decode(read_u16(bytes, 10))?;
     let opcode = read_u32(bytes, 12);
     let request_id = read_u64(bytes, 16);
-    if opcode == 0 { return Err(IpcError::InvalidOpcode); }
+    if opcode == 0 {
+        return Err(IpcError::InvalidOpcode);
+    }
     if (kind == MessageKind::Event && request_id != 0)
         || (kind != MessageKind::Event && request_id == 0)
-    { return Err(IpcError::InvalidRequestId); }
+    {
+        return Err(IpcError::InvalidRequestId);
+    }
     let payload_len = read_u32(bytes, 24) as usize;
     let handle_count = read_u16(bytes, 28) as usize;
     if payload_len > MAX_PAYLOAD_BYTES || handle_count > MAX_MESSAGE_HANDLES {
         return Err(IpcError::Oversized);
     }
-    let descriptors_len = handle_count.checked_mul(HANDLE_DESCRIPTOR_BYTES)
+    let descriptors_len = handle_count
+        .checked_mul(HANDLE_DESCRIPTOR_BYTES)
         .ok_or(IpcError::Oversized)?;
-    let end_payload = HEADER_BYTES.checked_add(payload_len).ok_or(IpcError::Oversized)?;
-    let total = end_payload.checked_add(descriptors_len).ok_or(IpcError::Oversized)?;
-    if total != bytes.len() { return Err(IpcError::MalformedLength); }
+    let end_payload = HEADER_BYTES
+        .checked_add(payload_len)
+        .ok_or(IpcError::Oversized)?;
+    let total = end_payload
+        .checked_add(descriptors_len)
+        .ok_or(IpcError::Oversized)?;
+    if total != bytes.len() {
+        return Err(IpcError::MalformedLength);
+    }
     let descriptors = &bytes[end_payload..total];
     for i in 0..handle_count {
         let offset = i * HANDLE_DESCRIPTOR_BYTES;
@@ -114,7 +152,13 @@ pub fn parse(bytes: &[u8]) -> Result<ParsedMessage<'_>, IpcError> {
         }
     }
     Ok(ParsedMessage {
-        header: MessageHeaderV1 { kind, opcode, request_id, payload_len, handle_count },
+        header: MessageHeaderV1 {
+            kind,
+            opcode,
+            request_id,
+            payload_len,
+            handle_count,
+        },
         payload: &bytes[HEADER_BYTES..end_payload],
         descriptors,
     })

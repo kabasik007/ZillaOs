@@ -62,7 +62,10 @@ pub struct GptInfo {
 
 impl GptInfo {
     pub fn iter(&self) -> impl Iterator<Item = Partition> + '_ {
-        self.partitions[..self.partition_count].iter().flatten().copied()
+        self.partitions[..self.partition_count]
+            .iter()
+            .flatten()
+            .copied()
     }
 }
 
@@ -126,9 +129,7 @@ pub fn inspect_primary_gpt(
         let base = 446 + slot * 16;
         let kind = buffer[base + 4];
         if kind == 0xee {
-            if le32(&buffer, base + 8) != 1 ||
-                le32(&buffer, base + 12) != protected_sectors
-            {
+            if le32(&buffer, base + 8) != 1 || le32(&buffer, base + 12) != protected_sectors {
                 return Err(GptError::InvalidProtectiveMbr);
             }
             protective += 1;
@@ -148,9 +149,10 @@ pub fn inspect_primary_gpt(
         return Err(GptError::InvalidRevision);
     }
     let header_size = le32(&buffer, 12) as usize;
-    if header_size < GPT_HEADER_MIN || header_size > block ||
-        le32(&buffer, 20) != 0 ||
-        buffer[header_size..block].iter().any(|b| *b != 0)
+    if header_size < GPT_HEADER_MIN
+        || header_size > block
+        || le32(&buffer, 20) != 0
+        || buffer[header_size..block].iter().any(|b| *b != 0)
     {
         return Err(GptError::BadHeaderSize);
     }
@@ -180,8 +182,7 @@ pub fn inspect_primary_gpt(
     let entry_count = le32(&buffer, 80);
     let entry_size = le32(&buffer, 84) as usize;
     let expected_table_crc = le32(&buffer, 88);
-    if entry_count != MAX_ENTRIES || entry_size != PARTITION_ENTRY_SIZE
-    {
+    if entry_count != MAX_ENTRIES || entry_size != PARTITION_ENTRY_SIZE {
         return Err(GptError::UnsupportedEntryLayout);
     }
     let table_bytes = (entry_count as u64)
@@ -189,14 +190,19 @@ pub fn inspect_primary_gpt(
         .ok_or(GptError::UnsupportedEntryLayout)?;
     let table_sectors = table_bytes
         .checked_add(block as u64 - 1)
-        .ok_or(GptError::InvalidArrayLocation)? / block as u64;
-    let end_table = table_lba.checked_add(table_sectors)
+        .ok_or(GptError::InvalidArrayLocation)?
+        / block as u64;
+    let end_table = table_lba
+        .checked_add(table_sectors)
         .ok_or(GptError::InvalidArrayLocation)?;
-    let backup_table_start = backup.checked_sub(table_sectors)
+    let backup_table_start = backup
+        .checked_sub(table_sectors)
         .ok_or(GptError::InvalidArrayLocation)?;
-    if table_lba < 2 || end_table > first_usable ||
-        first_usable > last_usable || last_usable >= backup_table_start ||
-        end_table > backup_table_start
+    if table_lba < 2
+        || end_table > first_usable
+        || first_usable > last_usable
+        || last_usable >= backup_table_start
+        || end_table > backup_table_start
     {
         return Err(GptError::InvalidArrayLocation);
     }
@@ -253,7 +259,10 @@ pub fn inspect_primary_gpt(
             let mut type_guid = [0u8; 16];
             type_guid.copy_from_slice(&entry[..16]);
             info.partitions[info.partition_count] = Some(Partition {
-                type_guid, unique_guid, first_lba: first, last_lba: last,
+                type_guid,
+                unique_guid,
+                first_lba: first,
+                last_lba: last,
             });
             info.partition_count += 1;
         }
@@ -289,9 +298,7 @@ pub fn inspect_complete_gpt(
         return Err(GptError::InvalidBackupHeader);
     }
     let header_size = le32(&buffer, 12) as usize;
-    if !(GPT_HEADER_MIN..=block).contains(&header_size)
-        || le32(&buffer, 20) != 0
-    {
+    if !(GPT_HEADER_MIN..=block).contains(&header_size) || le32(&buffer, 20) != 0 {
         return Err(GptError::InvalidBackupHeader);
     }
     let stored_crc = le32(&buffer, 16);
@@ -323,9 +330,7 @@ pub fn inspect_complete_gpt(
     let expected_array_lba = last_lba
         .checked_sub(sectors as u64)
         .ok_or(GptError::InvalidBackupHeader)?;
-    if backup_array_lba != expected_array_lba
-        || backup_array_lba <= primary.last_usable_lba
-    {
+    if backup_array_lba != expected_array_lba || backup_array_lba <= primary.last_usable_lba {
         return Err(GptError::InvalidBackupHeader);
     }
 
@@ -416,7 +421,11 @@ mod tests {
         put32(&mut backup_header, 16, 0);
         put64(&mut backup_header, 24, TOTAL - 1);
         put64(&mut backup_header, 32, 1);
-        put64(&mut backup_header, 72, (TOTAL as usize - 1 - table_sectors) as u64);
+        put64(
+            &mut backup_header,
+            72,
+            (TOTAL as usize - 1 - table_sectors) as u64,
+        );
         let crc = crc32(&backup_header[..92]);
         put32(&mut backup_header, 16, crc);
         let backup_offset = (TOTAL as usize - 1) * block;
@@ -475,14 +484,20 @@ mod tests {
     fn corrupted_backup_header_crc_is_rejected() {
         let mut disk = sample_gpt(4096);
         disk[(TOTAL as usize - 1) * 4096 + 40] ^= 1;
-        assert_eq!(inspect_full(&disk, 4096), Err(GptError::BackupHeaderCrcMismatch));
+        assert_eq!(
+            inspect_full(&disk, 4096),
+            Err(GptError::BackupHeaderCrcMismatch)
+        );
     }
 
     #[test]
     fn corrupted_backup_partition_array_is_rejected() {
         let mut disk = sample_gpt(512);
         disk[(TOTAL as usize - 1 - 32) * 512 + 50] ^= 1;
-        assert_eq!(inspect_full(&disk, 512), Err(GptError::BackupArrayCrcMismatch));
+        assert_eq!(
+            inspect_full(&disk, 512),
+            Err(GptError::BackupArrayCrcMismatch)
+        );
     }
 
     #[test]
@@ -496,8 +511,10 @@ mod tests {
         put32(&mut disk, header + 16, 0);
         let backup_crc = crc32(&disk[header..header + 92]);
         put32(&mut disk, header + 16, backup_crc);
-        assert_eq!(inspect_full(&disk, 512),
-                   Err(GptError::BackupPartitionArrayMismatch));
+        assert_eq!(
+            inspect_full(&disk, 512),
+            Err(GptError::BackupPartitionArrayMismatch)
+        );
     }
 
     #[test]
@@ -508,8 +525,7 @@ mod tests {
         put32(&mut disk, header + 16, 0);
         let header_crc = crc32(&disk[header..header + 92]);
         put32(&mut disk, header + 16, header_crc);
-        assert_eq!(inspect_full(&disk, 512),
-                   Err(GptError::InvalidBackupHeader));
+        assert_eq!(inspect_full(&disk, 512), Err(GptError::InvalidBackupHeader));
     }
 
     #[test]
@@ -526,12 +542,17 @@ mod tests {
     #[test]
     fn backup_sector_failure_is_not_ignored() {
         let disk = sample_gpt(512);
-        assert_eq!(inspect_complete_gpt(512, TOTAL, |lba, out| {
-            if lba == TOTAL - 1 { return Err(()); }
-            let start = lba as usize * 512;
-            out.copy_from_slice(&disk[start..start + 512]);
-            Ok(())
-        }), Err(GptError::ReadFailed));
+        assert_eq!(
+            inspect_complete_gpt(512, TOTAL, |lba, out| {
+                if lba == TOTAL - 1 {
+                    return Err(());
+                }
+                let start = lba as usize * 512;
+                out.copy_from_slice(&disk[start..start + 512]);
+                Ok(())
+            }),
+            Err(GptError::ReadFailed)
+        );
     }
 
     #[test]
@@ -610,9 +631,13 @@ mod tests {
 
     #[test]
     fn callback_failure_and_bad_geometry_are_fail_closed() {
-        assert_eq!(inspect_primary_gpt(520, TOTAL, |_, _| Ok(())),
-                   Err(GptError::BadGeometry));
-        assert_eq!(inspect_primary_gpt(512, TOTAL, |_, _| Err(())),
-                   Err(GptError::ReadFailed));
+        assert_eq!(
+            inspect_primary_gpt(520, TOTAL, |_, _| Ok(())),
+            Err(GptError::BadGeometry)
+        );
+        assert_eq!(
+            inspect_primary_gpt(512, TOTAL, |_, _| Err(())),
+            Err(GptError::ReadFailed)
+        );
     }
 }

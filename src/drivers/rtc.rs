@@ -2,7 +2,7 @@
 //! No RTC writes or time-setting commands. Single boot CPU and no concurrent
 //! CMOS users in this experimental kernel. BIOS hour format is detected.
 use core::arch::asm;
-use zillaos_kernel::shell::clock::{ClockTime, ClockDate};
+use zillaos_kernel::shell::clock::{ClockDate, ClockTime};
 
 #[inline]
 fn read_cmos(register: u8) -> u8 {
@@ -26,12 +26,16 @@ fn update_in_progress() -> bool {
 }
 
 fn snapshot() -> Option<ClockTime> {
-    if update_in_progress() { return None; }
+    if update_in_progress() {
+        return None;
+    }
     let second = read_cmos(0x00);
     let minute = read_cmos(0x02);
     let hour = read_cmos(0x04);
     let status_b = read_cmos(0x0b);
-    if update_in_progress() { return None; }
+    if update_in_progress() {
+        return None;
+    }
     ClockTime::from_cmos(hour, minute, second, status_b)
 }
 
@@ -39,7 +43,9 @@ fn snapshot() -> Option<ClockTime> {
 pub fn read_time() -> Option<ClockTime> {
     for _ in 0..3 {
         let Some(a) = snapshot() else { continue };
-        if snapshot() == Some(a) { return Some(a); }
+        if snapshot() == Some(a) {
+            return Some(a);
+        }
     }
     None
 }
@@ -48,18 +54,24 @@ pub fn read_time() -> Option<ClockTime> {
 /// present and two stable snapshots agree. Do not assume a 20xx century.
 pub fn read_date() -> Option<ClockDate> {
     fn snapshot_date() -> Option<ClockDate> {
-        if update_in_progress() { return None; }
+        if update_in_progress() {
+            return None;
+        }
         let day = read_cmos(0x07);
         let month = read_cmos(0x08);
         let year = read_cmos(0x09);
         let century = read_cmos(0x32);
         let status = read_cmos(0x0b);
-        if update_in_progress() { return None; }
+        if update_in_progress() {
+            return None;
+        }
         ClockDate::from_cmos(day, month, year, century, status)
     }
     for _ in 0..3 {
         let Some(a) = snapshot_date() else { continue };
-        if snapshot_date() == Some(a) { return Some(a); }
+        if snapshot_date() == Some(a) {
+            return Some(a);
+        }
     }
     None
 }

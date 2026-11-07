@@ -18,30 +18,55 @@ const EXEC_PREFIX: &str = "/System/Services/";
 
 /// Labels are requests only, never capability grants.
 pub const KNOWN_CAPABILITIES: &[&str] = &[
-    "device.observe", "device.claim", "display.mode.test",
-    "gpu.surface.create", "gpu.surface.present", "ipc.connect",
-    "ipc.send", "ipc.receive", "log.read", "process.observe",
-    "fs.read", "fs.write", "network.configure", "audio.output",
-    "power.observe", "update.stage", "service.observe",
+    "device.observe",
+    "device.claim",
+    "display.mode.test",
+    "gpu.surface.create",
+    "gpu.surface.present",
+    "ipc.connect",
+    "ipc.send",
+    "ipc.receive",
+    "log.read",
+    "process.observe",
+    "fs.read",
+    "fs.write",
+    "network.configure",
+    "audio.output",
+    "power.observe",
+    "update.stage",
+    "service.observe",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ServiceId(u8);
 impl ServiceId {
-    pub const fn index(self) -> usize { self.0 as usize }
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StartMode { OnBoot, OnDemand, Manual }
+pub enum StartMode {
+    OnBoot,
+    OnDemand,
+    Manual,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RestartPolicy {
     Never,
-    OnFailure { max_retries: u8, base_ms: u64, cap_ms: u64 },
+    OnFailure {
+        max_retries: u8,
+        base_ms: u64,
+        cap_ms: u64,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Quotas { pub memory_bytes: u64, pub threads: u8 }
+pub struct Quotas {
+    pub memory_bytes: u64,
+    pub threads: u8,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ServiceManifest {
@@ -61,27 +86,45 @@ pub struct ServiceManifest {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ValidationError {
-    EmptyRegistry, TooManyServices, InvalidSchema, InvalidVersion, InvalidId,
-    InvalidExecutable, DuplicateId, TooManyDependencies,
-    DuplicateDependency, SelfDependency, MissingRequired,
-    DependencyCycle, TooManyCapabilities, UnknownCapability,
-    DuplicateCapability, InvalidQuota, InvalidRestartPolicy,
+    EmptyRegistry,
+    TooManyServices,
+    InvalidSchema,
+    InvalidVersion,
+    InvalidId,
+    InvalidExecutable,
+    DuplicateId,
+    TooManyDependencies,
+    DuplicateDependency,
+    SelfDependency,
+    MissingRequired,
+    DependencyCycle,
+    TooManyCapabilities,
+    UnknownCapability,
+    DuplicateCapability,
+    InvalidQuota,
+    InvalidRestartPolicy,
 }
 
 fn valid_id(id: &str) -> bool {
     let bytes = id.as_bytes();
-    !bytes.is_empty() && bytes.len() <= 32
+    !bytes.is_empty()
+        && bytes.len() <= 32
         && bytes[0].is_ascii_lowercase()
-        && bytes.iter().all(|b| b.is_ascii_lowercase()
-            || b.is_ascii_digit() || *b == b'_' || *b == b'-')
+        && bytes
+            .iter()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_' || *b == b'-')
 }
 
 fn validate_manifest(m: ServiceManifest) -> Result<(), ValidationError> {
     if m.schema_version != MANIFEST_SCHEMA_V1 {
         return Err(ValidationError::InvalidSchema);
     }
-    if m.version == 0 { return Err(ValidationError::InvalidVersion); }
-    if !valid_id(m.id) { return Err(ValidationError::InvalidId); }
+    if m.version == 0 {
+        return Err(ValidationError::InvalidVersion);
+    }
+    if !valid_id(m.id) {
+        return Err(ValidationError::InvalidId);
+    }
     if m.executable.strip_prefix(EXEC_PREFIX) != Some(m.id) {
         return Err(ValidationError::InvalidExecutable);
     }
@@ -90,8 +133,12 @@ fn validate_manifest(m: ServiceManifest) -> Result<(), ValidationError> {
     }
     for (group_index, group) in [m.required, m.after].iter().enumerate() {
         for (i, dep) in group.iter().enumerate() {
-            if !valid_id(dep) { return Err(ValidationError::InvalidId); }
-            if *dep == m.id { return Err(ValidationError::SelfDependency); }
+            if !valid_id(dep) {
+                return Err(ValidationError::InvalidId);
+            }
+            if *dep == m.id {
+                return Err(ValidationError::SelfDependency);
+            }
             if group[..i].contains(dep) {
                 return Err(ValidationError::DuplicateDependency);
             }
@@ -113,12 +160,25 @@ fn validate_manifest(m: ServiceManifest) -> Result<(), ValidationError> {
     }
     if m.quotas.memory_bytes < MIN_MEMORY_BYTES
         || m.quotas.memory_bytes > MAX_MEMORY_BYTES
-        || m.quotas.threads == 0 || m.quotas.threads > MAX_THREADS
-    { return Err(ValidationError::InvalidQuota); }
-    if let RestartPolicy::OnFailure { max_retries, base_ms, cap_ms } = m.restart {
-        if max_retries == 0 || max_retries > 16
-            || base_ms == 0 || cap_ms < base_ms || cap_ms > 3_600_000
-        { return Err(ValidationError::InvalidRestartPolicy); }
+        || m.quotas.threads == 0
+        || m.quotas.threads > MAX_THREADS
+    {
+        return Err(ValidationError::InvalidQuota);
+    }
+    if let RestartPolicy::OnFailure {
+        max_retries,
+        base_ms,
+        cap_ms,
+    } = m.restart
+    {
+        if max_retries == 0
+            || max_retries > 16
+            || base_ms == 0
+            || cap_ms < base_ms
+            || cap_ms > 3_600_000
+        {
+            return Err(ValidationError::InvalidRestartPolicy);
+        }
     }
     Ok(())
 }
@@ -132,7 +192,9 @@ pub struct ServiceRegistry {
 
 impl ServiceRegistry {
     pub fn validate(manifests: &[ServiceManifest]) -> Result<Self, ValidationError> {
-        if manifests.is_empty() { return Err(ValidationError::EmptyRegistry); }
+        if manifests.is_empty() {
+            return Err(ValidationError::EmptyRegistry);
+        }
         if manifests.len() > MAX_SERVICES {
             return Err(ValidationError::TooManyServices);
         }
@@ -160,15 +222,20 @@ impl ServiceRegistry {
         for position in 0..registry.count {
             let mut next: Option<usize> = None;
             for candidate in 0..registry.count {
-                if chosen[candidate] { continue; }
-                let has_pending_predecessor = (0..registry.count).any(|parent| {
-                    !chosen[parent] && registry.edge(candidate, parent)
-                });
-                if has_pending_predecessor { continue; }
+                if chosen[candidate] {
+                    continue;
+                }
+                let has_pending_predecessor = (0..registry.count)
+                    .any(|parent| !chosen[parent] && registry.edge(candidate, parent));
+                if has_pending_predecessor {
+                    continue;
+                }
                 if next.is_none_or(|old| {
                     registry.manifest(ServiceId(candidate as u8)).id
                         < registry.manifest(ServiceId(old as u8)).id
-                }) { next = Some(candidate); }
+                }) {
+                    next = Some(candidate);
+                }
             }
             let idx = next.ok_or(ValidationError::DependencyCycle)?;
             registry.order[position] = ServiceId(idx as u8);
@@ -183,16 +250,22 @@ impl ServiceRegistry {
         m.required.contains(&name) || m.after.contains(&name)
     }
 
-    pub const fn len(&self) -> usize { self.count }
-    pub const fn is_empty(&self) -> bool { self.count == 0 }
+    pub const fn len(&self) -> usize {
+        self.count
+    }
+    pub const fn is_empty(&self) -> bool {
+        self.count == 0
+    }
     pub fn find(&self, name: &str) -> Option<ServiceId> {
-        (0..self.count).find(|&i| {
-            self.manifests[i].is_some_and(|m| m.id == name)
-        }).map(|i| ServiceId(i as u8))
+        (0..self.count)
+            .find(|&i| self.manifests[i].is_some_and(|m| m.id == name))
+            .map(|i| ServiceId(i as u8))
     }
     pub fn manifest(&self, id: ServiceId) -> &ServiceManifest {
         // Only IDs returned by this registry should be passed.
-        self.manifests[id.index()].as_ref().expect("valid registry ID")
+        self.manifests[id.index()]
+            .as_ref()
+            .expect("valid registry ID")
     }
     pub fn startup_order(&self) -> impl DoubleEndedIterator<Item = ServiceId> + '_ {
         self.order[..self.count].iter().copied()
@@ -201,27 +274,53 @@ impl ServiceRegistry {
         self.startup_order().rev()
     }
     pub fn requires(&self, child: ServiceId, parent: ServiceId) -> bool {
-        self.manifest(child).required.contains(&self.manifest(parent).id)
+        self.manifest(child)
+            .required
+            .contains(&self.manifest(parent).id)
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServiceState {
-    Validated, WaitingDeps, Starting, Running, Backoff,
-    Stopping, Stopped, Failed,
+    Validated,
+    WaitingDeps,
+    Starting,
+    Running,
+    Backoff,
+    Stopping,
+    Stopped,
+    Failed,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Health { Unknown, Healthy, Degraded, Unhealthy }
+pub enum Health {
+    Unknown,
+    Healthy,
+    Degraded,
+    Unhealthy,
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServiceError {
-    UnknownService, AccessDenied, InvalidTransition, DependencyUnavailable,
-    ActiveDependent, ClockOverflow, Unsupported, EventsLost(u64),
+    UnknownService,
+    AccessDenied,
+    InvalidTransition,
+    DependencyUnavailable,
+    ActiveDependent,
+    ClockOverflow,
+    Unsupported,
+    EventsLost(u64),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EventKind {
-    StartRequested, Started, StopRequested, Stopped, Crashed,
-    BackoffScheduled, RetriesExhausted, DependencyLost, HealthChanged,
+    StartRequested,
+    Started,
+    StopRequested,
+    Stopped,
+    Crashed,
+    BackoffScheduled,
+    RetriesExhausted,
+    DependencyLost,
+    HealthChanged,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ServiceEvent {
@@ -232,7 +331,9 @@ pub struct ServiceEvent {
 }
 /// Local model cursor; NOT an authenticated IPC subscription.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EventCursor { next_sequence: u64 }
+pub struct EventCursor {
+    next_sequence: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Runtime {
@@ -246,9 +347,12 @@ struct Runtime {
 impl Runtime {
     const fn initial() -> Self {
         Self {
-            state: ServiceState::Validated, health: Health::Unknown,
-            retry_count: 0, retry_at_ms: None,
-            running_since_ms: None, restart_after_stop: false,
+            state: ServiceState::Validated,
+            health: Health::Unknown,
+            retry_count: 0,
+            retry_at_ms: None,
+            running_since_ms: None,
+            restart_after_stop: false,
         }
     }
 }
@@ -269,7 +373,9 @@ pub struct ServiceSnapshot {
     len: usize,
 }
 impl ServiceSnapshot {
-    pub const fn len(&self) -> usize { self.len }
+    pub const fn len(&self) -> usize {
+        self.len
+    }
     pub fn iter(&self) -> impl Iterator<Item = ServiceInfo> + '_ {
         self.entries[..self.len].iter().flatten().copied()
     }
@@ -288,10 +394,14 @@ impl ServiceManager {
         Ok(Self {
             registry: ServiceRegistry::validate(manifests)?,
             runtime: [Runtime::initial(); MAX_SERVICES],
-            events: [None; MAX_EVENTS], event_sequence: 0, event_count: 0,
+            events: [None; MAX_EVENTS],
+            event_sequence: 0,
+            event_count: 0,
         })
     }
-    pub const fn registry(&self) -> &ServiceRegistry { &self.registry }
+    pub const fn registry(&self) -> &ServiceRegistry {
+        &self.registry
+    }
     pub fn lookup(&self, name: &str) -> Result<ServiceId, ServiceError> {
         self.registry.find(name).ok_or(ServiceError::UnknownService)
     }
@@ -301,38 +411,50 @@ impl ServiceManager {
             let id = ServiceId(i as u8);
             let runtime = self.runtime[i];
             *slot = Some(ServiceInfo {
-                id, name: self.registry.manifest(id).id,
-                state: runtime.state, health: runtime.health,
+                id,
+                name: self.registry.manifest(id).id,
+                state: runtime.state,
+                health: runtime.health,
                 retries_used: runtime.retry_count,
                 next_retry_ms: runtime.retry_at_ms,
             });
         }
-        ServiceSnapshot { entries, len: self.registry.len() }
+        ServiceSnapshot {
+            entries,
+            len: self.registry.len(),
+        }
     }
     pub fn subscribe(&self) -> EventCursor {
-        EventCursor { next_sequence: self.event_sequence }
+        EventCursor {
+            next_sequence: self.event_sequence,
+        }
     }
     /// A lagging reader receives EventsLost and a resynced cursor.
-    pub fn poll(&self, cursor: &mut EventCursor)
-        -> Result<Option<ServiceEvent>, ServiceError>
-    {
+    pub fn poll(&self, cursor: &mut EventCursor) -> Result<Option<ServiceEvent>, ServiceError> {
         let oldest = self.event_sequence - self.event_count as u64;
         if cursor.next_sequence < oldest {
             let missed = oldest - cursor.next_sequence;
             cursor.next_sequence = oldest;
             return Err(ServiceError::EventsLost(missed));
         }
-        if cursor.next_sequence >= self.event_sequence { return Ok(None); }
+        if cursor.next_sequence >= self.event_sequence {
+            return Ok(None);
+        }
         let position = (cursor.next_sequence as usize) % MAX_EVENTS;
         cursor.next_sequence += 1;
         Ok(self.events[position])
     }
     fn emit(&mut self, id: ServiceId, kind: EventKind, at_ms: u64) {
         // Exhausting u64 event IDs is fail-closed: do not silently wrap.
-        if self.event_sequence == u64::MAX { return; }
+        if self.event_sequence == u64::MAX {
+            return;
+        }
         let seq = self.event_sequence;
         self.events[(seq as usize) % MAX_EVENTS] = Some(ServiceEvent {
-            sequence: seq, at_ms, id, kind,
+            sequence: seq,
+            at_ms,
+            id,
+            kind,
         });
         self.event_sequence += 1;
         self.event_count = (self.event_count + 1).min(MAX_EVENTS);
@@ -340,8 +462,7 @@ impl ServiceManager {
     fn dependencies_running(&self, id: ServiceId) -> bool {
         (0..self.registry.len()).all(|n| {
             let parent = ServiceId(n as u8);
-            !self.registry.requires(id, parent)
-                || self.runtime[n].state == ServiceState::Running
+            !self.registry.requires(id, parent) || self.runtime[n].state == ServiceState::Running
         })
     }
     /// This is intentionally never a real launcher, including for builtins.
@@ -349,12 +470,19 @@ impl ServiceManager {
         Err(ServiceError::Unsupported)
     }
     fn authorize(control: bool) -> Result<(), ServiceError> {
-        if control { Ok(()) } else { Err(ServiceError::AccessDenied) }
+        if control {
+            Ok(())
+        } else {
+            Err(ServiceError::AccessDenied)
+        }
     }
     /// Simulate a supervisor start request; ONLY a trusted mock may ack started.
-    pub fn model_start(&mut self, id: ServiceId, control: bool, now: u64)
-        -> Result<(), ServiceError>
-    {
+    pub fn model_start(
+        &mut self,
+        id: ServiceId,
+        control: bool,
+        now: u64,
+    ) -> Result<(), ServiceError> {
         Self::authorize(control)?;
         let rt = &mut self.runtime[id.index()];
         if !matches!(rt.state, ServiceState::Validated | ServiceState::Stopped) {
@@ -368,9 +496,7 @@ impl ServiceManager {
         }
         Ok(())
     }
-    pub fn model_started(&mut self, id: ServiceId, now: u64)
-        -> Result<(), ServiceError>
-    {
+    pub fn model_started(&mut self, id: ServiceId, now: u64) -> Result<(), ServiceError> {
         if self.runtime[id.index()].state != ServiceState::Starting {
             return Err(ServiceError::InvalidTransition);
         }
@@ -385,26 +511,35 @@ impl ServiceManager {
         self.emit(id, EventKind::Started, now);
         Ok(())
     }
-    pub fn model_stop(&mut self, id: ServiceId, control: bool, now: u64)
-        -> Result<(), ServiceError>
-    {
+    pub fn model_stop(
+        &mut self,
+        id: ServiceId,
+        control: bool,
+        now: u64,
+    ) -> Result<(), ServiceError> {
         Self::authorize(control)?;
         for n in 0..self.registry.len() {
             if self.registry.requires(ServiceId(n as u8), id)
-                && matches!(self.runtime[n].state,
-                    ServiceState::Running | ServiceState::Starting
-                    | ServiceState::Stopping)
-            { return Err(ServiceError::ActiveDependent); }
+                && matches!(
+                    self.runtime[n].state,
+                    ServiceState::Running | ServiceState::Starting | ServiceState::Stopping
+                )
+            {
+                return Err(ServiceError::ActiveDependent);
+            }
         }
         match self.runtime[id.index()].state {
             ServiceState::Running | ServiceState::Starting => {
                 self.runtime[id.index()].state = ServiceState::Stopping;
                 self.emit(id, EventKind::StopRequested, now);
             }
-            ServiceState::Validated | ServiceState::WaitingDeps
-            | ServiceState::Backoff | ServiceState::Failed => {
+            ServiceState::Validated
+            | ServiceState::WaitingDeps
+            | ServiceState::Backoff
+            | ServiceState::Failed => {
                 self.runtime[id.index()] = Runtime {
-                    state: ServiceState::Stopped, ..Runtime::initial()
+                    state: ServiceState::Stopped,
+                    ..Runtime::initial()
                 };
                 self.emit(id, EventKind::Stopped, now);
             }
@@ -412,34 +547,42 @@ impl ServiceManager {
         }
         Ok(())
     }
-    pub fn model_stopped(&mut self, id: ServiceId, now: u64)
-        -> Result<(), ServiceError>
-    {
+    pub fn model_stopped(&mut self, id: ServiceId, now: u64) -> Result<(), ServiceError> {
         if self.runtime[id.index()].state != ServiceState::Stopping {
             return Err(ServiceError::InvalidTransition);
         }
         let restart = self.runtime[id.index()].restart_after_stop;
         self.runtime[id.index()] = Runtime {
-            state: ServiceState::Stopped, ..Runtime::initial()
+            state: ServiceState::Stopped,
+            ..Runtime::initial()
         };
         self.emit(id, EventKind::Stopped, now);
-        if restart { self.model_start(id, true, now)?; }
+        if restart {
+            self.model_start(id, true, now)?;
+        }
         Ok(())
     }
-    pub fn model_restart(&mut self, id: ServiceId, control: bool, now: u64)
-        -> Result<(), ServiceError>
-    {
+    pub fn model_restart(
+        &mut self,
+        id: ServiceId,
+        control: bool,
+        now: u64,
+    ) -> Result<(), ServiceError> {
         Self::authorize(control)?;
-        if matches!(self.runtime[id.index()].state,
-            ServiceState::Running | ServiceState::Starting)
-        {
+        if matches!(
+            self.runtime[id.index()].state,
+            ServiceState::Running | ServiceState::Starting
+        ) {
             // Stop then start, never two overlapping mock instances.
             for n in 0..self.registry.len() {
                 if self.registry.requires(ServiceId(n as u8), id)
-                    && matches!(self.runtime[n].state,
-                        ServiceState::Running | ServiceState::Starting
-                        | ServiceState::Stopping)
-                { return Err(ServiceError::ActiveDependent); }
+                    && matches!(
+                        self.runtime[n].state,
+                        ServiceState::Running | ServiceState::Starting | ServiceState::Stopping
+                    )
+                {
+                    return Err(ServiceError::ActiveDependent);
+                }
             }
             self.runtime[id.index()].restart_after_stop = true;
             self.runtime[id.index()].state = ServiceState::Stopping;
@@ -449,9 +592,12 @@ impl ServiceManager {
             self.model_start(id, true, now)
         }
     }
-    pub fn model_health(&mut self, id: ServiceId, health: Health, now: u64)
-        -> Result<(), ServiceError>
-    {
+    pub fn model_health(
+        &mut self,
+        id: ServiceId,
+        health: Health,
+        now: u64,
+    ) -> Result<(), ServiceError> {
         if self.runtime[id.index()].state != ServiceState::Running {
             return Err(ServiceError::InvalidTransition);
         }
@@ -459,32 +605,43 @@ impl ServiceManager {
         rt.health = health;
         if health == Health::Healthy
             && rt.running_since_ms.is_some_and(|start| {
-                now.checked_sub(start).is_some_and(|elapsed| elapsed >= STABLE_RESET_MS)
+                now.checked_sub(start)
+                    .is_some_and(|elapsed| elapsed >= STABLE_RESET_MS)
             })
-        { rt.retry_count = 0; }
+        {
+            rt.retry_count = 0;
+        }
         self.emit(id, EventKind::HealthChanged, now);
         Ok(())
     }
 
     /// A mock process-failure event. Callers MUST NOT supply/forge a PID.
-    pub fn model_crash(&mut self, id: ServiceId, now: u64)
-        -> Result<(), ServiceError>
-    {
+    pub fn model_crash(&mut self, id: ServiceId, now: u64) -> Result<(), ServiceError> {
         let index = id.index();
-        if !matches!(self.runtime[index].state,
-            ServiceState::Running | ServiceState::Starting)
-        { return Err(ServiceError::InvalidTransition); }
+        if !matches!(
+            self.runtime[index].state,
+            ServiceState::Running | ServiceState::Starting
+        ) {
+            return Err(ServiceError::InvalidTransition);
+        }
         let manifest = self.registry.manifest(id);
         let retries = self.runtime[index].retry_count;
         let (state, deadline, new_retries) = match manifest.restart {
             RestartPolicy::Never => (ServiceState::Failed, None, retries),
-            RestartPolicy::OnFailure { max_retries, base_ms, cap_ms } => {
+            RestartPolicy::OnFailure {
+                max_retries,
+                base_ms,
+                cap_ms,
+            } => {
                 if retries >= max_retries {
                     (ServiceState::Failed, None, retries)
                 } else {
                     let mut delay = base_ms;
-                    for _ in 0..retries { delay = delay.saturating_mul(2).min(cap_ms); }
-                    let deadline = now.checked_add(delay.min(cap_ms))
+                    for _ in 0..retries {
+                        delay = delay.saturating_mul(2).min(cap_ms);
+                    }
+                    let deadline = now
+                        .checked_add(delay.min(cap_ms))
                         .ok_or(ServiceError::ClockOverflow)?;
                     (ServiceState::Backoff, Some(deadline), retries + 1)
                 }
@@ -497,9 +654,15 @@ impl ServiceManager {
         self.runtime[index].restart_after_stop = false;
         self.runtime[index].retry_count = new_retries;
         self.emit(id, EventKind::Crashed, now);
-        self.emit(id, if state == ServiceState::Backoff {
-            EventKind::BackoffScheduled
-        } else { EventKind::RetriesExhausted }, now);
+        self.emit(
+            id,
+            if state == ServiceState::Backoff {
+                EventKind::BackoffScheduled
+            } else {
+                EventKind::RetriesExhausted
+            },
+            now,
+        );
 
         // Dependency failure propagates transitively, consumers first.
         let mut lost = [false; MAX_SERVICES];
@@ -507,19 +670,27 @@ impl ServiceManager {
         for _ in 0..self.registry.len() {
             for n in 0..self.registry.len() {
                 for p in 0..self.registry.len() {
-                    if lost[p] && self.registry.requires(
-                        ServiceId(n as u8), ServiceId(p as u8)
-                    ) { lost[n] = true; }
+                    if lost[p]
+                        && self
+                            .registry
+                            .requires(ServiceId(n as u8), ServiceId(p as u8))
+                    {
+                        lost[n] = true;
+                    }
                 }
             }
         }
         let order: [ServiceId; MAX_SERVICES] = {
             let mut a = [ServiceId(0); MAX_SERVICES];
-            for (i, s) in self.registry.shutdown_order().enumerate() { a[i] = s; }
+            for (i, s) in self.registry.shutdown_order().enumerate() {
+                a[i] = s;
+            }
             a
         };
         for child in order[..self.registry.len()].iter().copied() {
-            if child == id || !lost[child.index()] { continue; }
+            if child == id || !lost[child.index()] {
+                continue;
+            }
             let state = self.runtime[child.index()].state;
             match state {
                 ServiceState::Running | ServiceState::Starting => {
@@ -541,11 +712,12 @@ impl ServiceManager {
     /// Deterministic monotonic-clock driver for tests, no busy waiting.
     pub fn model_tick(&mut self, now: u64) {
         let mut order = [ServiceId(0); MAX_SERVICES];
-        for (i, id) in self.registry.startup_order().enumerate() { order[i] = id; }
+        for (i, id) in self.registry.startup_order().enumerate() {
+            order[i] = id;
+        }
         for id in order[..self.registry.len()].iter().copied() {
             let rt = self.runtime[id.index()];
-            let due = rt.state == ServiceState::Backoff
-                && rt.retry_at_ms.is_some_and(|d| now >= d);
+            let due = rt.state == ServiceState::Backoff && rt.retry_at_ms.is_some_and(|d| now >= d);
             let unblocked = rt.state == ServiceState::WaitingDeps;
             if (due || unblocked) && self.dependencies_running(id) {
                 self.runtime[id.index()].state = ServiceState::Starting;
