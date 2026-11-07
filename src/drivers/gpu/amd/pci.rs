@@ -18,7 +18,12 @@ impl PciAddress {
     /// Adapter for the existing storage_pci::PciLocation's three fields.
     /// CF8/CFC accesses only segment 0; this function does not read hardware.
     pub const fn from_legacy_segment_zero(bus: u8, device: u8, function: u8) -> Self {
-        Self { segment: 0, bus, device, function }
+        Self {
+            segment: 0,
+            bus,
+            device,
+            function,
+        }
     }
 }
 
@@ -128,13 +133,18 @@ pub trait ReadOnlyPciInventory {
 mod tests {
     use super::*;
 
-    const A: PciAddress = PciAddress { segment: 2, bus: 3, device: 4, function: 5 };
+    const A: PciAddress = PciAddress {
+        segment: 2,
+        bus: 3,
+        device: 4,
+        function: 5,
+    };
 
     #[test]
     fn preserves_full_domain_bdf_revision_and_subsystem() {
-        let id = PciIdentity::from_config_dwords(
-            A, 0x73bf_1002, 0x0300_00a1, 0, Some(0xe438_1da2),
-        ).unwrap().unwrap();
+        let id = PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_00a1, 0, Some(0xe438_1da2))
+            .unwrap()
+            .unwrap();
         assert_eq!(id.address, A);
         assert_eq!(id.device_id, 0x73bf);
         assert_eq!(id.revision, 0xa1);
@@ -145,28 +155,63 @@ mod tests {
 
     #[test]
     fn missing_function_is_not_invalid_and_bad_vendor_is_invalid() {
-        assert_eq!(PciIdentity::from_config_dwords(A, u32::MAX, u32::MAX, u32::MAX, None), Ok(None));
-        assert_eq!(PciIdentity::from_config_dwords(A, 0, 0, 0, None), Err(PciIdentityError::InvalidVendor));
+        assert_eq!(
+            PciIdentity::from_config_dwords(A, u32::MAX, u32::MAX, u32::MAX, None),
+            Ok(None)
+        );
+        assert_eq!(
+            PciIdentity::from_config_dwords(A, 0, 0, 0, None),
+            Err(PciIdentityError::InvalidVendor)
+        );
     }
 
     #[test]
     fn rejects_bad_slot_or_function_and_bad_header() {
         let invalid = PciAddress { device: 32, ..A };
-        assert_eq!(PciIdentity::from_config_dwords(invalid, 0x73bf_1002, 0x0300_0000, 0, None), Err(PciIdentityError::InvalidAddress));
-        assert_eq!(PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_0000, u32::MAX, None), Err(PciIdentityError::InvalidHeader));
-        assert_eq!(PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_0000, 0x0001_0000, Some(0x1234_5678)), Err(PciIdentityError::InvalidHeader));
+        assert_eq!(
+            PciIdentity::from_config_dwords(invalid, 0x73bf_1002, 0x0300_0000, 0, None),
+            Err(PciIdentityError::InvalidAddress)
+        );
+        assert_eq!(
+            PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_0000, u32::MAX, None),
+            Err(PciIdentityError::InvalidHeader)
+        );
+        assert_eq!(
+            PciIdentity::from_config_dwords(
+                A,
+                0x73bf_1002,
+                0x0300_0000,
+                0x0001_0000,
+                Some(0x1234_5678)
+            ),
+            Err(PciIdentityError::InvalidHeader)
+        );
     }
 
     #[test]
     fn bad_subsystem_and_unknown_class_are_rejected() {
-        assert_eq!(PciIdentity::from_config_dwords(A, 0x73bf_1002, 0xff00_0000, 0, None), Err(PciIdentityError::InvalidClass));
-        assert_eq!(PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_0000, 0, Some(0x1234_0000)), Err(PciIdentityError::IncompleteSubsystem));
+        assert_eq!(
+            PciIdentity::from_config_dwords(A, 0x73bf_1002, 0xff00_0000, 0, None),
+            Err(PciIdentityError::InvalidClass)
+        );
+        assert_eq!(
+            PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_0000, 0, Some(0x1234_0000)),
+            Err(PciIdentityError::IncompleteSubsystem)
+        );
     }
 
     #[test]
     fn legacy_adapter_does_not_claim_nonzero_segment_support() {
         let loc = PciAddress::from_legacy_segment_zero(1, 31, 7);
-        assert_eq!(loc, PciAddress { segment: 0, bus: 1, device: 31, function: 7 });
+        assert_eq!(
+            loc,
+            PciAddress {
+                segment: 0,
+                bus: 1,
+                device: 31,
+                function: 7
+            }
+        );
         assert!(loc.is_valid());
         assert!(!PciAddress { function: 8, ..loc }.is_valid());
     }
