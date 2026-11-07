@@ -60,7 +60,7 @@ impl LaunchTicket {
 pub enum BridgeError {
     UnknownService, AccessDenied, InvalidState, InvalidTicket, TicketExpired,
     DuplicatePid, KernelRejected, DeadlineOverflow, GenerationExhausted,
-    CleanupPending, InconsistentModel, Service(ServiceError),
+    CleanupPending, ActiveDependent, InconsistentModel, Service(ServiceError),
 }
 impl From<ServiceError> for BridgeError {
     fn from(error: ServiceError) -> Self { Self::Service(error) }
@@ -323,6 +323,29 @@ impl<P: Copy + Eq> ServiceSupervisor<P> {
         });
         Ok(())
     }
+    /// A failed provider must not release its last supervised binding while
+    /// transitive consumers still own unacknowledged processes or launches.
+    fn active_required_dependents(&self, id: ServiceId) -> bool {
+        let len = self.model.registry().len();
+        let mut transitively_dependent = [false; MAX_SERVICES];
+        transitively_dependent[id.index()] = true;
+        for _ in 0..len {
+            for child in 0..len {
+                for parent in 0..len {
+                    if transitively_dependent[parent] && self.model.registry().requires(
+                        ServiceId(child as u8), ServiceId(parent as u8)
+                    ) {
+                        transitively_dependent[child] = true;
+                    }
+                }
+            }
+        }
+        (0..len).any(|n| n != id.index() && transitively_dependent[n]
+            && (self.bound[n].is_some()
+                || self.launching[n].is_some()
+                || self.stopping[n].is_some()
+                || self.cleaning[n].is_some()))
+    }
     /// A cleanup ACK is trusted only if the kernel confirms exit, handle
     /// revocation, queue closure, IRQ/DMA quiescence and resource reclaim.
     pub fn confirm_cleaned<B: ProcessBoundary<Pid = P>>(
@@ -333,6 +356,9 @@ impl<P: Copy + Eq> ServiceSupervisor<P> {
         let cleanup = self.cleaning[n].ok_or(BridgeError::InvalidTicket)?;
         if ticket.epoch != self.epoch || cleanup.ticket != ticket || cleanup.pid != pid {
             return Err(BridgeError::InvalidTicket);
+        }
+        if self.active_required_dependents(ticket.id) {
+            return Err(BridgeError::ActiveDependent);
         }
         if !boundary.verify_cleaned(ticket, pid) {
             return Err(BridgeError::KernelRejected);
@@ -411,7 +437,7 @@ impl<P: Copy + Eq> ServiceSupervisor<P> {
                 self.mark_stopping_or_cancel(id, now)?;
             }
             if let Some(cleanup) = &mut self.cleaning[n] {
-                if !cleanup.emitted {
+                if !cleanup.emitted && !self.active_required_dependents(id) {
                     cleanup.emitted = true;
                     return Ok(Some(SupervisorAction::Cleanup {
                         ticket: cleanup.ticket, pid: cleanup.pid,
