@@ -1,0 +1,122 @@
+name: ZillaOS cross-workstream integration gate
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - '.github/workflows/integration-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-and-negative-models:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.90 host and no_std target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Combined host library unit tests (including PCI/AMD bridge)
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Standalone ServiceManager tests (model, not a daemon)
+        run: |
+          rustc +1.90.0 --edition 2024 --test tests/service_manager_host.rs -o /tmp/zilla-services-host
+          /tmp/zilla-services-host --nocapture
+      - name: Typed ServiceSupervisor model negative tests
+        run: |
+          rustc +1.90.0 --edition 2024 --test tests/service_supervisor_host.rs -o /tmp/zilla-supervisor-host
+          /tmp/zilla-supervisor-host --nocapture
+      - name: Canonical ProcessTable/Pid supervisor bridge tests
+        run: |
+          rustc +1.90.0 --edition 2024 --test tests/service_supervisor_kernel_pid.rs -o /tmp/zilla-supervisor-pid
+          /tmp/zilla-supervisor-pid --nocapture
+      - name: no_std ServiceManager syntax/type proof
+        run: |
+          rustc +1.90.0 --edition 2024 --crate-type lib \
+            --target x86_64-unknown-none tests/service_manager_no_std.rs \
+            --emit metadata -o /tmp/zilla-services.rmeta
+      - name: Existing Python regression tests
+        run: python3 -m unittest discover -s tests -v
+
+  baremetal-feature-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.90 bare-metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Bare-metal kernel compile, default
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: Bare-metal kernel compile, desktop vm-demo
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+      - name: Bare-metal kernel compile, isolated cooperative Ring3
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-threads
+      - name: Bare-metal kernel compile, opt-in IRQ preemption
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-preempt
+
+  formatting:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.90 rustfmt
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt
+      - name: Check adapter formatting separately
+        run: rustfmt +1.90.0 --edition 2024 --check src/platform/amd_bridge.rs
+      - name: Report repository-wide formatting drift (pre-existing drift is not masked)
+        run: cargo +1.90.0 fmt --all -- --check
+
+  qemu-ring3-and-fault-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU, OVMF and ISO tools in disposable CI runner
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install pinned bare-metal Rust
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build independent experimental Ring3 ISO
+        run: bash scripts/build.sh ring3
+      - name: Require real native Ring3 entry/exit evidence
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-uefi.iso --timeout 90 | tee ring3.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_ENTER' ring3.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_RETURNED' ring3.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_OK' ring3.log
+          if grep -q 'ZILLAOS_EXCEPTION_FATAL\|ZILLAOS_PANIC\|ZILLAOS_NATIVE_RING3_FAILED' ring3.log; then exit 1; fi
+      - name: Build guard-page negative ISO
+        run: bash scripts/build.sh ring3-guard
+      - name: Require confined user guard-page fault
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-guard-uefi.iso --timeout 90 | tee guard.log
+          grep -qx 'ZILLAOS_NATIVE_USER_FAULT_VECTOR=0x000000000000000e' guard.log
+          grep -qx 'ZILLAOS_NATIVE_USER_GUARD_FAULT_OK' guard.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_OK' guard.log
+          if grep -q 'ZILLAOS_EXCEPTION_FATAL\|ZILLAOS_PANIC\|ZILLAOS_NATIVE_RING3_FAILED' guard.log; then exit 1; fi
+      - name: Build kernel-boundary negative ISO
+        run: bash scripts/build.sh ring3-kernel
+      - name: Require supervisor read denial and clean kernel return
+        run: |
+          set -o pipefail
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-kernel-uefi.iso --timeout 90 | tee kernel-boundary.log
+          grep -qx 'ZILLAOS_NATIVE_USER_KERNEL_ACCESS_DENIED' kernel-boundary.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_RETURNED' kernel-boundary.log
+          grep -qx 'ZILLAOS_BOOT_OK' kernel-boundary.log
+          if grep -q 'ZILLAOS_EXCEPTION_FATAL\|ZILLAOS_PANIC\|ZILLAOS_NATIVE_RING3_FAILED' kernel-boundary.log; then exit 1; fi
+      - name: Publish run logs for independent review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-cross-workstream-ring3-evidence
+          path: |
+            ring3.log
+            guard.log
+            kernel-boundary.log
+          if-no-files-found: warn

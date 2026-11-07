@@ -14,6 +14,12 @@ pub mod page_table_walk;
 #[path = "kernel/process/mod.rs"]
 pub mod process;
 
+#[path = "kernel/capabilities/mod.rs"]
+pub mod capabilities;
+
+#[path = "kernel/ipc/mod.rs"]
+pub mod ipc;
+
 #[path = "kernel/exceptions.rs"]
 pub mod exceptions;
 
@@ -41,3 +47,5 @@ pub mod install_plan;
 pub mod storage_pci;
 #[path = "fs/gpt.rs"]
 pub mod gpt;
+
+pub mod platform;
