@@ -49,13 +49,21 @@ pub fn initialize() -> bool {
 }
 
 pub fn current() -> Option<ImageView> {
-    if !READY.load(Ordering::Acquire) { return None; }
+    if !READY.load(Ordering::Acquire) {
+        return None;
+    }
     let width = WIDTH.load(Ordering::Relaxed);
     let height = HEIGHT.load(Ordering::Relaxed);
     let count = width.checked_mul(height)?;
-    if count == 0 || count > MAX_PIXELS { return None; }
+    if count == 0 || count > MAX_PIXELS {
+        return None;
+    }
     // SAFETY: ready is published only after the full image copy. No writes
     // occur after publication; the memory belongs to kernel BSS, not Limine.
     let pixels = unsafe { &*PIXELS.0.get() };
-    Some(ImageView { width, height, pixels: &pixels[..count] })
+    Some(ImageView {
+        width,
+        height,
+        pixels: &pixels[..count],
+    })
 }

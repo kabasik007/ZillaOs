@@ -211,8 +211,10 @@ mod tests {
             let next = alloc.reserve_frame().unwrap().address;
             assert_eq!(next % PAGE_SIZE, 0);
             assert!(next > previous);
-            assert!((PAGE_SIZE..16 * PAGE_SIZE).contains(&next)
-                || (64 * PAGE_SIZE..67 * PAGE_SIZE).contains(&next));
+            assert!(
+                (PAGE_SIZE..16 * PAGE_SIZE).contains(&next)
+                    || (64 * PAGE_SIZE..67 * PAGE_SIZE).contains(&next)
+            );
             previous = next;
         }
         assert_eq!(alloc.remaining_frames(), 0);
@@ -233,12 +235,8 @@ mod tests {
 
     #[test]
     fn partial_pages_are_never_allocated() {
-        let mut alloc = FrameAllocator::from_regions(&[region(
-            PAGE_SIZE + 3,
-            2 * PAGE_SIZE,
-            0,
-        )])
-        .unwrap();
+        let mut alloc =
+            FrameAllocator::from_regions(&[region(PAGE_SIZE + 3, 2 * PAGE_SIZE, 0)]).unwrap();
         assert_eq!(alloc.remaining_frames(), 1);
         assert_eq!(alloc.reserve_frame().unwrap().address, 2 * PAGE_SIZE);
         assert!(alloc.reserve_frame().is_none());
@@ -247,10 +245,7 @@ mod tests {
     #[test]
     fn overlapping_reserved_region_is_rejected() {
         assert!(matches!(
-            FrameAllocator::from_regions(&[
-                region(0x1000, 0x8000, 0),
-                region(0x2000, 0x1000, 1),
-            ]),
+            FrameAllocator::from_regions(&[region(0x1000, 0x8000, 0), region(0x2000, 0x1000, 1),]),
             Err(MemoryError::OverlappingRegions)
         ));
     }
@@ -297,7 +292,8 @@ mod tests {
             region(0x1000, 0x2000, 2),
             region(0x2000, 0x2000, 1),
             region(0x10000, 0x4000, 0),
-        ]).unwrap();
+        ])
+        .unwrap();
         assert_eq!(allocator.remaining_frames(), 4);
         assert_eq!(allocator.reserve_frame().unwrap().address, 0x10000);
     }
@@ -305,10 +301,7 @@ mod tests {
     #[test]
     fn usable_overlap_with_reserved_region_is_rejected() {
         assert!(matches!(
-            FrameAllocator::from_regions(&[
-                region(0x2000, 0x4000, 1),
-                region(0x4000, 0x4000, 0),
-            ]),
+            FrameAllocator::from_regions(&[region(0x2000, 0x4000, 1), region(0x4000, 0x4000, 0),]),
             Err(MemoryError::OverlappingRegions)
         ));
     }
@@ -320,14 +313,11 @@ mod tests {
             FrameAllocator::from_regions_with_physical_bits(&[region_at_4gb], 32),
             Err(MemoryError::PhysicalAddressOutOfRange)
         ));
-        let mut alloc = FrameAllocator::from_regions_with_physical_bits(
-            &[region_at_4gb], 36
-        ).unwrap();
+        let mut alloc =
+            FrameAllocator::from_regions_with_physical_bits(&[region_at_4gb], 36).unwrap();
         assert_eq!(alloc.reserve_frame().unwrap().address, 1u64 << 32);
         assert!(matches!(
-            FrameAllocator::from_regions_with_physical_bits(
-                &[region(0x1000, PAGE_SIZE, 0)], 0
-            ),
+            FrameAllocator::from_regions_with_physical_bits(&[region(0x1000, PAGE_SIZE, 0)], 0),
             Err(MemoryError::InvalidPhysicalAddressWidth)
         ));
     }

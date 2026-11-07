@@ -5,31 +5,31 @@
 // exclusive 4KiB frame reservations, HHDM pattern/readback/zero probe.
 
 mod cpu;
+#[cfg(feature = "vm-demo")]
+mod drivers;
 mod framebuffer;
 #[cfg(feature = "vm-demo")]
 mod graphics;
 #[cfg(feature = "vm-demo")]
-mod wallpaper_asset;
-#[cfg(feature = "vm-demo")]
 mod input;
-#[cfg(feature = "vm-demo")]
-mod pci_io;
 mod interrupts;
 mod limine;
-#[cfg(feature = "vm-demo")]
-mod drivers;
 mod memtest;
-#[cfg(feature = "paging-audit")]
-mod page_table_observer;
-#[cfg(feature = "vm-staging")]
-mod native_vm_staging;
 #[cfg(feature = "native-ring3")]
 mod native_ring3;
-#[cfg(feature = "native-ring3-threads")]
-mod native_ring3_threads;
 #[cfg(feature = "native-ring3-preempt")]
 mod native_ring3_preempt;
+#[cfg(feature = "native-ring3-threads")]
+mod native_ring3_threads;
+#[cfg(feature = "vm-staging")]
+mod native_vm_staging;
+#[cfg(feature = "paging-audit")]
+mod page_table_observer;
+#[cfg(feature = "vm-demo")]
+mod pci_io;
 mod serial;
+#[cfg(feature = "vm-demo")]
+mod wallpaper_asset;
 
 use core::panic::PanicInfo;
 use zillaos_kernel::memory::FrameAllocator;
@@ -121,7 +121,8 @@ pub extern "C" fn _start() -> ! {
 
     // SAFETY: allocator returns distinct, exclusively owned USABLE physical
     // pages, and Limine base revision 6 maps USABLE pages via the HHDM.
-    if unsafe { memtest::two_frame_probe(first, second, offset, cpu.virtual_address_bits) }.is_err() {
+    if unsafe { memtest::two_frame_probe(first, second, offset, cpu.virtual_address_bits) }.is_err()
+    {
         serial::write("ERR: physical frame HHDM readback mismatch\n");
         return_boot_failure();
     }
@@ -229,11 +230,11 @@ pub extern "C" fn _start() -> ! {
         use zillaos_kernel::desktop::{App, Desktop, Layout};
         use zillaos_kernel::setup::Wizard;
 
-        let layout = limine::framebuffer()
-            .and_then(|fb| Layout::for_size(fb.width, fb.height));
-        let mut wizard = Wizard::new(layout.unwrap_or_else(|| {
-            Layout::for_size(1024, 768).expect("static fallback viewport")
-        }));
+        let layout = limine::framebuffer().and_then(|fb| Layout::for_size(fb.width, fb.height));
+        let mut wizard = Wizard::new(
+            layout
+                .unwrap_or_else(|| Layout::for_size(1024, 768).expect("static fallback viewport")),
+        );
 
         // Passive PCI config header scan only. NO AHCI/NVMe commands, sector
         // reads, drive-capacity guesses or installation writes are performed.
@@ -279,8 +280,7 @@ pub extern "C" fn _start() -> ! {
         // This is diagnostics ONLY: no AMD BARs, firmware, MMIO or DMA.
         let mut amd_candidates = 0u64;
         if let Some(registry) = pci.registry() {
-            let amd_view =
-                zillaos_kernel::platform::amd_bridge::AmdRegistryAdapter::new(registry);
+            let amd_view = zillaos_kernel::platform::amd_bridge::AmdRegistryAdapter::new(registry);
             for device in registry.snapshot().iter() {
                 if device.info.identity.is_amd_display_candidate() {
                     use zillaos_kernel::video::gpu::amd::pci::PciAddress as AmdAddress;
@@ -377,7 +377,8 @@ pub extern "C" fn _start() -> ! {
                         || wizard.hostname != before.hostname
                         || wizard.dark != before.dark
                         || wizard.selection != before.selection;
-                    if !was_mouse || visual_change
+                    if !was_mouse
+                        || visual_change
                         || !graphics::redraw_setup_cursor(before.pointer, &wizard)
                     {
                         graphics::render_setup(&wizard);
@@ -393,21 +394,21 @@ pub extern "C" fn _start() -> ! {
 
         if setup_available && wizard.finished() {
             serial::write("ZILLAOS_SETUP_COMPLETE\n");
-        serial::write("ZILLAOS_SETUP_LANGUAGE=");
-        serial::write(wizard.language.code());
-        serial::write("\nZILLAOS_SETUP_TIMEZONE=");
-        serial::write(wizard.timezone.identifier());
-        serial::write("\nZILLAOS_SETUP_HOSTNAME=");
-        serial::write(wizard.hostname.as_str());
-        serial::write("\nZILLAOS_SETUP_REGION=");
-        match wizard.region {
-            zillaos_kernel::setup::Region::Ukraine => serial::write("UA\n"),
-            zillaos_kernel::setup::Region::Poland => serial::write("PL\n"),
-            zillaos_kernel::setup::Region::UnitedStates => serial::write("US\n"),
-        }
-        serial::write("ZILLAOS_SETUP_THEME=");
-        serial::write(if wizard.dark { "DARK\n" } else { "LIGHT\n" });
-        serial::write("ZILLAOS_SETUP_VOLATILE_ONLY\n");
+            serial::write("ZILLAOS_SETUP_LANGUAGE=");
+            serial::write(wizard.language.code());
+            serial::write("\nZILLAOS_SETUP_TIMEZONE=");
+            serial::write(wizard.timezone.identifier());
+            serial::write("\nZILLAOS_SETUP_HOSTNAME=");
+            serial::write(wizard.hostname.as_str());
+            serial::write("\nZILLAOS_SETUP_REGION=");
+            match wizard.region {
+                zillaos_kernel::setup::Region::Ukraine => serial::write("UA\n"),
+                zillaos_kernel::setup::Region::Poland => serial::write("PL\n"),
+                zillaos_kernel::setup::Region::UnitedStates => serial::write("US\n"),
+            }
+            serial::write("ZILLAOS_SETUP_THEME=");
+            serial::write(if wizard.dark { "DARK\n" } else { "LIGHT\n" });
+            serial::write("ZILLAOS_SETUP_VOLATILE_ONLY\n");
         } else {
             serial::write("ZILLAOS_SETUP_NOT_COMPLETED\n");
         }
@@ -421,9 +422,10 @@ pub extern "C" fn _start() -> ! {
             "ZILLAOS_WALLPAPER_MODULE=ABSENT_OR_INVALID\n"
         });
 
-        let mut desktop = Desktop::with_layout(layout.unwrap_or_else(|| {
-            Layout::for_size(1024, 768).expect("static fallback viewport")
-        }));
+        let mut desktop = Desktop::with_layout(
+            layout
+                .unwrap_or_else(|| Layout::for_size(1024, 768).expect("static fallback viewport")),
+        );
         desktop.dark = wizard.dark;
         desktop.custom_wallpaper_available = boot_wallpaper;
         if boot_wallpaper {

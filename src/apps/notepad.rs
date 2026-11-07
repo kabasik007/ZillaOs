@@ -31,31 +31,53 @@ pub struct Notepad {
 impl Notepad {
     pub const fn new() -> Self {
         let mut name = [0u8; NAME_LIMIT];
-        name[0] = b'N'; name[1] = b'O'; name[2] = b'T'; name[3] = b'E';
-        name[4] = b'0'; name[5] = b'1'; name[6] = b'.';
-        name[7] = b'T'; name[8] = b'X'; name[9] = b'T';
-        Self { data: [0; EDITOR_LIMIT], len: 0, cursor: 0,
-               filename: name, filename_len: 10, dirty: false,
-               status: EditorStatus::Ready, next_number: 2, revision: 0 }
+        name[0] = b'N';
+        name[1] = b'O';
+        name[2] = b'T';
+        name[3] = b'E';
+        name[4] = b'0';
+        name[5] = b'1';
+        name[6] = b'.';
+        name[7] = b'T';
+        name[8] = b'X';
+        name[9] = b'T';
+        Self {
+            data: [0; EDITOR_LIMIT],
+            len: 0,
+            cursor: 0,
+            filename: name,
+            filename_len: 10,
+            dirty: false,
+            status: EditorStatus::Ready,
+            next_number: 2,
+            revision: 0,
+        }
     }
 
     pub fn filename(&self) -> &str {
         core::str::from_utf8(&self.filename[..self.filename_len]).unwrap_or("")
     }
-    pub fn bytes(&self) -> &[u8] { &self.data[..self.len] }
+    pub fn bytes(&self) -> &[u8] {
+        &self.data[..self.len]
+    }
     pub fn content(&self) -> &str {
         core::str::from_utf8(self.bytes()).unwrap_or("")
     }
-    pub const fn cursor(&self) -> usize { self.cursor }
+    pub const fn cursor(&self) -> usize {
+        self.cursor
+    }
 
     pub fn insert(&mut self, ch: u8) -> bool {
-        if ch != b'\n' && !(32..=126).contains(&ch) { return false; }
+        if ch != b'\n' && !(32..=126).contains(&ch) {
+            return false;
+        }
         if self.len >= EDITOR_LIMIT {
             self.status = EditorStatus::BufferFull;
             self.revision = self.revision.wrapping_add(1);
             return false;
         }
-        self.data.copy_within(self.cursor..self.len, self.cursor + 1);
+        self.data
+            .copy_within(self.cursor..self.len, self.cursor + 1);
         self.data[self.cursor] = ch;
         self.cursor += 1;
         self.len += 1;
@@ -66,8 +88,11 @@ impl Notepad {
     }
 
     pub fn backspace(&mut self) -> bool {
-        if self.cursor == 0 { return false; }
-        self.data.copy_within(self.cursor..self.len, self.cursor - 1);
+        if self.cursor == 0 {
+            return false;
+        }
+        self.data
+            .copy_within(self.cursor..self.len, self.cursor - 1);
         self.cursor -= 1;
         self.len -= 1;
         self.data[self.len] = 0;
@@ -78,13 +103,17 @@ impl Notepad {
     }
 
     pub fn move_left(&mut self) -> bool {
-        if self.cursor == 0 { return false; }
+        if self.cursor == 0 {
+            return false;
+        }
         self.cursor -= 1;
         self.revision = self.revision.wrapping_add(1);
         true
     }
     pub fn move_right(&mut self) -> bool {
-        if self.cursor >= self.len { return false; }
+        if self.cursor >= self.len {
+            return false;
+        }
         self.cursor += 1;
         self.revision = self.revision.wrapping_add(1);
         true
@@ -114,7 +143,9 @@ impl Notepad {
             return false;
         }
         let n = self.next_number;
-        if n > 99 { return false; }
+        if n > 99 {
+            return false;
+        }
         self.next_number = n + 1;
         self.data = [0; EDITOR_LIMIT];
         self.len = 0;
@@ -143,7 +174,10 @@ impl Notepad {
         }
         if !crate::fs::ramfs::valid_filename(name)
             || content.len() > EDITOR_LIMIT
-            || !content.iter().all(|b| *b == b'\n' || (32..=126).contains(b)) {
+            || !content
+                .iter()
+                .all(|b| *b == b'\n' || (32..=126).contains(b))
+        {
             return false;
         }
         self.data = [0; EDITOR_LIMIT];
@@ -169,7 +203,10 @@ impl Notepad {
                 lines += 1;
                 col = 0;
             } else {
-                if col >= width { lines += 1; col = 0; }
+                if col >= width {
+                    lines += 1;
+                    col = 0;
+                }
                 col += 1;
             }
         }
@@ -184,14 +221,21 @@ impl Notepad {
                 row += 1;
                 col = 0;
             } else {
-                if col >= width { row += 1; col = 0; }
+                if col >= width {
+                    row += 1;
+                    col = 0;
+                }
                 col += 1;
             }
         }
         (row, col)
     }
 }
-impl Default for Notepad { fn default() -> Self { Self::new() } }
+impl Default for Notepad {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -200,7 +244,9 @@ mod tests {
     fn edits_with_movable_cursor_and_saves_to_volatile_documents() {
         let mut editor = Notepad::new();
         let mut fs = RamFs::new();
-        for byte in b"Helo" { assert!(editor.insert(*byte)); }
+        for byte in b"Helo" {
+            assert!(editor.insert(*byte));
+        }
         assert!(editor.move_left());
         assert!(editor.insert(b'l'));
         assert_eq!(editor.content(), "Hello");
@@ -233,7 +279,9 @@ mod tests {
     #[test]
     fn bounded_text_cannot_overflow_or_clobber_ramfs_data() {
         let mut editor = Notepad::new();
-        for _ in 0..EDITOR_LIMIT { assert!(editor.insert(b'X')); }
+        for _ in 0..EDITOR_LIMIT {
+            assert!(editor.insert(b'X'));
+        }
         assert!(!editor.insert(b'Y'));
         assert_eq!(editor.status, EditorStatus::BufferFull);
         assert_eq!(editor.content().len(), EDITOR_LIMIT);
@@ -244,7 +292,9 @@ mod tests {
     #[test]
     fn text_cursor_wraps_without_dropping_newlines() {
         let mut editor = Notepad::new();
-        for b in b"ABCD\nEF" { editor.insert(*b); }
+        for b in b"ABCD\nEF" {
+            editor.insert(*b);
+        }
         assert_eq!(editor.visual_line_count(3), 3);
         assert_eq!(editor.cursor_visual(3), (2, 2));
     }

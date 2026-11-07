@@ -74,9 +74,7 @@ impl Layout {
         }
         let fb_end = validate_resource(self.framebuffer, physical_bits)?;
         let fifo_end = validate_resource(self.fifo, physical_bits)?;
-        if self.framebuffer.physical_base < fifo_end
-            && self.fifo.physical_base < fb_end
-        {
+        if self.framebuffer.physical_base < fifo_end && self.fifo.physical_base < fb_end {
             return Err(LayoutError::AperturesOverlap);
         }
         let Some(fifo_bytes) = device.fifo_bytes else {
@@ -106,7 +104,11 @@ mod tests {
 
     fn pci() -> PciDevice {
         PciDevice {
-            location: PciLocation { bus: 0, device: 15, function: 0 },
+            location: PciLocation {
+                bus: 0,
+                device: 15,
+                function: 0,
+            },
             io_base: 0x1070,
             framebuffer_bar: 0xe000_0000,
             fifo_bar: 0xe800_0000,
@@ -149,7 +151,10 @@ mod tests {
     fn rejects_untrusted_bar_address_and_disabled_decode() {
         let mut l = layout();
         l.fifo.physical_base += 0x1000;
-        assert_eq!(l.validate(pci(), device(), 36), Err(LayoutError::BarAddressMismatch));
+        assert_eq!(
+            l.validate(pci(), device(), 36),
+            Err(LayoutError::BarAddressMismatch)
+        );
         let mut p = pci();
         p.memory_decode_enabled = false;
         assert_eq!(
@@ -172,14 +177,24 @@ mod tests {
     fn rejects_resource_alignment_and_physical_overflow() {
         let mut l = layout();
         l.fifo.length = 7000;
-        assert_eq!(l.validate(pci(), device(), 36), Err(LayoutError::InvalidResource));
+        assert_eq!(
+            l.validate(pci(), device(), 36),
+            Err(LayoutError::InvalidResource)
+        );
         assert_eq!(
             validate_resource(
-                Resource { physical_base: 0x1_0000_0000, length: 4096 }, 32
+                Resource {
+                    physical_base: 0x1_0000_0000,
+                    length: 4096
+                },
+                32
             ),
             Err(LayoutError::ResourceOutsidePhysicalAddressSpace)
         );
-        assert_eq!(layout().validate(pci(), device(), 0), Err(LayoutError::InvalidPhysicalWidth));
+        assert_eq!(
+            layout().validate(pci(), device(), 0),
+            Err(LayoutError::InvalidPhysicalWidth)
+        );
     }
 
     #[test]

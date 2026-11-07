@@ -1,24 +1,26 @@
 //! Zilla Desktop event state and small translated PS/2 keyboard decoder.
 //! Real processes and IPC-backed application surfaces are a later milestone.
 
-use crate::mouse::MousePacket;
-use crate::fs::{self, Browser};
-use crate::fs::ramfs::{RamFs, DOCUMENTS_DIR};
 use crate::apps::notepad::Notepad;
-use crate::apps::notepad_ui::{editor_action, EditorAction};
-use crate::shell::clock::{ClockTime, ClockDate};
-use crate::shell::desktop_icons::DesktopIcons;
-use crate::video::VideoAdapter;
-use crate::shell::{start_menu, taskbar, task_view};
-use crate::shell::personalization::{self, Accent, Wallpaper, SettingsPage, SettingsAction, Menu, MenuAction};
-use crate::shell::theme_profile::{ThemeProfile, ProfileStatus, PROFILE_FILE};
-use crate::locale::{text as tr, TextId};
+use crate::apps::notepad_ui::{EditorAction, editor_action};
+use crate::fs::ramfs::{DOCUMENTS_DIR, RamFs};
+use crate::fs::{self, Browser};
+use crate::locale::{TextId, text as tr};
+use crate::mouse::MousePacket;
 use crate::setup::{DeviceName, Language, Region, TimeZone};
+use crate::shell::clock::{ClockDate, ClockTime};
+use crate::shell::desktop_icons::DesktopIcons;
+use crate::shell::personalization::{
+    self, Accent, Menu, MenuAction, SettingsAction, SettingsPage, Wallpaper,
+};
+use crate::shell::theme_profile::{PROFILE_FILE, ProfileStatus, ThemeProfile};
+use crate::shell::{start_menu, task_view, taskbar};
+use crate::video::VideoAdapter;
 use crate::window_manager::{Move, WindowManager};
 
 pub use crate::apps::App;
-use crate::services::app_manager::{ApplicationManager, LaunchTarget};
 use crate::apps::app_center;
+use crate::services::app_manager::{ApplicationManager, LaunchTarget};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Key {
@@ -208,7 +210,9 @@ impl Desktop {
         if self.launcher_step != old {
             self.changes = self.changes.wrapping_add(1);
             true
-        } else { false }
+        } else {
+            false
+        }
     }
 
     /// CMOS RTC calendar date; no timezone conversion is claimed.
@@ -246,7 +250,10 @@ impl Desktop {
     /// taskbar, launcher, shortcuts or draggable desktop folder icons.
     fn can_open_desktop_menu(&self, x: usize, y: usize) -> bool {
         if y < self.layout.top_bar
-            || y >= self.layout.height.saturating_sub(self.layout.dock_height + 12)
+            || y >= self
+                .layout
+                .height
+                .saturating_sub(self.layout.dock_height + 12)
             || self.launcher
             || self.launcher_step != 0
             || Self::desktop_shortcut_at(self.layout, x, y).is_some()
@@ -276,7 +283,9 @@ impl Desktop {
     }
 
     fn load_theme_profile(&mut self) {
-        let parsed = self.ramfs.find(PROFILE_FILE)
+        let parsed = self
+            .ramfs
+            .find(PROFILE_FILE)
             .and_then(|index| self.ramfs.get(index))
             .map(|file| ThemeProfile::decode(file.content()));
         match parsed {
@@ -284,9 +293,7 @@ impl Desktop {
             Some(Err(_)) => self.profile_status = ProfileStatus::InvalidFile,
             Some(Ok(profile)) => {
                 // Custom profiles require a valid boot-time image asset.
-                if profile.wallpaper == Wallpaper::Custom
-                    && !self.custom_wallpaper_available
-                {
+                if profile.wallpaper == Wallpaper::Custom && !self.custom_wallpaper_available {
                     self.profile_status = ProfileStatus::ImageUnavailable;
                     return;
                 }
@@ -346,10 +353,14 @@ impl Desktop {
     /// All Files hit testing lives in the shell module; browser state owns
     /// only virtual in-memory paths, never host or block-device operations.
     fn files_click(&mut self, rect: crate::window_manager::Rect, x: usize, y: usize) {
-        use crate::shell::files_interaction::{files_action, FilesAction};
+        use crate::shell::files_interaction::{FilesAction, files_action};
         match files_action(rect, x, y) {
-            Some(FilesAction::Home) => { self.files.home(); }
-            Some(FilesAction::Up) => { self.files.up(); }
+            Some(FilesAction::Home) => {
+                self.files.home();
+            }
+            Some(FilesAction::Up) => {
+                self.files.up();
+            }
             Some(FilesAction::OpenRow(index)) => {
                 let static_count = fs::child_count(self.files.current);
                 if self.files.current == DOCUMENTS_DIR && index >= static_count {
@@ -365,11 +376,14 @@ impl Desktop {
         }
     }
 
-    fn notepad_click(&mut self, rect: crate::window_manager::Rect,
-                     x: usize, y: usize) {
+    fn notepad_click(&mut self, rect: crate::window_manager::Rect, x: usize, y: usize) {
         match editor_action(rect, x, y) {
-            Some(EditorAction::New) => { self.notepad.new_document(); }
-            Some(EditorAction::Save) => { let _ = self.notepad.save(&mut self.ramfs); }
+            Some(EditorAction::New) => {
+                self.notepad.new_document();
+            }
+            Some(EditorAction::Save) => {
+                let _ = self.notepad.save(&mut self.ramfs);
+            }
             Some(EditorAction::Documents) => {
                 self.files.current = DOCUMENTS_DIR;
                 self.files.preview_file = None;
@@ -417,9 +431,13 @@ impl Desktop {
             return None;
         }
         let start = layout.top_bar + 145;
-        if y < start { return None; }
+        if y < start {
+            return None;
+        }
         let index = (y - start) / 78;
-        if (y - start) % 78 >= 66 { return None; }
+        if (y - start) % 78 >= 66 {
+            return None;
+        }
         App::ALL.get(index).copied()
     }
 
@@ -443,14 +461,30 @@ impl Desktop {
         if !self.pointer.visible {
             return false;
         }
-        let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons,
-                      self.context_menu, self.settings_page, self.wallpaper, self.accent, self.profile_status);
+        let before = (
+            self.windows,
+            self.pointer,
+            self.launcher,
+            self.dark,
+            self.language,
+            self.files,
+            self.icons,
+            self.context_menu,
+            self.settings_page,
+            self.wallpaper,
+            self.accent,
+            self.profile_status,
+        );
         let old_note = self.notepad.revision;
         let old_ramfs = self.ramfs.revision;
-        self.pointer.x = self.pointer.x
+        self.pointer.x = self
+            .pointer
+            .x
             .saturating_add_signed(packet.dx as isize)
             .min(self.layout.width.saturating_sub(1));
-        self.pointer.y = self.pointer.y
+        self.pointer.y = self
+            .pointer
+            .y
             .saturating_add_signed(packet.dy as isize)
             .min(self.layout.height.saturating_sub(1));
 
@@ -463,7 +497,9 @@ impl Desktop {
                 self.context_menu = Some(Menu::at(self.layout, x, y));
             } else {
                 self.context_menu = None;
-                if self.launcher { self.launcher = false; }
+                if self.launcher {
+                    self.launcher = false;
+                }
             }
         }
         self.right_down = packet.right;
@@ -506,7 +542,7 @@ impl Desktop {
                     2 => {
                         self.dark = !self.dark;
                         self.profile_status = ProfileStatus::Modified;
-                    },
+                    }
                     3 => self.windows.show_desktop(),
                     _ => self.toggle_task_manager(),
                 }
@@ -528,9 +564,9 @@ impl Desktop {
                 } else if title {
                     self.pointer.dragging = Some(app);
                 } else if app == App::Settings {
-                    if let Some(action) = personalization::settings_hit(
-                        rect, self.settings_page, x, y,
-                    ) {
+                    if let Some(action) =
+                        personalization::settings_hit(rect, self.settings_page, x, y)
+                    {
                         self.settings_action(action);
                     }
                 } else if app == App::Files {
@@ -543,7 +579,9 @@ impl Desktop {
                     self.notepad_click(rect, x, y);
                 } else if app == App::TaskManager {
                     if let Some(chosen) = task_view::row_at(rect, x, y) {
-                        if chosen != App::TaskManager { self.launch_app(chosen); }
+                        if chosen != App::TaskManager {
+                            self.launch_app(chosen);
+                        }
                     }
                 }
             } else if let Some(app) = Self::desktop_shortcut_at(self.layout, x, y) {
@@ -566,9 +604,23 @@ impl Desktop {
             }
         }
         self.pointer.left = packet.left;
-        let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons,
-                                  self.context_menu, self.settings_page, self.wallpaper, self.accent, self.profile_status)
-            || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
+        let changed = before
+            != (
+                self.windows,
+                self.pointer,
+                self.launcher,
+                self.dark,
+                self.language,
+                self.files,
+                self.icons,
+                self.context_menu,
+                self.settings_page,
+                self.wallpaper,
+                self.accent,
+                self.profile_status,
+            )
+            || old_note != self.notepad.revision
+            || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -577,8 +629,16 @@ impl Desktop {
 
     /// Return true only when a state transition changes the visible desktop.
     pub fn handle(&mut self, key: Key) -> bool {
-        let before = (self.windows, self.launcher, self.dark, self.language, self.files,
-                      self.context_menu, self.settings_page, self.profile_status);
+        let before = (
+            self.windows,
+            self.launcher,
+            self.dark,
+            self.language,
+            self.files,
+            self.context_menu,
+            self.settings_page,
+            self.profile_status,
+        );
         let old_note = self.notepad.revision;
         let old_ramfs = self.ramfs.revision;
         match key {
@@ -599,7 +659,7 @@ impl Desktop {
             Key::ToggleTheme => {
                 self.dark = !self.dark;
                 self.profile_status = ProfileStatus::Modified;
-            },
+            }
             Key::CycleLanguage => self.cycle_language(),
             Key::ShowDesktop => self.windows.show_desktop(),
             Key::NextApp => {
@@ -608,13 +668,15 @@ impl Desktop {
             }
             Key::Minimize => self.windows.minimize_focused(),
             Key::Maximize => self.windows.toggle_maximize(),
-            Key::Move(direction) if self.active() == Some(App::Notepad) => {
-                match direction {
-                    Move::Left => { self.notepad.move_left(); }
-                    Move::Right => { self.notepad.move_right(); }
-                    _ => {}
+            Key::Move(direction) if self.active() == Some(App::Notepad) => match direction {
+                Move::Left => {
+                    self.notepad.move_left();
                 }
-            }
+                Move::Right => {
+                    self.notepad.move_right();
+                }
+                _ => {}
+            },
             Key::Move(direction) => self.windows.translate_focused(direction),
             Key::Resize(direction) => self.windows.resize_focused(direction),
             Key::SaveDocument if self.active() == Some(App::Notepad) => {
@@ -632,9 +694,11 @@ impl Desktop {
             Key::Backspace if self.active() == Some(App::Notepad) => {
                 self.notepad.backspace();
             }
-            Key::Backspace if self.active() == Some(App::Files) => { self.files.up(); }
-            Key::SaveDocument | Key::NewDocument | Key::Confirm |
-            Key::Backspace | Key::Text(_) => {}
+            Key::Backspace if self.active() == Some(App::Files) => {
+                self.files.up();
+            }
+            Key::SaveDocument | Key::NewDocument | Key::Confirm | Key::Backspace | Key::Text(_) => {
+            }
             Key::Escape => {
                 if self.context_menu.take().is_some() {
                     // Esc dismisses context menu without closing an app.
@@ -649,9 +713,19 @@ impl Desktop {
                 }
             }
         }
-        let changed = before != (self.windows, self.launcher, self.dark, self.language, self.files,
-                                  self.context_menu, self.settings_page, self.profile_status)
-            || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
+        let changed = before
+            != (
+                self.windows,
+                self.launcher,
+                self.dark,
+                self.language,
+                self.files,
+                self.context_menu,
+                self.settings_page,
+                self.profile_status,
+            )
+            || old_note != self.notepad.revision
+            || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
         }
@@ -731,32 +805,37 @@ impl ScancodeDecoder {
         if self.ctrl && self.shift && code == 0x01 {
             return Some(Key::TaskManager); // Ctrl+Shift+Esc: real taskbar action
         }
-        if self.ctrl && code == 0x1f { return Some(Key::SaveDocument); } // Ctrl+S
+        if self.ctrl && code == 0x1f {
+            return Some(Key::SaveDocument);
+        } // Ctrl+S
         match code {
-            0x3b => Some(Key::Launcher),     // F1
-            0x3c => Some(Key::Files),        // F2
-            0x3d => Some(Key::Terminal),     // F3
-            0x3e => Some(Key::Settings),     // F4
-            0x3f => Some(Key::ToggleTheme),  // F5
-            0x40 => Some(Key::Minimize),     // F6
-            0x41 => Some(Key::Maximize),     // F7
+            0x3b => Some(Key::Launcher),      // F1
+            0x3c => Some(Key::Files),         // F2
+            0x3d => Some(Key::Terminal),      // F3
+            0x3e => Some(Key::Settings),      // F4
+            0x3f => Some(Key::ToggleTheme),   // F5
+            0x40 => Some(Key::Minimize),      // F6
+            0x41 => Some(Key::Maximize),      // F7
             0x42 => Some(Key::CycleLanguage), // F8
             0x43 => Some(Key::ShowDesktop),   // F9
-            0x44 => Some(Key::AppCenter),      // F10
+            0x44 => Some(Key::AppCenter),     // F10
             0x57 => Some(Key::SaveDocument),  // F11
             0x58 => Some(Key::NewDocument),   // F12
-            0x0f => Some(Key::NextApp),      // Tab
-            0x01 => Some(Key::Escape),       // Escape
-            0x1c => Some(Key::Confirm),      // Enter
-            0x0e => Some(Key::Backspace),    // Backspace
+            0x0f => Some(Key::NextApp),       // Tab
+            0x01 => Some(Key::Escape),        // Escape
+            0x1c => Some(Key::Confirm),       // Enter
+            0x0e => Some(Key::Backspace),     // Backspace
             // BIOS/OVMF/QEMU translated US PS/2 scan-set-1 layout.
             // Only safe ASCII hostname characters are emitted. The host
             // layout may differ, so this is NOT a full international IME.
             0x02..=0x0b => {
                 let digits = *b"1234567890";
                 let shifted = *b"!@#$%^&*()";
-                Some(Key::Text(if self.shift { shifted[(code - 0x02) as usize] }
-                               else { digits[(code - 0x02) as usize] }))
+                Some(Key::Text(if self.shift {
+                    shifted[(code - 0x02) as usize]
+                } else {
+                    digits[(code - 0x02) as usize]
+                }))
             }
             0x0c => Some(Key::Text(if self.shift { b'_' } else { b'-' })),
             0x0d => Some(Key::Text(if self.shift { b'+' } else { b'=' })),
@@ -772,15 +851,27 @@ impl ScancodeDecoder {
             0x35 => Some(Key::Text(if self.shift { b'?' } else { b'/' })),
             0x10..=0x19 => {
                 let letters = *b"qwertyuiop";
-                Some(Key::Text(if self.shift { letters[(code - 0x10) as usize].to_ascii_uppercase() } else { letters[(code - 0x10) as usize] }))
+                Some(Key::Text(if self.shift {
+                    letters[(code - 0x10) as usize].to_ascii_uppercase()
+                } else {
+                    letters[(code - 0x10) as usize]
+                }))
             }
             0x1e..=0x26 => {
                 let letters = *b"asdfghjkl";
-                Some(Key::Text(if self.shift { letters[(code - 0x1e) as usize].to_ascii_uppercase() } else { letters[(code - 0x1e) as usize] }))
+                Some(Key::Text(if self.shift {
+                    letters[(code - 0x1e) as usize].to_ascii_uppercase()
+                } else {
+                    letters[(code - 0x1e) as usize]
+                }))
             }
             0x2c..=0x32 => {
                 let letters = *b"zxcvbnm";
-                Some(Key::Text(if self.shift { letters[(code - 0x2c) as usize].to_ascii_uppercase() } else { letters[(code - 0x2c) as usize] }))
+                Some(Key::Text(if self.shift {
+                    letters[(code - 0x2c) as usize].to_ascii_uppercase()
+                } else {
+                    letters[(code - 0x2c) as usize]
+                }))
             }
             _ => None,
         }
@@ -930,7 +1021,13 @@ mod tests {
     }
 
     fn test_packet(dx: i16, dy: i16, left: bool) -> MousePacket {
-        MousePacket { dx, dy, left, right: false, middle: false }
+        MousePacket {
+            dx,
+            dy,
+            left,
+            right: false,
+            middle: false,
+        }
     }
 
     #[test]
@@ -958,12 +1055,15 @@ mod tests {
         assert_eq!(desktop.active(), Some(App::TaskManager));
         desktop.handle_mouse(test_packet(0, 0, false));
         assert!(desktop.handle_mouse(test_packet(0, 0, true)));
-        assert_eq!(desktop.windows.window(App::TaskManager).mode, WindowMode::Minimized);
+        assert_eq!(
+            desktop.windows.window(App::TaskManager).mode,
+            WindowMode::Minimized
+        );
         desktop.handle_mouse(test_packet(0, 0, false));
         assert!(desktop.handle(Key::TaskManager));
         assert_eq!(desktop.active(), Some(App::TaskManager));
         let rect = desktop.windows.rect(App::TaskManager);
-        let cx = rect.x + (rect.width / 4).clamp(70,170) + 27;
+        let cx = rect.x + (rect.width / 4).clamp(70, 170) + 27;
         let body = rect.y + 45 + 8;
         desktop.pointer.x = cx + 12;
         desktop.pointer.y = body + task_view::ROW_START + 10;
@@ -973,21 +1073,23 @@ mod tests {
 
     #[test]
     fn ctrl_shift_escape_opens_task_manager_without_closing_other_windows() {
-        let mut keyboard=ScancodeDecoder::new();
-        assert_eq!(keyboard.feed(0x1d),None);
-        assert_eq!(keyboard.feed(0x2a),None);
-        assert_eq!(keyboard.feed(0x01),Some(Key::TaskManager));
+        let mut keyboard = ScancodeDecoder::new();
+        assert_eq!(keyboard.feed(0x1d), None);
+        assert_eq!(keyboard.feed(0x2a), None);
+        assert_eq!(keyboard.feed(0x01), Some(Key::TaskManager));
         keyboard.feed(0xaa);
         keyboard.feed(0x9d);
-        assert_eq!(keyboard.feed(0x01),Some(Key::Escape));
+        assert_eq!(keyboard.feed(0x01), Some(Key::Escape));
     }
 
     #[test]
     fn desktop_shortcuts_and_top_menu_are_clickable() {
         let mut state = Desktop::new();
         state.enable_pointer();
-        assert_eq!(Desktop::desktop_shortcut_at(state.layout, 50,
-            state.layout.top_bar + 145 + 78 + 10), Some(App::Terminal));
+        assert_eq!(
+            Desktop::desktop_shortcut_at(state.layout, 50, state.layout.top_bar + 145 + 78 + 10),
+            Some(App::Terminal)
+        );
         state.pointer.x = 50;
         state.pointer.y = state.layout.top_bar + 145 + 78 + 10;
         assert!(state.handle_mouse(test_packet(0, 0, true)));
@@ -1056,11 +1158,15 @@ mod tests {
     fn launcher_animates_in_and_out_without_corrupting_windows() {
         let mut desktop = Desktop::new();
         assert!(desktop.handle(Key::Launcher));
-        for _ in 0..start_menu::STEPS { assert!(desktop.tick_launcher()); }
+        for _ in 0..start_menu::STEPS {
+            assert!(desktop.tick_launcher());
+        }
         assert!(!desktop.tick_launcher());
         assert_eq!(desktop.launcher_step, start_menu::STEPS);
         assert!(desktop.handle(Key::Launcher));
-        for _ in 0..start_menu::STEPS { assert!(desktop.tick_launcher()); }
+        for _ in 0..start_menu::STEPS {
+            assert!(desktop.tick_launcher());
+        }
         assert_eq!(desktop.launcher_step, 0);
         assert_eq!(desktop.active(), Some(App::Files));
     }
@@ -1076,8 +1182,10 @@ mod tests {
         desktop.handle_mouse(test_packet(0, 0, true));
         desktop.handle_mouse(test_packet(0, 0, false));
         assert_eq!(desktop.active(), Some(App::Files));
-        assert_eq!(crate::fs::node(desktop.files.current).unwrap().path,
-                   "/Users/Guest/Documents");
+        assert_eq!(
+            crate::fs::node(desktop.files.current).unwrap().path,
+            "/Users/Guest/Documents"
+        );
         desktop.handle(Key::ShowDesktop);
         let old = desktop.icons.positions[0];
         desktop.pointer.x = old.x + 8;
@@ -1096,8 +1204,8 @@ mod tests {
         let layout = Layout::for_size(1024, 768).unwrap();
         let dock_icon_y = layout.height - layout.dock_height - 2;
         let dock_icon_x = (0..1024)
-            .find(|x| Desktop::dock_app_at(layout, *x, dock_icon_y)
-                == Some(App::Terminal)).unwrap();
+            .find(|x| Desktop::dock_app_at(layout, *x, dock_icon_y) == Some(App::Terminal))
+            .unwrap();
         state.pointer.x = dock_icon_x;
         state.pointer.y = dock_icon_y;
         assert!(state.handle_mouse(test_packet(0, 0, true)));
@@ -1130,14 +1238,18 @@ mod tests {
         let mut state = Desktop::new();
         state.enable_pointer();
         state.handle(Key::Launcher);
-        for _ in 0..start_menu::STEPS { state.tick_launcher(); }
+        for _ in 0..start_menu::STEPS {
+            state.tick_launcher();
+        }
         let rect = start_menu::panel(state.layout, state.launcher_step);
         state.pointer.x = rect.x + 50;
         state.pointer.y = rect.y + 110;
         assert!(state.handle_mouse(test_packet(0, 0, true)));
         assert_eq!(state.active(), Some(App::Settings));
         assert!(!state.launcher);
-        for _ in 0..start_menu::STEPS { state.tick_launcher(); }
+        for _ in 0..start_menu::STEPS {
+            state.tick_launcher();
+        }
         assert_eq!(state.launcher_step, 0);
     }
 
@@ -1158,14 +1270,18 @@ mod tests {
         click_row(&mut state, 0); // /Users/Guest
         click_row(&mut state, 1); // /Users/Guest/Documents
         click_row(&mut state, 0); // WELCOME.TXT
-        assert_eq!(crate::fs::node(state.files.current).unwrap().path,
-                   "/Users/Guest/Documents");
+        assert_eq!(
+            crate::fs::node(state.files.current).unwrap().path,
+            "/Users/Guest/Documents"
+        );
         assert!(state.files.preview().is_some());
         assert!(state.handle(Key::Backspace));
         assert!(state.files.preview().is_none());
         assert!(state.handle(Key::Backspace));
-        assert_eq!(crate::fs::node(state.files.current).unwrap().path,
-                   "/Users/Guest");
+        assert_eq!(
+            crate::fs::node(state.files.current).unwrap().path,
+            "/Users/Guest"
+        );
     }
 
     #[test]
@@ -1181,9 +1297,14 @@ mod tests {
         assert_eq!(d.feed(0x82), None);
     }
 
-
     fn right_packet(right: bool) -> MousePacket {
-        MousePacket { dx: 0, dy: 0, left: false, right, middle: false }
+        MousePacket {
+            dx: 0,
+            dy: 0,
+            left: false,
+            right,
+            middle: false,
+        }
     }
 
     #[test]
@@ -1229,19 +1350,19 @@ mod tests {
         d.launch_app(App::Settings);
         d.settings_page = SettingsPage::Personalization;
         let rect = d.windows.rect(App::Settings);
-        let cx = rect.x + (rect.width / 4).clamp(70,170) + 40;
+        let cx = rect.x + (rect.width / 4).clamp(70, 170) + 40;
         let body = rect.y + 45 + 8;
         d.pointer.x = cx;
         d.pointer.y = body + 65;
-        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert!(d.handle_mouse(test_packet(0, 0, true)));
         assert_eq!(d.wallpaper, Wallpaper::Sunset);
-        d.handle_mouse(test_packet(0,0,false));
+        d.handle_mouse(test_packet(0, 0, false));
         d.pointer.y = body + 130;
-        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert!(d.handle_mouse(test_packet(0, 0, true)));
         assert_eq!(d.accent, Accent::Violet);
-        d.handle_mouse(test_packet(0,0,false));
+        d.handle_mouse(test_packet(0, 0, false));
         d.pointer.y = body + 190;
-        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert!(d.handle_mouse(test_packet(0, 0, true)));
         assert!(!d.dark);
         assert_eq!(d.settings_page, SettingsPage::Personalization);
     }
@@ -1271,11 +1392,10 @@ mod tests {
         d.handle_mouse(right_packet(false));
         d.pointer.x = 40;
         d.pointer.y = d.layout.top_bar + 150;
-        assert!(d.handle_mouse(test_packet(0,0,true)));
+        assert!(d.handle_mouse(test_packet(0, 0, true)));
         assert!(d.context_menu.is_none());
         assert_eq!(d.active(), Some(App::Files)); // initial focus, no new app
     }
-
 
     #[test]
     fn theme_profile_settings_actions_save_load_reset_in_ramfs() {
@@ -1292,8 +1412,8 @@ mod tests {
             accent: Accent::Amber,
             dark: false,
         };
-        let save = personalization::profile_button(
-            rect, personalization::ProfileButton::Save).unwrap();
+        let save =
+            personalization::profile_button(rect, personalization::ProfileButton::Save).unwrap();
         d.pointer.x = save.x + 8;
         d.pointer.y = save.y + 8;
         assert!(d.handle_mouse(test_packet(0, 0, true)));
@@ -1302,8 +1422,8 @@ mod tests {
         d.handle_mouse(test_packet(0, 0, false));
         d.settings_action(SettingsAction::ResetProfile);
         assert_eq!(d.wallpaper, Wallpaper::Ocean);
-        let load = personalization::profile_button(
-            rect, personalization::ProfileButton::Load).unwrap();
+        let load =
+            personalization::profile_button(rect, personalization::ProfileButton::Load).unwrap();
         d.pointer.x = load.x + 8;
         d.pointer.y = load.y + 8;
         assert!(d.handle_mouse(test_packet(0, 0, true)));
@@ -1320,21 +1440,20 @@ mod tests {
         let original = (d.wallpaper, d.accent, d.dark);
         d.settings_action(SettingsAction::LoadProfile);
         assert_eq!(d.profile_status, ProfileStatus::NotFound);
-        assert_eq!((d.wallpaper,d.accent,d.dark), original);
+        assert_eq!((d.wallpaper, d.accent, d.dark), original);
         d.ramfs.save(PROFILE_FILE, b"unsafe-profile").unwrap();
         d.settings_action(SettingsAction::LoadProfile);
         assert_eq!(d.profile_status, ProfileStatus::InvalidFile);
-        assert_eq!((d.wallpaper,d.accent,d.dark), original);
+        assert_eq!((d.wallpaper, d.accent, d.dark), original);
     }
 
     #[test]
     fn full_ramfs_save_failure_does_not_corrupt_existing_files() {
         let mut d = Desktop::new();
         for name in [
-            "A.TXT","B.TXT","C.TXT","D.TXT",
-            "E.TXT","F.TXT","G.TXT","H.TXT",
+            "A.TXT", "B.TXT", "C.TXT", "D.TXT", "E.TXT", "F.TXT", "G.TXT", "H.TXT",
         ] {
-            d.ramfs.save(name,b"hello").unwrap();
+            d.ramfs.save(name, b"hello").unwrap();
         }
         let before = d.ramfs;
         d.settings_action(SettingsAction::SaveProfile);
@@ -1367,7 +1486,13 @@ mod tests {
 
     #[test]
     fn layout_remains_inside_framebuffer() {
-        for (w, h) in [(320, 240), (640, 480), (800, 600), (1024, 768), (1920, 1080)] {
+        for (w, h) in [
+            (320, 240),
+            (640, 480),
+            (800, 600),
+            (1024, 768),
+            (1920, 1080),
+        ] {
             let layout = Layout::for_size(w, h).unwrap();
             assert!(layout.window_x + layout.window_width <= w);
             assert!(layout.window_y + layout.window_height + layout.dock_height <= h);

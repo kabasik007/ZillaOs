@@ -5,7 +5,7 @@
 //! We only touch frames that were uniquely reserved from type-0 regions.
 
 use core::ptr;
-use zillaos_kernel::memory::{PhysicalFrame, PAGE_SIZE};
+use zillaos_kernel::memory::{PAGE_SIZE, PhysicalFrame};
 use zillaos_kernel::paging::is_canonical;
 
 #[derive(Debug, PartialEq, Eq)]

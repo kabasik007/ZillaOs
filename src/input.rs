@@ -101,7 +101,9 @@ fn drain_stale_output() {
 }
 
 fn read_controller_config() -> Option<u8> {
-    if !command(0x20) { return None; }
+    if !command(0x20) {
+        return None;
+    }
     for _ in 0..POLL_LIMIT {
         let status = unsafe { inb(PORT_STATUS) };
         if status & STATUS_OUTPUT_FULL != 0 {
@@ -136,7 +138,8 @@ fn send_mouse(byte: u8) -> bool {
 
 fn initialize_mouse() -> bool {
     drain_stale_output();
-    if !command(0xa8) { // enable controller second PS/2 port
+    if !command(0xa8) {
+        // enable controller second PS/2 port
         return false;
     }
 

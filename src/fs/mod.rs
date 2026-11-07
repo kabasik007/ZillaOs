@@ -6,7 +6,10 @@
 //! Users) regardless of the UI locale.
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NodeKind { Directory, File }
+pub enum NodeKind {
+    Directory,
+    File,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Node {
@@ -57,32 +60,54 @@ pub static NODES: [Node; 27] = [
            kind: NodeKind::Directory, data: b"" },
 ];
 
-pub fn node(id: usize) -> Option<&'static Node> { NODES.get(id) }
+pub fn node(id: usize) -> Option<&'static Node> {
+    NODES.get(id)
+}
 
 pub fn child_at(parent: usize, index: usize) -> Option<(usize, &'static Node)> {
-    if node(parent)?.kind != NodeKind::Directory { return None; }
-    NODES.iter().enumerate().filter(|(id, n)| *id != ROOT && n.parent == parent).nth(index)
+    if node(parent)?.kind != NodeKind::Directory {
+        return None;
+    }
+    NODES
+        .iter()
+        .enumerate()
+        .filter(|(id, n)| *id != ROOT && n.parent == parent)
+        .nth(index)
 }
 
 pub fn child_count(parent: usize) -> usize {
-    if node(parent).is_none_or(|n| n.kind != NodeKind::Directory) { return 0; }
-    NODES.iter().enumerate().filter(|(id, n)| *id != ROOT && n.parent == parent).count()
+    if node(parent).is_none_or(|n| n.kind != NodeKind::Directory) {
+        return 0;
+    }
+    NODES
+        .iter()
+        .enumerate()
+        .filter(|(id, n)| *id != ROOT && n.parent == parent)
+        .count()
 }
 
 /// Reject relative paths, path traversal, empty interior components and
 /// unexpected backslashes. Do not depend on locale, disk or heap allocation.
 pub fn lookup(path: &str) -> Option<usize> {
-    if path == "/" { return Some(ROOT); }
+    if path == "/" {
+        return Some(ROOT);
+    }
     if !path.starts_with('/') || path.len() > 255 || path.ends_with('/') {
         return None;
     }
     let mut current = ROOT;
     for part in path[1..].split('/') {
-        if part.is_empty() || part == "." || part == ".."
-            || part.contains('\\') || part.contains('\0') {
+        if part.is_empty()
+            || part == "."
+            || part == ".."
+            || part.contains('\\')
+            || part.contains('\0')
+        {
             return None;
         }
-        current = NODES.iter().enumerate()
+        current = NODES
+            .iter()
+            .enumerate()
             .find(|(id, n)| *id != ROOT && n.parent == current && n.name == part)
             .map(|(id, _)| id)?;
     }
@@ -97,7 +122,10 @@ pub struct Browser {
 
 impl Browser {
     pub const fn new() -> Self {
-        Self { current: ROOT, preview_file: None }
+        Self {
+            current: ROOT,
+            preview_file: None,
+        }
     }
 
     pub fn home(&mut self) -> bool {
@@ -108,20 +136,28 @@ impl Browser {
     }
 
     pub fn up(&mut self) -> bool {
-        if self.preview_file.take().is_some() { return true; }
-        if self.current == ROOT { return false; }
-        let Some(n) = node(self.current) else { return self.home(); };
+        if self.preview_file.take().is_some() {
+            return true;
+        }
+        if self.current == ROOT {
+            return false;
+        }
+        let Some(n) = node(self.current) else {
+            return self.home();
+        };
         self.current = n.parent;
         true
     }
 
     pub fn open_child(&mut self, row: usize) -> bool {
-        let Some((id, entry)) = child_at(self.current, row) else { return false; };
+        let Some((id, entry)) = child_at(self.current, row) else {
+            return false;
+        };
         match entry.kind {
             NodeKind::Directory => {
                 self.current = id;
                 self.preview_file = None;
-            },
+            }
             NodeKind::File => self.preview_file = Some(id),
         }
         true
@@ -138,7 +174,9 @@ impl Browser {
 }
 
 impl Default for Browser {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -172,9 +210,18 @@ mod tests {
 
     #[test]
     fn invalid_paths_never_escape_the_virtual_tree() {
-        for path in ["", "Users", "../System", "/../System", "/Users//Guest",
-            "/Users/Guest/../System", "/Users/Guest/", "/Users\\Guest",
-            "/Windows", "/Program Files/Zilla Files/.."] {
+        for path in [
+            "",
+            "Users",
+            "../System",
+            "/../System",
+            "/Users//Guest",
+            "/Users/Guest/../System",
+            "/Users/Guest/",
+            "/Users\\Guest",
+            "/Windows",
+            "/Program Files/Zilla Files/..",
+        ] {
             assert_eq!(lookup(path), None, "accepted unsafe path");
         }
         assert_eq!(child_at(22, 0), None);
@@ -192,7 +239,11 @@ mod tests {
         assert!(b.open_child(1)); // Documents
         assert_eq!(node(b.current).unwrap().path, "/Users/Guest/Documents");
         assert!(b.open_child(0)); // WELCOME.TXT
-        assert!(core::str::from_utf8(b.preview().unwrap()).unwrap().contains("Read-only"));
+        assert!(
+            core::str::from_utf8(b.preview().unwrap())
+                .unwrap()
+                .contains("Read-only")
+        );
         assert!(b.up()); // dismiss preview
         assert!(b.preview().is_none());
         assert!(b.up()); // return Guest

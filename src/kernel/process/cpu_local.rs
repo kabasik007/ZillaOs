@@ -5,8 +5,8 @@
 //! The authoritative TID lifecycle remains in ThreadTable. A trusted trap
 //! backend must save the FULL CPU context before descheduling a running TID.
 
-use super::thread::{MAX_CPUS, ThreadError, ThreadState, ThreadTable, Tid};
 use super::address_space::{USER_MIN, USER_TOP};
+use super::thread::{MAX_CPUS, ThreadError, ThreadState, ThreadTable, Tid};
 use super::{Pid, ProcessState, ProcessTable};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,7 +28,9 @@ pub enum ScheduleError {
 }
 
 impl From<ThreadError> for ScheduleError {
-    fn from(value: ThreadError) -> Self { Self::Thread(value) }
+    fn from(value: ThreadError) -> Self {
+        Self::Thread(value)
+    }
 }
 
 /// An acknowledgement from a TRUSTED, architecture-specific trap path.
@@ -92,7 +94,9 @@ pub struct SavedTrapContext {
 
 impl SavedTrapContext {
     /// Legacy model-only acknowledgment. Never wire to untrusted syscalls.
-    pub unsafe fn confirmed(tid: Tid) -> Self { Self { tid, cpu: None } }
+    pub unsafe fn confirmed(tid: Tid) -> Self {
+        Self { tid, cpu: None }
+    }
 
     /// # Safety
     /// Only a trusted Ring0 trap backend may call this, *after* verifying
@@ -100,12 +104,21 @@ impl SavedTrapContext {
     /// interrupted TID and current CPU ID. Passing arbitrary user data or
     /// omitting context save violates this API's safety preconditions.
     pub unsafe fn confirmed_user_frame(
-        tid: Tid, cpu: usize, frame: UserTrapFrame,
+        tid: Tid,
+        cpu: usize,
+        frame: UserTrapFrame,
     ) -> Result<Self, TrapFrameError> {
-        if cpu >= MAX_CPUS { return Err(TrapFrameError::InvalidCpu); }
-        if tid.0 == 0 { return Err(TrapFrameError::InvalidTid); }
+        if cpu >= MAX_CPUS {
+            return Err(TrapFrameError::InvalidCpu);
+        }
+        if tid.0 == 0 {
+            return Err(TrapFrameError::InvalidTid);
+        }
         frame.validate()?;
-        Ok(Self { tid, cpu: Some(cpu) })
+        Ok(Self {
+            tid,
+            cpu: Some(cpu),
+        })
     }
 }
 
@@ -119,9 +132,15 @@ pub struct CurrentTaskIdentity {
     tid: Tid,
 }
 impl CurrentTaskIdentity {
-    pub const fn cpu(self) -> usize { self.cpu }
-    pub const fn pid(self) -> Pid { self.pid }
-    pub const fn tid(self) -> Tid { self.tid }
+    pub const fn cpu(self) -> usize {
+        self.cpu
+    }
+    pub const fn pid(self) -> Pid {
+        self.pid
+    }
+    pub const fn tid(self) -> Tid {
+        self.tid
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,14 +170,26 @@ impl CpuLocalState {
         }
     }
 
-    pub const fn current(&self) -> Option<Tid> { self.current }
-    pub const fn irq_depth(&self) -> u16 { self.irq_depth }
-    pub const fn preempt_disabled(&self) -> u16 { self.preempt_disabled }
-    pub const fn need_resched(&self) -> bool { self.need_resched }
-    pub const fn timer_ticks(&self) -> u64 { self.timer_ticks }
+    pub const fn current(&self) -> Option<Tid> {
+        self.current
+    }
+    pub const fn irq_depth(&self) -> u16 {
+        self.irq_depth
+    }
+    pub const fn preempt_disabled(&self) -> u16 {
+        self.preempt_disabled
+    }
+    pub const fn need_resched(&self) -> bool {
+        self.need_resched
+    }
+    pub const fn timer_ticks(&self) -> u64 {
+        self.timer_ticks
+    }
 
     fn decision(&self) -> Preemption {
-        if !self.need_resched { return Preemption::Continue; }
+        if !self.need_resched {
+            return Preemption::Continue;
+        }
         if self.irq_depth != 0 || self.preempt_disabled != 0 {
             return Preemption::Deferred;
         }
@@ -177,12 +208,16 @@ pub struct CpuSchedulerModel {
 }
 
 impl Default for CpuSchedulerModel {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl CpuSchedulerModel {
     pub const fn new() -> Self {
-        Self { cpus: [CpuLocalState::new(); MAX_CPUS] }
+        Self {
+            cpus: [CpuLocalState::new(); MAX_CPUS],
+        }
     }
 
     pub fn snapshot(&self, cpu: usize) -> Option<CpuLocalState> {
@@ -194,7 +229,10 @@ impl CpuSchedulerModel {
     /// The CPU index must come from a trusted arch-specific current-CPU
     /// source, never from userspace. This is still a host-only model.
     pub fn current_identity(
-        &self, threads: &ThreadTable, processes: &ProcessTable, cpu: usize,
+        &self,
+        threads: &ThreadTable,
+        processes: &ProcessTable,
+        cpu: usize,
     ) -> Result<CurrentTaskIdentity, ScheduleError> {
         if cpu >= MAX_CPUS || (threads.online_cpu_mask() & (1u64 << cpu)) == 0 {
             return Err(ScheduleError::CpuOffline);
@@ -202,16 +240,22 @@ impl CpuSchedulerModel {
         let state = &self.cpus[cpu];
         let tid = Self::verify_current(state, threads, cpu)?;
         let thread = threads.get(tid).ok_or(ScheduleError::Desynchronized)?;
-        if !processes.process(thread.pid).is_some_and(|parent|
-            matches!(parent.state, ProcessState::Ready | ProcessState::Running))
-        {
+        if !processes.process(thread.pid).is_some_and(|parent| {
+            matches!(parent.state, ProcessState::Ready | ProcessState::Running)
+        }) {
             return Err(ScheduleError::ParentNotRunnable);
         }
-        Ok(CurrentTaskIdentity { cpu, pid: thread.pid, tid })
+        Ok(CurrentTaskIdentity {
+            cpu,
+            pid: thread.pid,
+            tid,
+        })
     }
 
     fn checked<'a>(
-        &'a mut self, threads: &ThreadTable, cpu: usize,
+        &'a mut self,
+        threads: &ThreadTable,
+        cpu: usize,
     ) -> Result<&'a mut CpuLocalState, ScheduleError> {
         if cpu >= MAX_CPUS || (threads.online_cpu_mask() & (1u64 << cpu)) == 0 {
             return Err(ScheduleError::CpuOffline);
@@ -220,7 +264,9 @@ impl CpuSchedulerModel {
     }
 
     fn verify_current(
-        state: &CpuLocalState, threads: &ThreadTable, cpu: usize,
+        state: &CpuLocalState,
+        threads: &ThreadTable,
+        cpu: usize,
     ) -> Result<Tid, ScheduleError> {
         let tid = state.current.ok_or(ScheduleError::NoCurrent)?;
         let t = threads.get(tid).ok_or(ScheduleError::Desynchronized)?;
@@ -231,11 +277,15 @@ impl CpuSchedulerModel {
     }
 
     fn verify_saved(
-        state: &CpuLocalState, threads: &ThreadTable, cpu: usize,
+        state: &CpuLocalState,
+        threads: &ThreadTable,
+        cpu: usize,
         saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
         let current = Self::verify_current(state, threads, cpu)?;
-        if current != saved.tid { return Err(ScheduleError::WrongContext); }
+        if current != saved.tid {
+            return Err(ScheduleError::WrongContext);
+        }
         if saved.cpu.is_some_and(|owner| owner != cpu) {
             return Err(ScheduleError::WrongContext);
         }
@@ -248,19 +298,26 @@ impl CpuSchedulerModel {
     /// Select a Ready TID using ThreadTable's deterministic Round Robin.
     /// Metadata only: the caller must install the real context separately.
     pub fn dispatch_next(
-        &mut self, threads: &mut ThreadTable, cpu: usize,
+        &mut self,
+        threads: &mut ThreadTable,
+        cpu: usize,
     ) -> Result<Option<Tid>, ScheduleError> {
         let state = self.checked(threads, cpu)?;
-        if state.current.is_some() { return Err(ScheduleError::CpuBusy); }
+        if state.current.is_some() {
+            return Err(ScheduleError::CpuBusy);
+        }
         if state.irq_depth != 0 || state.preempt_disabled != 0 {
             return Err(ScheduleError::SwitchUnsafe);
         }
-        if threads.iter().any(|t| {
-            t.state == ThreadState::Running && t.assigned_cpu == Some(cpu)
-        }) {
+        if threads
+            .iter()
+            .any(|t| t.state == ThreadState::Running && t.assigned_cpu == Some(cpu))
+        {
             return Err(ScheduleError::Desynchronized);
         }
-        let Some(tid) = threads.next_ready(cpu) else { return Ok(None); };
+        let Some(tid) = threads.next_ready(cpu) else {
+            return Ok(None);
+        };
         threads.mark_running(cpu, tid)?;
         state.current = Some(tid);
         state.need_resched = false;
@@ -268,48 +325,66 @@ impl CpuSchedulerModel {
     }
 
     pub fn enter_interrupt(
-        &mut self, threads: &ThreadTable, cpu: usize,
+        &mut self,
+        threads: &ThreadTable,
+        cpu: usize,
     ) -> Result<(), ScheduleError> {
         let state = self.checked(threads, cpu)?;
-        state.irq_depth = state.irq_depth.checked_add(1)
+        state.irq_depth = state
+            .irq_depth
+            .checked_add(1)
             .ok_or(ScheduleError::InterruptOverflow)?;
         Ok(())
     }
 
     /// A timer IRQ only requests work; it never switches stacks/registers.
-    pub fn timer_tick(
-        &mut self, threads: &ThreadTable, cpu: usize,
-    ) -> Result<(), ScheduleError> {
+    pub fn timer_tick(&mut self, threads: &ThreadTable, cpu: usize) -> Result<(), ScheduleError> {
         let state = self.checked(threads, cpu)?;
-        if state.irq_depth == 0 { return Err(ScheduleError::NotInInterrupt); }
+        if state.irq_depth == 0 {
+            return Err(ScheduleError::NotInInterrupt);
+        }
         state.timer_ticks = state.timer_ticks.saturating_add(1);
-        if state.current.is_some() { state.need_resched = true; }
+        if state.current.is_some() {
+            state.need_resched = true;
+        }
         Ok(())
     }
 
     pub fn leave_interrupt(
-        &mut self, threads: &ThreadTable, cpu: usize,
+        &mut self,
+        threads: &ThreadTable,
+        cpu: usize,
     ) -> Result<Preemption, ScheduleError> {
         let state = self.checked(threads, cpu)?;
-        if state.irq_depth == 0 { return Err(ScheduleError::InterruptUnderflow); }
+        if state.irq_depth == 0 {
+            return Err(ScheduleError::InterruptUnderflow);
+        }
         state.irq_depth -= 1;
         Ok(state.decision())
     }
 
     pub fn disable_preemption(
-        &mut self, threads: &ThreadTable, cpu: usize,
+        &mut self,
+        threads: &ThreadTable,
+        cpu: usize,
     ) -> Result<(), ScheduleError> {
         let state = self.checked(threads, cpu)?;
-        state.preempt_disabled = state.preempt_disabled.checked_add(1)
+        state.preempt_disabled = state
+            .preempt_disabled
+            .checked_add(1)
             .ok_or(ScheduleError::PreemptOverflow)?;
         Ok(())
     }
 
     pub fn enable_preemption(
-        &mut self, threads: &ThreadTable, cpu: usize,
+        &mut self,
+        threads: &ThreadTable,
+        cpu: usize,
     ) -> Result<Preemption, ScheduleError> {
         let state = self.checked(threads, cpu)?;
-        if state.preempt_disabled == 0 { return Err(ScheduleError::PreemptUnderflow); }
+        if state.preempt_disabled == 0 {
+            return Err(ScheduleError::PreemptUnderflow);
+        }
         state.preempt_disabled -= 1;
         Ok(state.decision())
     }
@@ -317,12 +392,16 @@ impl CpuSchedulerModel {
     /// Requires a trusted saved trap context for the CURRENT TID. This is
     /// NOT invoked from the default Desktop or timer fixture.
     pub fn commit_saved_preemption(
-        &mut self, threads: &mut ThreadTable, cpu: usize,
+        &mut self,
+        threads: &mut ThreadTable,
+        cpu: usize,
         saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
         let state = self.checked(threads, cpu)?;
         let tid = Self::verify_saved(state, threads, cpu, saved)?;
-        if !state.need_resched { return Err(ScheduleError::NoReschedulePending); }
+        if !state.need_resched {
+            return Err(ScheduleError::NoReschedulePending);
+        }
         threads.preempt_running(cpu, tid)?;
         state.current = None;
         state.need_resched = false;
@@ -330,7 +409,9 @@ impl CpuSchedulerModel {
     }
 
     pub fn yield_saved(
-        &mut self, threads: &mut ThreadTable, cpu: usize,
+        &mut self,
+        threads: &mut ThreadTable,
+        cpu: usize,
         saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
         let state = self.checked(threads, cpu)?;
@@ -342,7 +423,9 @@ impl CpuSchedulerModel {
     }
 
     pub fn block_saved(
-        &mut self, threads: &mut ThreadTable, cpu: usize,
+        &mut self,
+        threads: &mut ThreadTable,
+        cpu: usize,
         saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
         let state = self.checked(threads, cpu)?;
@@ -354,7 +437,9 @@ impl CpuSchedulerModel {
     }
 
     pub fn exit_saved(
-        &mut self, threads: &mut ThreadTable, cpu: usize,
+        &mut self,
+        threads: &mut ThreadTable,
+        cpu: usize,
         saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
         let state = self.checked(threads, cpu)?;
@@ -366,7 +451,9 @@ impl CpuSchedulerModel {
     }
 
     pub fn wake_blocked(
-        &mut self, threads: &mut ThreadTable, tid: Tid,
+        &mut self,
+        threads: &mut ThreadTable,
+        tid: Tid,
     ) -> Result<(), ScheduleError> {
         threads.wake(tid)?;
         Ok(())
@@ -376,22 +463,27 @@ impl CpuSchedulerModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::address_space::{Permissions, UserRegion, PAGE_SIZE};
-    use crate::process::{ProcessTable, DEFAULT_STACK_PAGES};
+    use crate::process::address_space::{PAGE_SIZE, Permissions, UserRegion};
+    use crate::process::{DEFAULT_STACK_PAGES, ProcessTable};
 
     fn fixture() -> (ThreadTable, [Tid; 3]) {
         let mut processes = ProcessTable::new();
-        let pid = processes.create(
-            "scheduler-fixture", 0x400000, 0x800000, DEFAULT_STACK_PAGES,
-        ).unwrap();
-        processes.map_region(pid, UserRegion::checked(
-            0x400000, PAGE_SIZE, Permissions::READ_EXECUTE,
-        ).unwrap()).unwrap();
+        let pid = processes
+            .create("scheduler-fixture", 0x400000, 0x800000, DEFAULT_STACK_PAGES)
+            .unwrap();
+        processes
+            .map_region(
+                pid,
+                UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+            )
+            .unwrap();
         processes.prepare(pid).unwrap();
 
         let mut threads = ThreadTable::new();
         let ids: [Tid; 3] = core::array::from_fn(|_| {
-            let tid = threads.create(&processes, pid, 0x400000, 0x800000, 1).unwrap();
+            let tid = threads
+                .create(&processes, pid, 0x400000, 0x800000, 1)
+                .unwrap();
             threads.prepare(&processes, tid).unwrap();
             tid
         });
@@ -412,9 +504,14 @@ mod tests {
             assert_eq!(scheduler.dispatch_next(&mut threads, 0), Ok(Some(id)));
             scheduler.enter_interrupt(&threads, 0).unwrap();
             scheduler.timer_tick(&threads, 0).unwrap();
-            assert_eq!(scheduler.leave_interrupt(&threads, 0),
-                Ok(Preemption::SwitchRequested(id)));
-            assert_eq!(scheduler.commit_saved_preemption(&mut threads, 0, saved(id)), Ok(id));
+            assert_eq!(
+                scheduler.leave_interrupt(&threads, 0),
+                Ok(Preemption::SwitchRequested(id))
+            );
+            assert_eq!(
+                scheduler.commit_saved_preemption(&mut threads, 0, saved(id)),
+                Ok(id)
+            );
         }
         assert_eq!(scheduler.snapshot(0).unwrap().timer_ticks(), 9);
         assert_eq!(scheduler.snapshot(0).unwrap().current(), None);
@@ -429,14 +526,26 @@ mod tests {
         scheduler.enter_interrupt(&threads, 0).unwrap();
         scheduler.enter_interrupt(&threads, 0).unwrap();
         scheduler.timer_tick(&threads, 0).unwrap();
-        assert_eq!(scheduler.leave_interrupt(&threads, 0), Ok(Preemption::Deferred));
-        assert_eq!(scheduler.leave_interrupt(&threads, 0), Ok(Preemption::Deferred));
-        assert_eq!(scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[0])),
-            Err(ScheduleError::SwitchUnsafe));
+        assert_eq!(
+            scheduler.leave_interrupt(&threads, 0),
+            Ok(Preemption::Deferred)
+        );
+        assert_eq!(
+            scheduler.leave_interrupt(&threads, 0),
+            Ok(Preemption::Deferred)
+        );
+        assert_eq!(
+            scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[0])),
+            Err(ScheduleError::SwitchUnsafe)
+        );
         assert_eq!(threads.get(ids[0]).unwrap().state, ThreadState::Running);
-        assert_eq!(scheduler.enable_preemption(&threads, 0),
-            Ok(Preemption::SwitchRequested(ids[0])));
-        scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[0])).unwrap();
+        assert_eq!(
+            scheduler.enable_preemption(&threads, 0),
+            Ok(Preemption::SwitchRequested(ids[0]))
+        );
+        scheduler
+            .commit_saved_preemption(&mut threads, 0, saved(ids[0]))
+            .unwrap();
         assert_eq!(threads.get(ids[0]).unwrap().state, ThreadState::Ready);
     }
 
@@ -445,13 +554,17 @@ mod tests {
         let (mut threads, ids) = fixture();
         let mut scheduler = CpuSchedulerModel::new();
         scheduler.dispatch_next(&mut threads, 0).unwrap();
-        assert_eq!(scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[0])),
-            Err(ScheduleError::NoReschedulePending));
+        assert_eq!(
+            scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[0])),
+            Err(ScheduleError::NoReschedulePending)
+        );
         scheduler.enter_interrupt(&threads, 0).unwrap();
         scheduler.timer_tick(&threads, 0).unwrap();
         scheduler.leave_interrupt(&threads, 0).unwrap();
-        assert_eq!(scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[1])),
-            Err(ScheduleError::WrongContext));
+        assert_eq!(
+            scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[1])),
+            Err(ScheduleError::WrongContext)
+        );
         assert_eq!(threads.get(ids[0]).unwrap().state, ThreadState::Running);
         assert_eq!(scheduler.snapshot(0).unwrap().current(), Some(ids[0]));
     }
@@ -461,16 +574,26 @@ mod tests {
         let (mut threads, ids) = fixture();
         let mut scheduler = CpuSchedulerModel::new();
         scheduler.dispatch_next(&mut threads, 0).unwrap();
-        assert_eq!(scheduler.block_saved(&mut threads, 0, saved(ids[0])), Ok(ids[0]));
+        assert_eq!(
+            scheduler.block_saved(&mut threads, 0, saved(ids[0])),
+            Ok(ids[0])
+        );
         assert_eq!(threads.get(ids[0]).unwrap().state, ThreadState::Blocked);
         assert_eq!(scheduler.wake_blocked(&mut threads, ids[0]), Ok(()));
-        assert_eq!(scheduler.wake_blocked(&mut threads, ids[0]),
-            Err(ScheduleError::Thread(ThreadError::InvalidState)));
+        assert_eq!(
+            scheduler.wake_blocked(&mut threads, ids[0]),
+            Err(ScheduleError::Thread(ThreadError::InvalidState))
+        );
         assert_eq!(scheduler.dispatch_next(&mut threads, 0), Ok(Some(ids[1])));
-        assert_eq!(scheduler.exit_saved(&mut threads, 0, saved(ids[1])), Ok(ids[1]));
+        assert_eq!(
+            scheduler.exit_saved(&mut threads, 0, saved(ids[1])),
+            Ok(ids[1])
+        );
         assert_eq!(threads.get(ids[1]).unwrap().state, ThreadState::Exited);
         assert_eq!(scheduler.dispatch_next(&mut threads, 0), Ok(Some(ids[2])));
-        scheduler.yield_saved(&mut threads, 0, saved(ids[2])).unwrap();
+        scheduler
+            .yield_saved(&mut threads, 0, saved(ids[2]))
+            .unwrap();
         assert_eq!(scheduler.dispatch_next(&mut threads, 0), Ok(Some(ids[0])));
     }
 
@@ -478,15 +601,27 @@ mod tests {
     fn offline_cpu_invalid_irq_and_desync_fail_closed() {
         let (mut threads, ids) = fixture();
         let mut scheduler = CpuSchedulerModel::new();
-        assert_eq!(scheduler.dispatch_next(&mut threads, 1), Err(ScheduleError::CpuOffline));
-        assert_eq!(scheduler.leave_interrupt(&threads, 0),
-            Err(ScheduleError::InterruptUnderflow));
-        assert_eq!(scheduler.enable_preemption(&threads, 0),
-            Err(ScheduleError::PreemptUnderflow));
-        assert_eq!(scheduler.timer_tick(&threads, 0), Err(ScheduleError::NotInInterrupt));
+        assert_eq!(
+            scheduler.dispatch_next(&mut threads, 1),
+            Err(ScheduleError::CpuOffline)
+        );
+        assert_eq!(
+            scheduler.leave_interrupt(&threads, 0),
+            Err(ScheduleError::InterruptUnderflow)
+        );
+        assert_eq!(
+            scheduler.enable_preemption(&threads, 0),
+            Err(ScheduleError::PreemptUnderflow)
+        );
+        assert_eq!(
+            scheduler.timer_tick(&threads, 0),
+            Err(ScheduleError::NotInInterrupt)
+        );
         threads.mark_running(0, ids[0]).unwrap(); // external mutation, no CPU state
-        assert_eq!(scheduler.dispatch_next(&mut threads, 0),
-            Err(ScheduleError::Desynchronized));
+        assert_eq!(
+            scheduler.dispatch_next(&mut threads, 0),
+            Err(ScheduleError::Desynchronized)
+        );
     }
 
     #[test]
@@ -496,70 +631,117 @@ mod tests {
         scheduler.dispatch_next(&mut threads, 0).unwrap();
         scheduler.enter_interrupt(&threads, 0).unwrap();
         scheduler.timer_tick(&threads, 0).unwrap();
-        assert_eq!(scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[0])),
-            Err(ScheduleError::SwitchUnsafe));
-        assert_eq!(scheduler.leave_interrupt(&threads, 0),
-            Ok(Preemption::SwitchRequested(ids[0])));
+        assert_eq!(
+            scheduler.commit_saved_preemption(&mut threads, 0, saved(ids[0])),
+            Err(ScheduleError::SwitchUnsafe)
+        );
+        assert_eq!(
+            scheduler.leave_interrupt(&threads, 0),
+            Ok(Preemption::SwitchRequested(ids[0]))
+        );
     }
     #[test]
     fn invalid_saved_user_frame_rejected_before_descheduling() {
         let good = UserTrapFrame {
-            rip: 0x400000, rsp: 0x800000,
-            rflags: 0x202, cs: 0x23, ss: 0x1b,
+            rip: 0x400000,
+            rsp: 0x800000,
+            rflags: 0x202,
+            cs: 0x23,
+            ss: 0x1b,
         };
         assert_eq!(good.validate(), Ok(()));
-        assert_eq!(UserTrapFrame { cs: 0x8, ..good }.validate(),
-            Err(TrapFrameError::InvalidPrivilege));
-        assert_eq!(UserTrapFrame { rip: USER_TOP, ..good }.validate(),
-            Err(TrapFrameError::InvalidInstruction));
-        assert_eq!(UserTrapFrame { rsp: 0, ..good }.validate(),
-            Err(TrapFrameError::InvalidStack));
-        assert_eq!(UserTrapFrame { rflags: 0x3202, ..good }.validate(),
-            Err(TrapFrameError::InvalidFlags));
-        assert_eq!(unsafe { SavedTrapContext::confirmed_user_frame(Tid(0), 0, good) },
-            Err(TrapFrameError::InvalidTid));
-        assert_eq!(unsafe { SavedTrapContext::confirmed_user_frame(Tid(1), MAX_CPUS, good) },
-            Err(TrapFrameError::InvalidCpu));
+        assert_eq!(
+            UserTrapFrame { cs: 0x8, ..good }.validate(),
+            Err(TrapFrameError::InvalidPrivilege)
+        );
+        assert_eq!(
+            UserTrapFrame {
+                rip: USER_TOP,
+                ..good
+            }
+            .validate(),
+            Err(TrapFrameError::InvalidInstruction)
+        );
+        assert_eq!(
+            UserTrapFrame { rsp: 0, ..good }.validate(),
+            Err(TrapFrameError::InvalidStack)
+        );
+        assert_eq!(
+            UserTrapFrame {
+                rflags: 0x3202,
+                ..good
+            }
+            .validate(),
+            Err(TrapFrameError::InvalidFlags)
+        );
+        assert_eq!(
+            unsafe { SavedTrapContext::confirmed_user_frame(Tid(0), 0, good) },
+            Err(TrapFrameError::InvalidTid)
+        );
+        assert_eq!(
+            unsafe { SavedTrapContext::confirmed_user_frame(Tid(1), MAX_CPUS, good) },
+            Err(TrapFrameError::InvalidCpu)
+        );
 
         let (mut threads, ids) = fixture();
         let mut scheduler = CpuSchedulerModel::new();
         scheduler.dispatch_next(&mut threads, 0).unwrap();
-        let legitimate = unsafe { SavedTrapContext::confirmed_user_frame(
-            ids[0], 0, good,
-        ).unwrap() };
-        assert_eq!(scheduler.yield_saved(&mut threads, 1, legitimate),
-            Err(ScheduleError::CpuOffline));
-        assert_eq!(scheduler.yield_saved(&mut threads, 0, legitimate), Ok(ids[0]));
+        let legitimate =
+            unsafe { SavedTrapContext::confirmed_user_frame(ids[0], 0, good).unwrap() };
+        assert_eq!(
+            scheduler.yield_saved(&mut threads, 1, legitimate),
+            Err(ScheduleError::CpuOffline)
+        );
+        assert_eq!(
+            scheduler.yield_saved(&mut threads, 0, legitimate),
+            Ok(ids[0])
+        );
     }
 
     #[test]
     fn current_identity_is_derived_from_authenticated_cpu_thread_parent() {
-        use crate::process::address_space::{Permissions, UserRegion, PAGE_SIZE};
+        use crate::process::address_space::{PAGE_SIZE, Permissions, UserRegion};
         let mut parents = ProcessTable::new();
         let pid = parents.create("identity", 0x400000, 0x800000, 4).unwrap();
-        parents.map_region(pid, UserRegion::checked(
-            0x400000, PAGE_SIZE, Permissions::READ_EXECUTE,
-        ).unwrap()).unwrap();
+        parents
+            .map_region(
+                pid,
+                UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+            )
+            .unwrap();
         parents.prepare(pid).unwrap();
         let mut threads = ThreadTable::new();
-        let tid = threads.create(&parents, pid, 0x400000, 0x800000, 1).unwrap();
+        let tid = threads
+            .create(&parents, pid, 0x400000, 0x800000, 1)
+            .unwrap();
         threads.prepare(&parents, tid).unwrap();
         let mut cpu = CpuSchedulerModel::new();
-        assert_eq!(cpu.current_identity(&threads, &parents, 0), Err(ScheduleError::NoCurrent));
-        assert_eq!(cpu.current_identity(&threads, &parents, 1), Err(ScheduleError::CpuOffline));
+        assert_eq!(
+            cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::NoCurrent)
+        );
+        assert_eq!(
+            cpu.current_identity(&threads, &parents, 1),
+            Err(ScheduleError::CpuOffline)
+        );
         cpu.dispatch_next(&mut threads, 0).unwrap();
         let trusted = cpu.current_identity(&threads, &parents, 0).unwrap();
         assert_eq!((trusted.pid(), trusted.tid(), trusted.cpu()), (pid, tid, 0));
         parents.kill(pid).unwrap();
-        assert_eq!(cpu.current_identity(&threads, &parents, 0),
-            Err(ScheduleError::ParentNotRunnable));
+        assert_eq!(
+            cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::ParentNotRunnable)
+        );
         parents.reap(pid).unwrap();
-        assert_eq!(cpu.current_identity(&threads, &parents, 0),
-            Err(ScheduleError::ParentNotRunnable));
+        assert_eq!(
+            cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::ParentNotRunnable)
+        );
         // Raw ThreadTable mutation cannot trick the CPU-local identity.
         threads.yield_running(tid).unwrap();
-        assert_eq!(cpu.current_identity(&threads, &parents, 0),
-            Err(ScheduleError::Desynchronized));
+        assert_eq!(
+            cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::Desynchronized)
+        );
     }
-
 }

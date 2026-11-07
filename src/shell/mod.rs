@@ -7,9 +7,9 @@ pub mod clock;
 pub mod desktop_icons;
 
 pub mod start_menu;
-pub mod taskbar;
 pub mod status_bar;
 pub mod task_view;
+pub mod taskbar;
 
 /// Volatile wallpaper, accent and desktop context-menu geometry.
 pub mod personalization;

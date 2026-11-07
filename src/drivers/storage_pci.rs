@@ -125,7 +125,11 @@ pub fn enumerate_storage(mut read: impl FnMut(PciLocation, u8) -> u32) -> Storag
     let mut found = StorageInventory::new();
     for bus in 0..=u8::MAX {
         for device in 0..32u8 {
-            let zero = PciLocation { bus, device, function: 0 };
+            let zero = PciLocation {
+                bus,
+                device,
+                function: 0,
+            };
             let identity = read(zero, 0x00);
             if identity & 0xffff == 0xffff || identity & 0xffff == 0 {
                 continue;
@@ -133,8 +137,16 @@ pub fn enumerate_storage(mut read: impl FnMut(PciLocation, u8) -> u32) -> Storag
             let header = ((read(zero, 0x0c) >> 16) & 0xff) as u8;
             let max_functions = if header & 0x80 != 0 { 8 } else { 1 };
             for function in 0..max_functions {
-                let loc = PciLocation { bus, device, function };
-                let id = if function == 0 { identity } else { read(loc, 0x00) };
+                let loc = PciLocation {
+                    bus,
+                    device,
+                    function,
+                };
+                let id = if function == 0 {
+                    identity
+                } else {
+                    read(loc, 0x00)
+                };
                 let vendor = (id & 0xffff) as u16;
                 if vendor == 0xffff || vendor == 0 {
                     continue;
@@ -165,7 +177,11 @@ mod tests {
 
     fn sample(id: u16, kind: StorageKind) -> StorageController {
         StorageController {
-            location: PciLocation { bus: 0, device: 1, function: 0 },
+            location: PciLocation {
+                bus: 0,
+                device: 1,
+                function: 0,
+            },
             vendor: 0x15ad,
             device_id: id,
             subclass: 6,
@@ -176,7 +192,11 @@ mod tests {
 
     #[test]
     fn pci_config_address_uses_correct_bus_device_function_bits() {
-        let slot = PciLocation { bus: 0x13, device: 0x1c, function: 5 };
+        let slot = PciLocation {
+            bus: 0x13,
+            device: 0x1c,
+            function: 5,
+        };
         assert_eq!(slot.address(0x08), 0x8013_e508);
         assert_eq!(slot.address(0x0b), slot.address(0x08));
     }
@@ -217,7 +237,9 @@ mod tests {
     #[test]
     fn multifunction_discovery_can_reach_nonzero_function() {
         let inv = enumerate_storage(|loc, offset| {
-            if loc.bus != 0 || loc.device != 2 { return u32::MAX; }
+            if loc.bus != 0 || loc.device != 2 {
+                return u32::MAX;
+            }
             match (loc.function, offset) {
                 (0, 0x00) => 0x0711_15ad,
                 (0, 0x0c) => 0x0080_0000,

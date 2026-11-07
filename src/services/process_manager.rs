@@ -1,16 +1,18 @@
 //! Single service-facing gateway for future standalone processes.
 //! Unlike the existing built-in AppManager, this does NOT execute a CPU task.
+use super::task_snapshot::TaskSnapshot;
 use crate::process::address_space::UserRegion;
-use crate::process::scheduler::RoundRobin;
-use crate::process::cpu_local::{CpuLocalState, CpuSchedulerModel, CurrentTaskIdentity, SavedTrapContext, ScheduleError};
+use crate::process::cpu_local::{
+    CpuLocalState, CpuSchedulerModel, CurrentTaskIdentity, SavedTrapContext, ScheduleError,
+};
 use crate::process::kernel_stack::{KernelStackLease, KernelStackRegistry, StackError};
 use crate::process::lifecycle::{
-    CleanupBackend, CleanupError, CleanupHookError, CleanupPhase, CleanupWork,
-    ExitCoordinator, ExitNotification,
+    CleanupBackend, CleanupError, CleanupHookError, CleanupPhase, CleanupWork, ExitCoordinator,
+    ExitNotification,
 };
+use crate::process::scheduler::RoundRobin;
+use crate::process::thread::{MAX_CPUS, Thread, ThreadError, ThreadState, ThreadTable, Tid};
 use crate::process::{ExitReason, Pid, Process, ProcessError, ProcessState, ProcessTable};
-use crate::process::thread::{Thread, ThreadError, ThreadState, ThreadTable, Tid, MAX_CPUS};
-use super::task_snapshot::TaskSnapshot;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExecutionError {
@@ -57,7 +59,9 @@ pub struct ProcessManager {
 }
 
 impl Default for ProcessManager {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProcessManager {
@@ -86,11 +90,7 @@ impl ProcessManager {
         self.processes.create(name, entry, stack_top, stack_pages)
     }
 
-    pub fn map_native_region(
-        &mut self,
-        pid: Pid,
-        region: UserRegion,
-    ) -> Result<(), ProcessError> {
+    pub fn map_native_region(&mut self, pid: Pid, region: UserRegion) -> Result<(), ProcessError> {
         self.processes.map_region(pid, region)
     }
 
@@ -109,9 +109,14 @@ impl ProcessManager {
     /// Reserve metadata for one thread owned by a previously created native
     /// process. This does not spawn a CPU thread.
     pub fn reserve_thread(
-        &mut self, pid: Pid, entry: u64, stack_top: u64, affinity_mask: u64,
+        &mut self,
+        pid: Pid,
+        entry: u64,
+        stack_top: u64,
+        affinity_mask: u64,
     ) -> Result<Tid, ThreadError> {
-        self.threads.create(&self.processes, pid, entry, stack_top, affinity_mask)
+        self.threads
+            .create(&self.processes, pid, entry, stack_top, affinity_mask)
     }
 
     pub fn prepare_thread(&mut self, tid: Tid) -> Result<(), ThreadError> {
@@ -130,8 +135,9 @@ impl ProcessManager {
         // One canonical gateway owns this check before CPU-local selection.
         if self.threads.iter().any(|thread| {
             thread.state == crate::process::thread::ThreadState::Ready
-                && !self.processes.process(thread.pid).is_some_and(|process|
-                    matches!(process.state, ProcessState::Ready | ProcessState::Running))
+                && !self.processes.process(thread.pid).is_some_and(|process| {
+                    matches!(process.state, ProcessState::Ready | ProcessState::Running)
+                })
         }) {
             return Err(ScheduleError::ParentNotRunnable);
         }
@@ -146,9 +152,11 @@ impl ProcessManager {
     /// CPU argument must come from the architecture's current CPU identity,
     /// never a user-provided message. Not yet wired to real IRQ / IPC syscalls.
     pub fn current_task_identity_model(
-        &self, cpu: usize,
+        &self,
+        cpu: usize,
     ) -> Result<CurrentTaskIdentity, ScheduleError> {
-        self.cpu_scheduler.current_identity(&self.threads, &self.processes, cpu)
+        self.cpu_scheduler
+            .current_identity(&self.threads, &self.processes, cpu)
     }
 
     /// Do not release a process PID until EVERY owned TID has exited and
@@ -179,13 +187,17 @@ impl ProcessManager {
     /// Reserve a kernel-stack VA lease ONLY. The VMM owns actual guarded
     /// supervisor mapping and page reclamation. A TID may have one lease.
     pub fn reserve_kernel_stack_model(
-        &mut self, tid: Tid, guard_base: u64, pages: u64,
+        &mut self,
+        tid: Tid,
+        guard_base: u64,
+        pages: u64,
     ) -> Result<u64, StackModelError> {
         let thread = self.threads.get(tid).ok_or(StackModelError::UnknownTid)?;
         if thread.state == ThreadState::Exited {
             return Err(StackModelError::ThreadExited);
         }
-        self.kernel_stacks.reserve(tid, guard_base, pages)
+        self.kernel_stacks
+            .reserve(tid, guard_base, pages)
             .map_err(StackModelError::Stack)
     }
 
@@ -203,9 +215,15 @@ impl ProcessManager {
     /// or free pages; no production memory reclamation is implemented.
     pub unsafe fn retire_kernel_stack_model(&mut self, id: u64) -> Result<(), StackError> {
         let lease = self.kernel_stacks.get(id).ok_or(StackError::UnknownLease)?;
-        if self.threads.get(lease.tid).is_some_and(|t| t.state == ThreadState::Running)
-            || (0..MAX_CPUS).any(|cpu| self.cpu_scheduler.snapshot(cpu)
-                .is_some_and(|state| state.current() == Some(lease.tid)))
+        if self
+            .threads
+            .get(lease.tid)
+            .is_some_and(|t| t.state == ThreadState::Running)
+            || (0..MAX_CPUS).any(|cpu| {
+                self.cpu_scheduler
+                    .snapshot(cpu)
+                    .is_some_and(|state| state.current() == Some(lease.tid))
+            })
         {
             return Err(StackError::InvalidPhase);
         }
@@ -222,28 +240,40 @@ impl ProcessManager {
     /// Cooperative model transitions need a trusted full saved trap frame.
     /// Caller may not construct a SavedTrapContext from a user-provided TID.
     pub fn yield_thread_model(
-        &mut self, cpu: usize, saved: SavedTrapContext,
+        &mut self,
+        cpu: usize,
+        saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
-        self.cpu_scheduler.yield_saved(&mut self.threads, cpu, saved)
+        self.cpu_scheduler
+            .yield_saved(&mut self.threads, cpu, saved)
     }
 
     pub fn block_thread_model(
-        &mut self, cpu: usize, saved: SavedTrapContext,
+        &mut self,
+        cpu: usize,
+        saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
-        self.cpu_scheduler.block_saved(&mut self.threads, cpu, saved)
+        self.cpu_scheduler
+            .block_saved(&mut self.threads, cpu, saved)
     }
 
     pub fn exit_thread_model(
-        &mut self, cpu: usize, saved: SavedTrapContext,
+        &mut self,
+        cpu: usize,
+        saved: SavedTrapContext,
     ) -> Result<Tid, ScheduleError> {
         self.cpu_scheduler.exit_saved(&mut self.threads, cpu, saved)
     }
 
     pub fn wake_thread_model(&mut self, tid: Tid) -> Result<(), ScheduleError> {
-        let thread = self.threads.get(tid)
+        let thread = self
+            .threads
+            .get(tid)
             .ok_or(ScheduleError::Thread(ThreadError::UnknownThread))?;
-        if !self.processes.process(thread.pid).is_some_and(|p|
-            matches!(p.state, ProcessState::Ready | ProcessState::Running))
+        if !self
+            .processes
+            .process(thread.pid)
+            .is_some_and(|p| matches!(p.state, ProcessState::Ready | ProcessState::Running))
         {
             return Err(ScheduleError::ParentNotRunnable);
         }
@@ -254,29 +284,45 @@ impl ProcessManager {
     /// ALL matching TIDs must be quiescent before changing ProcessTable and
     /// ThreadTable. Pending handles/IPC/memory prevent PID reap until ACKed.
     pub fn request_exit_model(
-        &mut self, pid: Pid, reason: ExitReason,
+        &mut self,
+        pid: Pid,
+        reason: ExitReason,
     ) -> Result<ExitNotification, ExitModelError> {
-        let process = self.processes.process(pid).ok_or(ExitModelError::UnknownPid)?;
+        let process = self
+            .processes
+            .process(pid)
+            .ok_or(ExitModelError::UnknownPid)?;
         if process.state == ProcessState::Exited {
             return Err(ExitModelError::AlreadyExited);
         }
-        if self.threads.iter().any(|t|
-            t.pid == pid && t.state == ThreadState::Running)
+        if self
+            .threads
+            .iter()
+            .any(|t| t.pid == pid && t.state == ThreadState::Running)
         {
             return Err(ExitModelError::RunningThread);
         }
         // Reject stale scheduler references as well; one CPU0 alone does
         // not imply this model has safe multicore execution.
         for cpu in 0..MAX_CPUS {
-            if let Some(current) = self.cpu_scheduler.snapshot(cpu)
+            if let Some(current) = self
+                .cpu_scheduler
+                .snapshot(cpu)
                 .and_then(|state| state.current())
             {
-                let owner = self.threads.get(current)
-                    .ok_or(ExitModelError::CpuStillActive)?.pid;
-                if owner == pid { return Err(ExitModelError::CpuStillActive); }
+                let owner = self
+                    .threads
+                    .get(current)
+                    .ok_or(ExitModelError::CpuStillActive)?
+                    .pid;
+                if owner == pid {
+                    return Err(ExitModelError::CpuStillActive);
+                }
             }
         }
-        let ticket = self.exit_journal.reserve(pid, reason)
+        let ticket = self
+            .exit_journal
+            .reserve(pid, reason)
             .map_err(ExitModelError::Journal)?;
         if let Err(error) = self.processes.terminate(pid, reason) {
             // Only possible after unexpected change to the preflight contract.
@@ -285,9 +331,12 @@ impl ProcessManager {
         }
         // ThreadTable preflight above ensures no running thread. There are no
         // panics or partial state changes in this bounded transition.
-        self.threads.terminate_owned_quiescent(pid)
+        self.threads
+            .terminate_owned_quiescent(pid)
             .map_err(ExitModelError::Thread)?;
-        self.exit_journal.publish(ticket).map_err(ExitModelError::Journal)
+        self.exit_journal
+            .publish(ticket)
+            .map_err(ExitModelError::Journal)
     }
 
     pub fn exit_cleanup_work(&self, ticket: u64) -> Result<CleanupWork, CleanupError> {
@@ -303,20 +352,30 @@ impl ProcessManager {
     /// It MUST make retries idempotent by ticket, and must NOT synthesize
     /// fake handles/PIDs or claim that mock acknowledgements free memory.
     pub fn drive_exit_cleanup_model<B: CleanupBackend>(
-        &mut self, ticket: u64, backend: &mut B,
+        &mut self,
+        ticket: u64,
+        backend: &mut B,
     ) -> Result<CleanupPhase, ExitModelError> {
-        let work = self.exit_journal.work(ticket).map_err(ExitModelError::Journal)?;
-        if work.phase == CleanupPhase::Complete { return Ok(CleanupPhase::Complete); }
+        let work = self
+            .exit_journal
+            .work(ticket)
+            .map_err(ExitModelError::Journal)?;
+        if work.phase == CleanupPhase::Complete {
+            return Ok(CleanupPhase::Complete);
+        }
         if work.phase == CleanupPhase::Memory {
-            if self.threads.iter().any(|t| t.pid == work.event.pid
-                && t.state == ThreadState::Running)
+            if self
+                .threads
+                .iter()
+                .any(|t| t.pid == work.event.pid && t.state == ThreadState::Running)
             {
                 return Err(ExitModelError::RunningThread);
             }
-            if self.kernel_stacks.iter().any(|lease|
-                self.threads.get(lease.tid)
-                    .is_some_and(|t| t.pid == work.event.pid))
-            {
+            if self.kernel_stacks.iter().any(|lease| {
+                self.threads
+                    .get(lease.tid)
+                    .is_some_and(|t| t.pid == work.event.pid)
+            }) {
                 return Err(ExitModelError::StacksRemain);
             }
         }
@@ -328,7 +387,9 @@ impl ProcessManager {
             CleanupPhase::Complete => Ok(()),
         };
         result.map_err(ExitModelError::Hook)?;
-        let next = self.exit_journal.acknowledge(ticket, work.phase)
+        let next = self
+            .exit_journal
+            .acknowledge(ticket, work.phase)
             .map_err(ExitModelError::Journal)?;
         Ok(next.phase)
     }
@@ -337,7 +398,10 @@ impl ProcessManager {
     /// TIDs. Returning the exit reason does not mean actual user runtime
     /// exists; hardware isolation and memory ownership remain separate gates.
     pub fn finish_exit_model(&mut self, ticket: u64) -> Result<ExitReason, ExitModelError> {
-        let work = self.exit_journal.work(ticket).map_err(ExitModelError::Journal)?;
+        let work = self
+            .exit_journal
+            .work(ticket)
+            .map_err(ExitModelError::Journal)?;
         if work.phase != CleanupPhase::Complete {
             return Err(ExitModelError::CleanupIncomplete);
         }
@@ -345,9 +409,13 @@ impl ProcessManager {
             return Err(ExitModelError::ThreadsRemain);
         }
         // Threads cannot be reaped while a stack lease is attached.
-        let reason = self.processes.reap(work.event.pid)
+        let reason = self
+            .processes
+            .reap(work.event.pid)
             .map_err(ExitModelError::Process)?;
-        self.exit_journal.retire(ticket).map_err(ExitModelError::Journal)?;
+        self.exit_journal
+            .retire(ticket)
+            .map_err(ExitModelError::Journal)?;
         Ok(reason)
     }
 
@@ -375,22 +443,29 @@ impl ProcessManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::address_space::{Permissions, UserRegion, PAGE_SIZE};
+    use crate::process::address_space::{PAGE_SIZE, Permissions, UserRegion};
 
     #[test]
     fn service_can_prepare_but_cannot_execute_unisolated_code() {
         let mut service = ProcessManager::new();
-        let pid = service.reserve_native("hello", 0x400000, 0x800000, 8).unwrap();
-        service.map_native_region(
-            pid,
-            UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
-        ).unwrap();
+        let pid = service
+            .reserve_native("hello", 0x400000, 0x800000, 8)
+            .unwrap();
+        service
+            .map_native_region(
+                pid,
+                UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+            )
+            .unwrap();
         service.prepare_native(pid).unwrap();
         assert_eq!(service.next_ready(), Some(pid));
-        assert_eq!(service.execute_native(pid), Err(ExecutionError::IsolationUnavailable));
+        assert_eq!(
+            service.execute_native(pid),
+            Err(ExecutionError::IsolationUnavailable)
+        );
         assert!(!ProcessManager::isolated_execution_available());
         assert_eq!(service.cpu_mask(), 1);
-        let tid=service.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
+        let tid = service.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
         service.prepare_thread(tid).unwrap();
         assert_eq!(service.next_ready_thread(0), Some(tid));
         assert_eq!(service.next_ready_thread(1), None);
@@ -399,20 +474,34 @@ mod tests {
     #[test]
     fn model_reap_refuses_orphan_tids_and_cpu0_is_only_online_cpu() {
         let mut service = ProcessManager::new();
-        let pid = service.reserve_native("owned", 0x400000, 0x800000, 4).unwrap();
-        service.map_native_region(
-            pid, UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap()
-        ).unwrap();
+        let pid = service
+            .reserve_native("owned", 0x400000, 0x800000, 4)
+            .unwrap();
+        service
+            .map_native_region(
+                pid,
+                UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+            )
+            .unwrap();
         service.prepare_native(pid).unwrap();
         let tid = service.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
         service.prepare_thread(tid).unwrap();
-        assert_eq!(service.dispatch_thread_model(1), Err(ScheduleError::CpuOffline));
+        assert_eq!(
+            service.dispatch_thread_model(1),
+            Err(ScheduleError::CpuOffline)
+        );
         assert_eq!(service.cpu_local_model_snapshot(0).unwrap().current(), None);
-        assert_eq!(service.reap_native_model(pid), Err(ReapModelError::ThreadsRemain));
+        assert_eq!(
+            service.reap_native_model(pid),
+            Err(ReapModelError::ThreadsRemain)
+        );
         service.threads.exit(tid).unwrap();
         service.reap_thread_model(tid).unwrap();
         service.processes.mark_running(pid).unwrap();
-        service.processes.mark_exited(pid, ExitReason::Normal(0)).unwrap();
+        service
+            .processes
+            .mark_exited(pid, ExitReason::Normal(0))
+            .unwrap();
         assert_eq!(service.reap_native_model(pid), Ok(ExitReason::Normal(0)));
         assert!(service.process(pid).is_none());
     }
@@ -420,17 +509,27 @@ mod tests {
     #[test]
     fn model_dispatch_rejects_ready_threads_of_exited_parent() {
         let mut service = ProcessManager::new();
-        let pid = service.reserve_native("terminated", 0x400000, 0x800000, 4).unwrap();
-        service.map_native_region(
-            pid, UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap()
-        ).unwrap();
+        let pid = service
+            .reserve_native("terminated", 0x400000, 0x800000, 4)
+            .unwrap();
+        service
+            .map_native_region(
+                pid,
+                UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+            )
+            .unwrap();
         service.prepare_native(pid).unwrap();
         let tid = service.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
         service.prepare_thread(tid).unwrap();
         service.processes.kill(pid).unwrap();
-        assert_eq!(service.dispatch_thread_model(0), Err(ScheduleError::ParentNotRunnable));
-        assert_eq!(service.thread(tid).unwrap().state,
-            crate::process::thread::ThreadState::Ready);
+        assert_eq!(
+            service.dispatch_thread_model(0),
+            Err(ScheduleError::ParentNotRunnable)
+        );
+        assert_eq!(
+            service.thread(tid).unwrap().state,
+            crate::process::thread::ThreadState::Ready
+        );
     }
 
     #[derive(Default)]
@@ -442,7 +541,9 @@ mod tests {
 
     impl MockExitHooks {
         fn perform(
-            &mut self, phase: CleanupPhase, event: ExitNotification,
+            &mut self,
+            phase: CleanupPhase,
+            event: ExitNotification,
         ) -> Result<(), CleanupHookError> {
             let i = match phase {
                 CleanupPhase::Capabilities => 0,
@@ -462,26 +563,33 @@ mod tests {
     }
 
     impl CleanupBackend for MockExitHooks {
-        fn revoke_capabilities(&mut self, event: ExitNotification)
-            -> Result<(), CleanupHookError>
-        { self.perform(CleanupPhase::Capabilities, event) }
-        fn cancel_ipc_and_wake(&mut self, event: ExitNotification)
-            -> Result<(), CleanupHookError>
-        { self.perform(CleanupPhase::Ipc, event) }
-        fn notify_services(&mut self, event: ExitNotification)
-            -> Result<(), CleanupHookError>
-        { self.perform(CleanupPhase::Services, event) }
-        fn release_address_space(&mut self, event: ExitNotification)
-            -> Result<(), CleanupHookError>
-        { self.perform(CleanupPhase::Memory, event) }
+        fn revoke_capabilities(&mut self, event: ExitNotification) -> Result<(), CleanupHookError> {
+            self.perform(CleanupPhase::Capabilities, event)
+        }
+        fn cancel_ipc_and_wake(&mut self, event: ExitNotification) -> Result<(), CleanupHookError> {
+            self.perform(CleanupPhase::Ipc, event)
+        }
+        fn notify_services(&mut self, event: ExitNotification) -> Result<(), CleanupHookError> {
+            self.perform(CleanupPhase::Services, event)
+        }
+        fn release_address_space(
+            &mut self,
+            event: ExitNotification,
+        ) -> Result<(), CleanupHookError> {
+            self.perform(CleanupPhase::Memory, event)
+        }
     }
 
     fn prepared_process(service: &mut ProcessManager) -> (Pid, Tid) {
-        let pid = service.reserve_native("exit-fixture", 0x400000, 0x800000, 4).unwrap();
-        service.map_native_region(
-            pid,
-            UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
-        ).unwrap();
+        let pid = service
+            .reserve_native("exit-fixture", 0x400000, 0x800000, 4)
+            .unwrap();
+        service
+            .map_native_region(
+                pid,
+                UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap(),
+            )
+            .unwrap();
         service.prepare_native(pid).unwrap();
         let tid = service.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
         service.prepare_thread(tid).unwrap();
@@ -493,33 +601,53 @@ mod tests {
         let mut pm = ProcessManager::new();
         let (pid, tid) = prepared_process(&mut pm);
         let fault = ExitReason::Fault(crate::process::UserFault::PageFault {
-            address: 0x7fe000, error: 4,
+            address: 0x7fe000,
+            error: 4,
         });
         let event = pm.request_exit_model(pid, fault).unwrap();
         assert_eq!(event.pid, pid);
         assert_eq!(event.reason, fault);
         assert_eq!(pm.process(pid).unwrap().state, ProcessState::Exited);
         assert_eq!(pm.thread(tid).unwrap().state, ThreadState::Exited);
-        assert_eq!(pm.request_exit_model(pid, fault), Err(ExitModelError::AlreadyExited));
-        assert_eq!(pm.reap_native_model(pid), Err(ReapModelError::CleanupPending));
-        assert_eq!(pm.finish_exit_model(event.ticket), Err(ExitModelError::CleanupIncomplete));
+        assert_eq!(
+            pm.request_exit_model(pid, fault),
+            Err(ExitModelError::AlreadyExited)
+        );
+        assert_eq!(
+            pm.reap_native_model(pid),
+            Err(ReapModelError::CleanupPending)
+        );
+        assert_eq!(
+            pm.finish_exit_model(event.ticket),
+            Err(ExitModelError::CleanupIncomplete)
+        );
         assert_eq!(pm.reap_thread_model(tid), Err(ThreadError::InvalidState));
         let mut hooks = MockExitHooks::default();
         for expected in [
-            CleanupPhase::Ipc, CleanupPhase::Services,
-            CleanupPhase::Memory, CleanupPhase::Complete,
+            CleanupPhase::Ipc,
+            CleanupPhase::Services,
+            CleanupPhase::Memory,
+            CleanupPhase::Complete,
         ] {
-            assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks), Ok(expected));
+            assert_eq!(
+                pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+                Ok(expected)
+            );
         }
         assert_eq!(hooks.calls, [1, 1, 1, 1]);
         assert_eq!(hooks.observed, Some(event));
-        assert_eq!(pm.finish_exit_model(event.ticket), Err(ExitModelError::ThreadsRemain));
+        assert_eq!(
+            pm.finish_exit_model(event.ticket),
+            Err(ExitModelError::ThreadsRemain)
+        );
         assert_eq!(pm.reap_thread_model(tid), Ok(()));
         assert_eq!(pm.reap_thread_model(tid), Err(ThreadError::UnknownThread));
         assert_eq!(pm.finish_exit_model(event.ticket), Ok(fault));
         assert!(pm.process(pid).is_none());
-        assert_eq!(pm.finish_exit_model(event.ticket),
-            Err(ExitModelError::Journal(CleanupError::UnknownTicket)));
+        assert_eq!(
+            pm.finish_exit_model(event.ticket),
+            Err(ExitModelError::Journal(CleanupError::UnknownTicket))
+        );
         let (new_pid, new_tid) = prepared_process(&mut pm);
         assert!(new_pid > pid);
         assert!(new_tid > tid);
@@ -529,18 +657,31 @@ mod tests {
     fn running_thread_and_kernel_stack_guard_block_premature_cleanup() {
         let mut pm = ProcessManager::new();
         let (pid, tid) = prepared_process(&mut pm);
-        let lease = pm.reserve_kernel_stack_model(
-            tid, crate::process::kernel_stack::KERNEL_HIGH_HALF_START + 0x100000, 8,
-        ).unwrap();
+        let lease = pm
+            .reserve_kernel_stack_model(
+                tid,
+                crate::process::kernel_stack::KERNEL_HIGH_HALF_START + 0x100000,
+                8,
+            )
+            .unwrap();
         pm.activate_kernel_stack_model(lease).unwrap();
-        assert_eq!(pm.reserve_kernel_stack_model(
-            tid, crate::process::kernel_stack::KERNEL_HIGH_HALF_START + 0x120000, 8),
-            Err(StackModelError::Stack(StackError::DuplicateOwner)));
+        assert_eq!(
+            pm.reserve_kernel_stack_model(
+                tid,
+                crate::process::kernel_stack::KERNEL_HIGH_HALF_START + 0x120000,
+                8
+            ),
+            Err(StackModelError::Stack(StackError::DuplicateOwner))
+        );
         assert_eq!(pm.dispatch_thread_model(0), Ok(Some(tid)));
-        assert_eq!(pm.request_exit_model(pid, ExitReason::Killed),
-            Err(ExitModelError::RunningThread));
-        assert_eq!(unsafe { pm.retire_kernel_stack_model(lease) },
-            Err(StackError::InvalidPhase));
+        assert_eq!(
+            pm.request_exit_model(pid, ExitReason::Killed),
+            Err(ExitModelError::RunningThread)
+        );
+        assert_eq!(
+            unsafe { pm.retire_kernel_stack_model(lease) },
+            Err(StackError::InvalidPhase)
+        );
         // Host-only simulated saved frame, NOT real CPU quiescence.
         let saved = unsafe { SavedTrapContext::confirmed(tid) };
         assert_eq!(pm.exit_thread_model(0, saved), Ok(tid));
@@ -548,23 +689,36 @@ mod tests {
         let event = pm.request_exit_model(pid, ExitReason::Killed).unwrap();
         assert_eq!(pm.reap_thread_model(tid), Err(ThreadError::StackAttached));
         let mut hooks = MockExitHooks::default();
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Ipc));
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Services));
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Memory));
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Err(ExitModelError::StacksRemain));
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Ipc)
+        );
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Services)
+        );
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Memory)
+        );
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Err(ExitModelError::StacksRemain)
+        );
         assert_eq!(hooks.calls[3], 0);
         // Quiescence and VMM release are merely SIMULATED here.
         unsafe { pm.retire_kernel_stack_model(lease).unwrap() };
         pm.release_kernel_stack_record_model(lease).unwrap();
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Complete));
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Complete)
+        );
         pm.reap_thread_model(tid).unwrap();
         assert_eq!(pm.finish_exit_model(event.ticket), Ok(ExitReason::Killed));
-        assert_eq!(pm.release_kernel_stack_record_model(lease), Err(StackError::UnknownLease));
+        assert_eq!(
+            pm.release_kernel_stack_record_model(lease),
+            Err(StackError::UnknownLease)
+        );
     }
 
     #[test]
@@ -573,21 +727,38 @@ mod tests {
         let (pid, tid) = prepared_process(&mut pm);
         let event = pm.request_exit_model(pid, ExitReason::Normal(3)).unwrap();
         let mut hooks = MockExitHooks {
-            fail_once: Some(CleanupPhase::Ipc), ..MockExitHooks::default()
+            fail_once: Some(CleanupPhase::Ipc),
+            ..MockExitHooks::default()
         };
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Ipc));
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Err(ExitModelError::Hook(CleanupHookError::Deferred)));
-        assert_eq!(pm.exit_cleanup_for_pid(pid).unwrap().phase, CleanupPhase::Ipc);
-        assert_eq!(pm.reap_native_model(pid), Err(ReapModelError::CleanupPending));
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Services));
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Ipc)
+        );
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Err(ExitModelError::Hook(CleanupHookError::Deferred))
+        );
+        assert_eq!(
+            pm.exit_cleanup_for_pid(pid).unwrap().phase,
+            CleanupPhase::Ipc
+        );
+        assert_eq!(
+            pm.reap_native_model(pid),
+            Err(ReapModelError::CleanupPending)
+        );
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Services)
+        );
         assert_eq!(hooks.calls, [1, 2, 0, 0]);
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Memory));
-        assert_eq!(pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
-            Ok(CleanupPhase::Complete));
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Memory)
+        );
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Complete)
+        );
         assert_eq!(hooks.calls[2], 1);
         pm.reap_thread_model(tid).unwrap();
         pm.finish_exit_model(event.ticket).unwrap();
@@ -597,30 +768,47 @@ mod tests {
     fn blocked_thread_wakeup_denied_after_process_termination() {
         let mut pm = ProcessManager::new();
         let (pid, tid) = prepared_process(&mut pm);
-        assert_eq!(pm.dispatch_thread_model(MAX_CPUS), Err(ScheduleError::CpuOffline));
+        assert_eq!(
+            pm.dispatch_thread_model(MAX_CPUS),
+            Err(ScheduleError::CpuOffline)
+        );
         pm.dispatch_thread_model(0).unwrap();
         let saved = unsafe { SavedTrapContext::confirmed(tid) };
         assert_eq!(pm.block_thread_model(0, saved), Ok(tid));
         assert_eq!(pm.thread(tid).unwrap().state, ThreadState::Blocked);
         let event = pm.request_exit_model(pid, ExitReason::Killed).unwrap();
-        assert_eq!(pm.wake_thread_model(tid), Err(ScheduleError::ParentNotRunnable));
+        assert_eq!(
+            pm.wake_thread_model(tid),
+            Err(ScheduleError::ParentNotRunnable)
+        );
         assert_eq!(pm.thread(tid).unwrap().state, ThreadState::Exited);
         assert_eq!(pm.exit_cleanup_for_pid(pid).unwrap().event, event);
         assert_eq!(pm.cpu_local_model_snapshot(0).unwrap().current(), None);
     }
 
-
     #[test]
     fn process_manager_current_task_identity_is_not_user_claimed_pid() {
         let mut pm = ProcessManager::new();
         let (pid, tid) = prepared_process(&mut pm);
-        assert_eq!(pm.current_task_identity_model(0), Err(ScheduleError::NoCurrent));
-        assert_eq!(pm.current_task_identity_model(1), Err(ScheduleError::CpuOffline));
+        assert_eq!(
+            pm.current_task_identity_model(0),
+            Err(ScheduleError::NoCurrent)
+        );
+        assert_eq!(
+            pm.current_task_identity_model(1),
+            Err(ScheduleError::CpuOffline)
+        );
         pm.dispatch_thread_model(0).unwrap();
         let identity = pm.current_task_identity_model(0).unwrap();
-        assert_eq!((identity.pid(), identity.tid(), identity.cpu()), (pid, tid, 0));
-        pm.exit_thread_model(0, unsafe { SavedTrapContext::confirmed(tid) }).unwrap();
-        assert_eq!(pm.current_task_identity_model(0), Err(ScheduleError::NoCurrent));
+        assert_eq!(
+            (identity.pid(), identity.tid(), identity.cpu()),
+            (pid, tid, 0)
+        );
+        pm.exit_thread_model(0, unsafe { SavedTrapContext::confirmed(tid) })
+            .unwrap();
+        assert_eq!(
+            pm.current_task_identity_model(0),
+            Err(ScheduleError::NoCurrent)
+        );
     }
-
 }

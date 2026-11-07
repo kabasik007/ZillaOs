@@ -12,30 +12,56 @@ pub struct ClockTime {
 
 impl ClockTime {
     pub const fn new(hour: u8, minute: u8, second: u8) -> Option<Self> {
-        if hour > 23 || minute > 59 || second > 59 { return None; }
-        Some(Self { hour, minute, second })
+        if hour > 23 || minute > 59 || second > 59 {
+            return None;
+        }
+        Some(Self {
+            hour,
+            minute,
+            second,
+        })
     }
 
-    pub fn from_cmos(hour_raw: u8, minute_raw: u8, second_raw: u8,
-                     status_b: u8) -> Option<Self> {
+    pub fn from_cmos(hour_raw: u8, minute_raw: u8, second_raw: u8, status_b: u8) -> Option<Self> {
         let binary = status_b & 0x04 != 0;
         let is_24h = status_b & 0x02 != 0;
         let pm = hour_raw & 0x80 != 0;
         let hour_val = hour_raw & 0x7f;
-        let mut hour = if binary { hour_val } else { from_bcd(hour_val)? };
-        let minute = if binary { minute_raw } else { from_bcd(minute_raw)? };
-        let second = if binary { second_raw } else { from_bcd(second_raw)? };
+        let mut hour = if binary {
+            hour_val
+        } else {
+            from_bcd(hour_val)?
+        };
+        let minute = if binary {
+            minute_raw
+        } else {
+            from_bcd(minute_raw)?
+        };
+        let second = if binary {
+            second_raw
+        } else {
+            from_bcd(second_raw)?
+        };
         if !is_24h {
-            if !(1..=12).contains(&hour) { return None; }
+            if !(1..=12).contains(&hour) {
+                return None;
+            }
             hour = (hour % 12) + if pm { 12 } else { 0 };
         }
         Self::new(hour, minute, second)
     }
 
     pub const fn ascii(self) -> [u8; 8] {
-        [b'0' + self.hour / 10, b'0' + self.hour % 10, b':',
-         b'0' + self.minute / 10, b'0' + self.minute % 10, b':',
-         b'0' + self.second / 10, b'0' + self.second % 10]
+        [
+            b'0' + self.hour / 10,
+            b'0' + self.hour % 10,
+            b':',
+            b'0' + self.minute / 10,
+            b'0' + self.minute % 10,
+            b':',
+            b'0' + self.second / 10,
+            b'0' + self.second % 10,
+        ]
     }
 }
 
@@ -55,16 +81,29 @@ impl ClockDate {
         }
         let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
         let max_day = match month {
-            2 => if leap { 29 } else { 28 },
+            2 => {
+                if leap {
+                    29
+                } else {
+                    28
+                }
+            }
             4 | 6 | 9 | 11 => 30,
             _ => 31,
         };
-        if day == 0 || day > max_day { return None; }
+        if day == 0 || day > max_day {
+            return None;
+        }
         Some(Self { year, month, day })
     }
 
-    pub fn from_cmos(day_raw: u8, month_raw: u8, year_raw: u8,
-                     century_raw: u8, status_b: u8) -> Option<Self> {
+    pub fn from_cmos(
+        day_raw: u8,
+        month_raw: u8,
+        year_raw: u8,
+        century_raw: u8,
+        status_b: u8,
+    ) -> Option<Self> {
         let binary = status_b & 0x04 != 0;
         let decode = |v| if binary { Some(v) } else { from_bcd(v) };
         let day = decode(day_raw)?;
@@ -94,7 +133,9 @@ impl ClockDate {
 }
 
 fn from_bcd(value: u8) -> Option<u8> {
-    if value & 0x0f > 9 || value >> 4 > 9 { return None; }
+    if value & 0x0f > 9 || value >> 4 > 9 {
+        return None;
+    }
     Some((value >> 4) * 10 + (value & 0x0f))
 }
 
@@ -103,20 +144,30 @@ mod tests {
     use super::*;
     #[test]
     fn bcd_and_binary_24h_clocks() {
-        assert_eq!(ClockTime::from_cmos(0x23, 0x59, 0x58, 0x02),
-                   ClockTime::new(23, 59, 58));
-        assert_eq!(ClockTime::from_cmos(23, 59, 58, 0x06),
-                   ClockTime::new(23, 59, 58));
+        assert_eq!(
+            ClockTime::from_cmos(0x23, 0x59, 0x58, 0x02),
+            ClockTime::new(23, 59, 58)
+        );
+        assert_eq!(
+            ClockTime::from_cmos(23, 59, 58, 0x06),
+            ClockTime::new(23, 59, 58)
+        );
         assert_eq!(ClockTime::new(1, 2, 3).unwrap().ascii(), *b"01:02:03");
     }
     #[test]
     fn twelve_hour_pm_am_and_midnight() {
-        assert_eq!(ClockTime::from_cmos(0x92, 0x01, 0x03, 0x00),
-                   ClockTime::new(12, 1, 3));
-        assert_eq!(ClockTime::from_cmos(0x12, 0x00, 0x00, 0x00),
-                   ClockTime::new(0, 0, 0));
-        assert_eq!(ClockTime::from_cmos(0x81, 0x00, 0x00, 0x00),
-                   ClockTime::new(13, 0, 0));
+        assert_eq!(
+            ClockTime::from_cmos(0x92, 0x01, 0x03, 0x00),
+            ClockTime::new(12, 1, 3)
+        );
+        assert_eq!(
+            ClockTime::from_cmos(0x12, 0x00, 0x00, 0x00),
+            ClockTime::new(0, 0, 0)
+        );
+        assert_eq!(
+            ClockTime::from_cmos(0x81, 0x00, 0x00, 0x00),
+            ClockTime::new(13, 0, 0)
+        );
     }
     #[test]
     fn calendar_date_validation_bcd_binary_and_leap_years() {
@@ -134,10 +185,15 @@ mod tests {
 
     #[test]
     fn invalid_values_are_rejected() {
-        for (h, m, s, status) in [(24, 0, 0, 0x06), (0, 60, 0, 0x06),
-                                  (0, 0, 60, 0x06), (0x3a, 0, 0, 0x02),
-                                  (0x12, 0x6a, 0, 0x00), (0, 0, 0, 0)] {
-            assert!(ClockTime::from_cmos(h,m,s,status).is_none());
+        for (h, m, s, status) in [
+            (24, 0, 0, 0x06),
+            (0, 60, 0, 0x06),
+            (0, 0, 60, 0x06),
+            (0x3a, 0, 0, 0x02),
+            (0x12, 0x6a, 0, 0x00),
+            (0, 0, 0, 0),
+        ] {
+            assert!(ClockTime::from_cmos(h, m, s, status).is_none());
         }
     }
 }

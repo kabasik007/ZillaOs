@@ -5,14 +5,24 @@ use crate::desktop::Layout;
 use crate::setup::Language;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Action { Start, Tasks }
+pub enum Action {
+    Start,
+    Tasks,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ButtonRect { pub x: usize, pub y: usize, pub width: usize, pub height: usize }
+pub struct ButtonRect {
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+}
 impl ButtonRect {
     pub fn contains(self, x: usize, y: usize) -> bool {
-        x >= self.x && x < self.x.saturating_add(self.width)
-            && y >= self.y && y < self.y.saturating_add(self.height)
+        x >= self.x
+            && x < self.x.saturating_add(self.width)
+            && y >= self.y
+            && y < self.y.saturating_add(self.height)
     }
 }
 pub const START_X: usize = 14;
@@ -20,13 +30,26 @@ pub const TASKS_X: usize = 96;
 
 pub fn button(layout: Layout, action: Action) -> Option<ButtonRect> {
     // The centered Dock occupies the left side at narrower widths.
-    if action == Action::Tasks && layout.width < 960 { return None; }
-    let x = if action == Action::Start { START_X } else { TASKS_X };
+    if action == Action::Tasks && layout.width < 960 {
+        return None;
+    }
+    let x = if action == Action::Start {
+        START_X
+    } else {
+        TASKS_X
+    };
     let width = if action == Action::Start { 74 } else { 77 };
     let y = layout.height.saturating_sub(layout.dock_height + 1);
     let height = layout.dock_height.saturating_sub(20).min(48);
-    if x + width > layout.width { return None; }
-    Some(ButtonRect { x, y, width, height })
+    if x + width > layout.width {
+        return None;
+    }
+    Some(ButtonRect {
+        x,
+        y,
+        width,
+        height,
+    })
 }
 
 pub fn hit(layout: Layout, x: usize, y: usize) -> Option<Action> {
@@ -62,11 +85,15 @@ pub fn menu_label(language: Language, index: usize) -> &'static str {
     }
 }
 pub fn menu_hit(layout: Layout, language: Language, x: usize, y: usize) -> Option<usize> {
-    if y >= layout.top_bar || layout.width < 720 { return None; }
+    if y >= layout.top_bar || layout.width < 720 {
+        return None;
+    }
     let mut start = 170usize;
     for index in 0..MENU_COUNT {
         let end = start + menu_label(language, index).chars().count() * 6 + 16;
-        if x >= start && x < end { return Some(index); }
+        if x >= start && x < end {
+            return Some(index);
+        }
         start = end;
     }
     None
@@ -83,21 +110,21 @@ mod tests {
         assert_eq!(hit(l, start.x + 10, start.y + 10), Some(Action::Start));
         assert_eq!(hit(l, tasks.x + 10, tasks.y + 10), Some(Action::Tasks));
         assert_eq!(hit(l, 500, tasks.y + 10), None);
-        assert!(button(Layout::for_size(800,600).unwrap(), Action::Tasks).is_none());
-        assert!(button(Layout::for_size(320,240).unwrap(), Action::Start).is_some());
+        assert!(button(Layout::for_size(800, 600).unwrap(), Action::Tasks).is_none());
+        assert!(button(Layout::for_size(320, 240).unwrap(), Action::Start).is_some());
     }
     #[test]
     fn top_menu_labels_and_click_zones_match() {
-        let l = Layout::for_size(1024,768).unwrap();
+        let l = Layout::for_size(1024, 768).unwrap();
         for language in [Language::Ukrainian, Language::English, Language::Russian] {
-            let mut x=170;
+            let mut x = 170;
             for i in 0..MENU_COUNT {
-                assert!(!menu_label(language,i).is_empty());
-                assert_eq!(menu_hit(l, language, x+2, 18),Some(i));
-                x+=menu_label(language,i).chars().count()*6+16;
+                assert!(!menu_label(language, i).is_empty());
+                assert_eq!(menu_hit(l, language, x + 2, 18), Some(i));
+                x += menu_label(language, i).chars().count() * 6 + 16;
             }
-            assert_eq!(menu_hit(l, language, x+3, 18),None);
-            assert_eq!(menu_hit(l, language, 170, 45),None);
+            assert_eq!(menu_hit(l, language, x + 3, 18), None);
+            assert_eq!(menu_hit(l, language, 170, 45), None);
         }
     }
 }

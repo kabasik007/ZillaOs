@@ -2,7 +2,7 @@
 //! This codec performs no I/O. THEME.TXT is volatile until a real persistent
 //! storage backend exists; the on-disk file format is only prepared here.
 
-use super::personalization::{Wallpaper, Accent};
+use super::personalization::{Accent, Wallpaper};
 use crate::setup::Language;
 
 pub const PROFILE_FILE: &str = "THEME.TXT";
@@ -52,8 +52,14 @@ impl ThemeProfile {
         let mut data = [0u8; ENCODED_CAPACITY];
         let mut cursor = 0;
         for piece in [
-            HEADER, "\nwallpaper=", wallpaper, "\naccent=", accent,
-            "\ntheme=", theme, "\n",
+            HEADER,
+            "\nwallpaper=",
+            wallpaper,
+            "\naccent=",
+            accent,
+            "\ntheme=",
+            theme,
+            "\n",
         ] {
             let end = cursor + piece.len();
             data[cursor..end].copy_from_slice(piece.as_bytes());
@@ -91,7 +97,11 @@ impl ThemeProfile {
         if lines.next().is_some() {
             return Err(DecodeError::InvalidContents);
         }
-        Ok(Self { wallpaper, accent, dark })
+        Ok(Self {
+            wallpaper,
+            accent,
+            dark,
+        })
     }
 }
 
@@ -110,7 +120,7 @@ pub enum ProfileStatus {
 impl ProfileStatus {
     /// Visible labels in the currently selected desktop language.
     pub const fn localized(self, lang: Language) -> &'static str {
-        use Language::{Ukrainian, English, Russian};
+        use Language::{English, Russian, Ukrainian};
         match (self, lang) {
             (Self::SessionOnly, Ukrainian) => "ЛИШЕ ЦЯ СЕСІЯ",
             (Self::SessionOnly, English) => "THIS SESSION ONLY",
@@ -159,10 +169,19 @@ mod tests {
 
     #[test]
     fn all_eighteen_profiles_round_trip() {
-        for wallpaper in [Wallpaper::Ocean, Wallpaper::Sunset, Wallpaper::Forest, Wallpaper::Custom] {
+        for wallpaper in [
+            Wallpaper::Ocean,
+            Wallpaper::Sunset,
+            Wallpaper::Forest,
+            Wallpaper::Custom,
+        ] {
             for accent in [Accent::Teal, Accent::Violet, Accent::Amber] {
                 for dark in [true, false] {
-                    let theme = ThemeProfile { wallpaper, accent, dark };
+                    let theme = ThemeProfile {
+                        wallpaper,
+                        accent,
+                        dark,
+                    };
                     let (data, len) = theme.encode();
                     assert!(len <= ENCODED_CAPACITY);
                     assert_eq!(ThemeProfile::decode(&data[..len]), Ok(theme));
@@ -175,7 +194,10 @@ mod tests {
     #[test]
     fn invalid_files_are_rejected_without_partial_defaulting() {
         let (raw, length) = ThemeProfile::default().encode();
-        assert_eq!(ThemeProfile::decode(&raw[..length]), Ok(ThemeProfile::default()));
+        assert_eq!(
+            ThemeProfile::decode(&raw[..length]),
+            Ok(ThemeProfile::default())
+        );
         for text in [
             "ZILLAOS-THEME/2\nwallpaper=ocean\naccent=teal\ntheme=dark\n",
             "ZILLAOS-THEME/1\nwallpaper=gif\naccent=teal\ntheme=dark\n",
@@ -186,17 +208,24 @@ mod tests {
         ] {
             assert!(ThemeProfile::decode(text.as_bytes()).is_err());
         }
-        assert_eq!(ThemeProfile::decode(&[0xff, 0xfe]), Err(DecodeError::InvalidUtf8));
+        assert_eq!(
+            ThemeProfile::decode(&[0xff, 0xfe]),
+            Err(DecodeError::InvalidUtf8)
+        );
     }
 
     #[test]
     fn profile_status_is_translated_to_all_desktop_languages() {
         for lang in [Language::Ukrainian, Language::English, Language::Russian] {
             for status in [
-                ProfileStatus::SessionOnly, ProfileStatus::Modified,
-                ProfileStatus::Saved, ProfileStatus::Loaded,
-                ProfileStatus::NotFound, ProfileStatus::InvalidFile,
-                ProfileStatus::StorageFull, ProfileStatus::ImageUnavailable,
+                ProfileStatus::SessionOnly,
+                ProfileStatus::Modified,
+                ProfileStatus::Saved,
+                ProfileStatus::Loaded,
+                ProfileStatus::NotFound,
+                ProfileStatus::InvalidFile,
+                ProfileStatus::StorageFull,
+                ProfileStatus::ImageUnavailable,
             ] {
                 assert!(!status.localized(lang).is_empty());
             }

@@ -11,17 +11,28 @@ pub fn app_row_at(rect: Rect, x: usize, y: usize) -> Option<App> {
         return None;
     }
     let start = body.saturating_add(47);
-    if y < start { return None; }
+    if y < start {
+        return None;
+    }
     let offset = y - start;
-    if offset % 43 >= 36 { return None; }
-    BUILTIN_APPS.get(offset / 43).map(|descriptor| descriptor.id)
+    if offset % 43 >= 36 {
+        return None;
+    }
+    BUILTIN_APPS
+        .get(offset / 43)
+        .map(|descriptor| descriptor.id)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn rows_match_installed_registry_and_ignore_outside_clicks() {
-        let rect = Rect { x: 100, y: 80, width: 620, height: 440 };
+        let rect = Rect {
+            x: 100,
+            y: 80,
+            width: 620,
+            height: 440,
+        };
         let x = rect.x + (rect.width / 4).clamp(70, 170) + 35;
         let y = rect.y + 45 + 8 + 47;
         for (i, descriptor) in BUILTIN_APPS.iter().enumerate() {

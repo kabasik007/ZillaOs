@@ -86,9 +86,7 @@ impl BufferLayout {
         let row_bytes = u64::from(self.width)
             .checked_mul(bpp)
             .ok_or(SurfaceError::SizeOverflow)?;
-        if u64::from(self.pitch_bytes) < row_bytes
-            || u64::from(self.pitch_bytes) % bpp != 0
-        {
+        if u64::from(self.pitch_bytes) < row_bytes || u64::from(self.pitch_bytes) % bpp != 0 {
             return Err(SurfaceError::InvalidStride);
         }
         let required = u64::from(self.pitch_bytes)
@@ -115,9 +113,16 @@ pub struct DamageRect {
 impl DamageRect {
     pub fn validate(self, layout: BufferLayout) -> Result<(), SurfaceError> {
         layout.validate()?;
-        if self.width == 0 || self.height == 0
-            || self.x.checked_add(self.width).is_none_or(|end| end > layout.width)
-            || self.y.checked_add(self.height).is_none_or(|end| end > layout.height)
+        if self.width == 0
+            || self.height == 0
+            || self
+                .x
+                .checked_add(self.width)
+                .is_none_or(|end| end > layout.width)
+            || self
+                .y
+                .checked_add(self.height)
+                .is_none_or(|end| end > layout.height)
         {
             return Err(SurfaceError::InvalidDamage);
         }
@@ -171,7 +176,9 @@ pub struct SurfaceRegistry<const N: usize> {
 
 impl<const N: usize> SurfaceRegistry<N> {
     pub const fn new() -> Self {
-        Self { slots: [SurfaceSlot::EMPTY; N] }
+        Self {
+            slots: [SurfaceSlot::EMPTY; N],
+        }
     }
 
     pub fn create(&mut self, descriptor: SurfaceDescriptor) -> Result<SurfaceId, SurfaceError> {
@@ -181,14 +188,20 @@ impl<const N: usize> SurfaceRegistry<N> {
                 let slot_number = u32::try_from(index).map_err(|_| SurfaceError::NoSlots)?;
                 slot.descriptor = Some(descriptor);
                 slot.ownership = BufferOwnership::CpuWritable;
-                return Ok(SurfaceId { slot: slot_number, generation: slot.generation });
+                return Ok(SurfaceId {
+                    slot: slot_number,
+                    generation: slot.generation,
+                });
             }
         }
         Err(SurfaceError::NoSlots)
     }
 
     fn slot_mut(&mut self, id: SurfaceId) -> Result<&mut SurfaceSlot, SurfaceError> {
-        let slot = self.slots.get_mut(id.slot as usize).ok_or(SurfaceError::StaleHandle)?;
+        let slot = self
+            .slots
+            .get_mut(id.slot as usize)
+            .ok_or(SurfaceError::StaleHandle)?;
         if id.generation == 0 || slot.generation != id.generation || slot.descriptor.is_none() {
             return Err(SurfaceError::StaleHandle);
         }
@@ -196,7 +209,10 @@ impl<const N: usize> SurfaceRegistry<N> {
     }
 
     pub fn descriptor(&self, id: SurfaceId) -> Result<SurfaceDescriptor, SurfaceError> {
-        let slot = self.slots.get(id.slot as usize).ok_or(SurfaceError::StaleHandle)?;
+        let slot = self
+            .slots
+            .get(id.slot as usize)
+            .ok_or(SurfaceError::StaleHandle)?;
         if id.generation == 0 || slot.generation != id.generation {
             return Err(SurfaceError::StaleHandle);
         }
@@ -260,7 +276,9 @@ impl<const N: usize> SurfaceRegistry<N> {
 }
 
 impl<const N: usize> Default for SurfaceRegistry<N> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -271,7 +289,11 @@ struct OutputSlot {
 }
 
 impl OutputSlot {
-    const EMPTY: Self = Self { generation: 1, connected: false, retired: false };
+    const EMPTY: Self = Self {
+        generation: 1,
+        connected: false,
+        retired: false,
+    };
 }
 
 /// Logical output identity lifecycle, independent of EDID or GPU topology.
@@ -288,24 +310,40 @@ pub enum OutputError {
 }
 
 impl<const N: usize> OutputRegistry<N> {
-    pub const fn new() -> Self { Self { slots: [OutputSlot::EMPTY; N] } }
+    pub const fn new() -> Self {
+        Self {
+            slots: [OutputSlot::EMPTY; N],
+        }
+    }
 
     pub fn connect(&mut self, index: usize) -> Result<OutputId, OutputError> {
         let slot = self.slots.get_mut(index).ok_or(OutputError::InvalidSlot)?;
         let index = u16::try_from(index).map_err(|_| OutputError::InvalidSlot)?;
-        if slot.retired { return Err(OutputError::Retired); }
-        if slot.connected { return Err(OutputError::AlreadyConnected); }
+        if slot.retired {
+            return Err(OutputError::Retired);
+        }
+        if slot.connected {
+            return Err(OutputError::AlreadyConnected);
+        }
         slot.connected = true;
-        Ok(OutputId { slot: index, generation: slot.generation })
+        Ok(OutputId {
+            slot: index,
+            generation: slot.generation,
+        })
     }
 
     pub fn is_connected(&self, id: OutputId) -> bool {
-        id.generation != 0 && self.slots.get(usize::from(id.slot))
-            .is_some_and(|s| s.connected && s.generation == id.generation)
+        id.generation != 0
+            && self
+                .slots
+                .get(usize::from(id.slot))
+                .is_some_and(|s| s.connected && s.generation == id.generation)
     }
 
     pub fn disconnect(&mut self, id: OutputId) -> Result<(), OutputError> {
-        if !self.is_connected(id) { return Err(OutputError::StaleHandle); }
+        if !self.is_connected(id) {
+            return Err(OutputError::StaleHandle);
+        }
         let slot = &mut self.slots[usize::from(id.slot)];
         slot.connected = false;
         if let Some(next) = slot.generation.checked_add(1) {
@@ -318,7 +356,9 @@ impl<const N: usize> OutputRegistry<N> {
 }
 
 impl<const N: usize> Default for OutputRegistry<N> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -372,7 +412,9 @@ pub fn discover_modes(
         return Err(ModeListError::StaleOutput);
     }
     out.fill(None);
-    let count = backend.enumerate_modes(output, out).map_err(ModeListError::Backend)?;
+    let count = backend
+        .enumerate_modes(output, out)
+        .map_err(ModeListError::Backend)?;
     if count > out.len() {
         return Err(ModeListError::TooManyModes);
     }
@@ -402,7 +444,9 @@ mod tests {
         SurfaceDescriptor {
             owner: SurfaceOwner::Process(42),
             layout: BufferLayout {
-                width: 640, height: 480, pitch_bytes: 2560,
+                width: 640,
+                height: 480,
+                pitch_bytes: 2560,
                 format: PixelFormat::Xrgb8888,
                 byte_length: 2560 * 480,
             },
@@ -441,12 +485,41 @@ mod tests {
     #[test]
     fn checked_damage_rectangles() {
         let layout = descriptor().layout;
-        assert_eq!(DamageRect { x: 639, y: 479, width: 1, height: 1 }.validate(layout), Ok(()));
+        assert_eq!(
+            DamageRect {
+                x: 639,
+                y: 479,
+                width: 1,
+                height: 1
+            }
+            .validate(layout),
+            Ok(())
+        );
         for r in [
-            DamageRect { x: 640, y: 0, width: 1, height: 1 },
-            DamageRect { x: 0, y: 480, width: 1, height: 1 },
-            DamageRect { x: u32::MAX, y: 0, width: 2, height: 1 },
-            DamageRect { x: 0, y: 0, width: 0, height: 10 },
+            DamageRect {
+                x: 640,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            DamageRect {
+                x: 0,
+                y: 480,
+                width: 1,
+                height: 1,
+            },
+            DamageRect {
+                x: u32::MAX,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+            DamageRect {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 10,
+            },
         ] {
             assert_eq!(r.validate(layout), Err(SurfaceError::InvalidDamage));
         }
@@ -457,14 +530,42 @@ mod tests {
         let mut surfaces = SurfaceRegistry::<1>::new();
         let id = surfaces.create(descriptor()).unwrap();
         assert_eq!(surfaces.create(descriptor()), Err(SurfaceError::NoSlots));
-        assert_eq!(surfaces.submit_damage(id, SurfaceOwner::Kernel,
-            DamageRect { x: 0, y: 0, width: 1, height: 1 }), Err(SurfaceError::WrongOwner));
+        assert_eq!(
+            surfaces.submit_damage(
+                id,
+                SurfaceOwner::Kernel,
+                DamageRect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1
+                }
+            ),
+            Err(SurfaceError::WrongOwner)
+        );
         assert_eq!(surfaces.acquire_scanout(id), Ok(()));
-        assert_eq!(surfaces.destroy(id, SurfaceOwner::Process(42)), Err(SurfaceError::ScanoutBusy));
-        assert_eq!(surfaces.submit_damage(id, SurfaceOwner::Process(42),
-            DamageRect { x: 0, y: 0, width: 1, height: 1 }), Err(SurfaceError::ScanoutBusy));
+        assert_eq!(
+            surfaces.destroy(id, SurfaceOwner::Process(42)),
+            Err(SurfaceError::ScanoutBusy)
+        );
+        assert_eq!(
+            surfaces.submit_damage(
+                id,
+                SurfaceOwner::Process(42),
+                DamageRect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1
+                }
+            ),
+            Err(SurfaceError::ScanoutBusy)
+        );
         assert_eq!(surfaces.release_scanout(id), Ok(()));
-        assert_eq!(surfaces.release_scanout(id), Err(SurfaceError::NotInScanout));
+        assert_eq!(
+            surfaces.release_scanout(id),
+            Err(SurfaceError::NotInScanout)
+        );
         assert_eq!(surfaces.destroy(id, SurfaceOwner::Process(42)), Ok(()));
         assert_eq!(surfaces.descriptor(id), Err(SurfaceError::StaleHandle));
         let next = surfaces.create(descriptor()).unwrap();
@@ -494,8 +595,12 @@ mod tests {
     }
 
     impl ModeBackend for MockModes {
-        fn runtime_switch_available(&self) -> bool { false }
-        fn supports_mode(&self, _: Mode) -> bool { false }
+        fn runtime_switch_available(&self) -> bool {
+            false
+        }
+        fn supports_mode(&self, _: Mode) -> bool {
+            false
+        }
         fn prepare_mode(&mut self, _: Mode) -> Result<(), BackendFailure> {
             Err(BackendFailure::Unavailable)
         }
@@ -505,49 +610,102 @@ mod tests {
         fn read_mode(&mut self) -> Result<Mode, BackendFailure> {
             Err(BackendFailure::Unavailable)
         }
-        fn can_restore(&self, _: Mode) -> bool { false }
+        fn can_restore(&self, _: Mode) -> bool {
+            false
+        }
     }
 
     impl VideoDisplayBackend for MockModes {
-        fn driver_name(&self) -> &'static str { "mock-no-hardware" }
-        fn active_output(&self) -> Option<OutputId> { Some(self.output) }
+        fn driver_name(&self) -> &'static str {
+            "mock-no-hardware"
+        }
+        fn active_output(&self) -> Option<OutputId> {
+            Some(self.output)
+        }
         fn enumerate_modes(
-            &self, _: OutputId, out: &mut [Option<ModeCapability>],
+            &self,
+            _: OutputId,
+            out: &mut [Option<ModeCapability>],
         ) -> Result<usize, BackendFailure> {
             for (dst, src) in out.iter_mut().zip(self.list.iter()) {
                 *dst = *src;
             }
             Ok(self.report)
         }
-        fn test_scanout(&mut self, _: OutputId, _: SurfaceDescriptor)
-            -> Result<(), BackendFailure>
-        {
+        fn test_scanout(
+            &mut self,
+            _: OutputId,
+            _: SurfaceDescriptor,
+        ) -> Result<(), BackendFailure> {
             Err(BackendFailure::Unavailable)
         }
     }
 
     #[test]
     fn mode_discovery_checks_output_generation_duplicates_and_counts() {
-        let output = OutputId { slot: 0, generation: 3 };
-        let a = ModeCapability { mode: Mode::new(1024, 768), refresh_millihz: None };
-        let b = ModeCapability { mode: Mode::new(1280, 800), refresh_millihz: Some(60_000) };
-        let mut backend = MockModes { output, list: [Some(a), Some(b)], report: 2 };
+        let output = OutputId {
+            slot: 0,
+            generation: 3,
+        };
+        let a = ModeCapability {
+            mode: Mode::new(1024, 768),
+            refresh_millihz: None,
+        };
+        let b = ModeCapability {
+            mode: Mode::new(1280, 800),
+            refresh_millihz: Some(60_000),
+        };
+        let mut backend = MockModes {
+            output,
+            list: [Some(a), Some(b)],
+            report: 2,
+        };
         let mut found = [None; 2];
         assert_eq!(discover_modes(&backend, output, &mut found), Ok(2));
         assert_eq!(found, [Some(a), Some(b)]);
-        assert_eq!(discover_modes(&backend,
-            OutputId { slot: 0, generation: 2 }, &mut found), Err(ModeListError::StaleOutput));
+        assert_eq!(
+            discover_modes(
+                &backend,
+                OutputId {
+                    slot: 0,
+                    generation: 2
+                },
+                &mut found
+            ),
+            Err(ModeListError::StaleOutput)
+        );
         backend.list = [Some(a), Some(a)];
-        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::DuplicateMode));
+        assert_eq!(
+            discover_modes(&backend, output, &mut found),
+            Err(ModeListError::DuplicateMode)
+        );
         backend.list = [Some(a), Some(b)];
         backend.report = 3;
-        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::TooManyModes));
+        assert_eq!(
+            discover_modes(&backend, output, &mut found),
+            Err(ModeListError::TooManyModes)
+        );
         backend.report = 1;
-        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::TooManyModes));
-        backend.list = [Some(ModeCapability { mode: a.mode, refresh_millihz: Some(0) }), None];
-        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::InvalidMode));
+        assert_eq!(
+            discover_modes(&backend, output, &mut found),
+            Err(ModeListError::TooManyModes)
+        );
+        backend.list = [
+            Some(ModeCapability {
+                mode: a.mode,
+                refresh_millihz: Some(0),
+            }),
+            None,
+        ];
+        assert_eq!(
+            discover_modes(&backend, output, &mut found),
+            Err(ModeListError::InvalidMode)
+        );
         backend.list = [None, None];
-        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::MissingMode));
+        assert_eq!(
+            discover_modes(&backend, output, &mut found),
+            Err(ModeListError::MissingMode)
+        );
     }
 
     #[test]
@@ -571,6 +729,9 @@ mod tests {
     fn rejects_unauthenticated_process_zero() {
         let mut d = descriptor();
         d.owner = SurfaceOwner::Process(0);
-        assert_eq!(SurfaceRegistry::<2>::new().create(d), Err(SurfaceError::InvalidOwner));
+        assert_eq!(
+            SurfaceRegistry::<2>::new().create(d),
+            Err(SurfaceError::InvalidOwner)
+        );
     }
 }

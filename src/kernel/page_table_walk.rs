@@ -3,7 +3,7 @@
 //! It cannot install mappings, modify page tables, or provide Ring 3 isolation.
 //! Callers must check that every physical page-table frame is actually mapped,
 //! owned by the active bootloader or kernel, and safe to read.
-use crate::paging::{is_canonical, NO_EXECUTE, PRESENT, USER, WRITABLE, HUGE};
+use crate::paging::{HUGE, NO_EXECUTE, PRESENT, USER, WRITABLE, is_canonical};
 
 const FRAME_MASK: u64 = 0x000f_ffff_ffff_f000;
 
@@ -30,7 +30,9 @@ pub struct Translation {
 }
 
 fn physical_ok(physical: u64, len: u64, bits: u8) -> bool {
-    physical.checked_add(len).is_some_and(|end| end <= (1u64 << bits))
+    physical
+        .checked_add(len)
+        .is_some_and(|end| end <= (1u64 << bits))
 }
 
 /// Walk 4- or 5-level page tables without allocating.
@@ -92,7 +94,8 @@ where
             if phys & (page_size - 1) != 0 {
                 return Err(WalkError::InvalidLargePage);
             }
-            let base = phys.checked_add(virtual_address & (page_size - 1))
+            let base = phys
+                .checked_add(virtual_address & (page_size - 1))
                 .ok_or(WalkError::PhysicalOutOfRange)?;
             if !physical_ok(phys, page_size, physical_bits) {
                 return Err(WalkError::PhysicalOutOfRange);
@@ -158,7 +161,8 @@ mod tests {
                 (0x3000, 1) => 0x800000 | PRESENT | HUGE,
                 _ => 0,
             })
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(got.physical_address, 0x802345);
         assert_eq!(got.page_size, 2 * 1024 * 1024);
     }
@@ -171,7 +175,8 @@ mod tests {
                 (0x2000, 1) => 0x40000000 | PRESENT | HUGE,
                 _ => 0,
             })
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(got.physical_address, 0x40345678);
         assert_eq!(got.page_size, 1 << 30);
     }
@@ -187,7 +192,8 @@ mod tests {
                 (0x5000, 1) => 0x6000 | PRESENT,
                 _ => 0,
             })
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(got.physical_address, 0x6234);
         assert_eq!(got.levels, 5);
         assert_eq!(

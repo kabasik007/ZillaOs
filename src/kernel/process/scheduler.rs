@@ -7,7 +7,9 @@ pub struct RoundRobin {
 }
 
 impl RoundRobin {
-    pub const fn new() -> Self { Self { last: 0 } }
+    pub const fn new() -> Self {
+        Self { last: 0 }
+    }
 
     /// Return the next ready PID without changing execution state.
     pub fn next(&mut self, processes: &ProcessTable) -> Option<Pid> {

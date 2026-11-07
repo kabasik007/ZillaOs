@@ -6,9 +6,9 @@
 //! Only used by single-core 'vm-demo' in VMware/QEMU. Not a native-PC driver.
 
 use core::arch::asm;
-use zillaos_kernel::storage_pci::PciLocation;
 use zillaos_kernel::platform::boot::{BootPci, MAX_BOOT_PCI_DEVICES};
 use zillaos_kernel::platform::pci::LegacyConfig;
+use zillaos_kernel::storage_pci::PciLocation;
 
 #[inline]
 fn read_config(loc: PciLocation, offset: u8) -> u32 {
@@ -45,9 +45,7 @@ pub fn discover_boot() -> BootPci<MAX_BOOT_PCI_DEVICES> {
 /// Consume the *cached* PCI registry; VMware's existing probe implementation
 /// remains unchanged but its config callback is now entirely in-memory.
 /// The only remaining device I/O is the legacy SVGA read-only register probe.
-pub fn video_adapter(
-    pci: &BootPci<MAX_BOOT_PCI_DEVICES>,
-) -> zillaos_kernel::video::VideoAdapter {
+pub fn video_adapter(pci: &BootPci<MAX_BOOT_PCI_DEVICES>) -> zillaos_kernel::video::VideoAdapter {
     use zillaos_kernel::video::gpu::vmware_svga;
 
     let adapter = pci.video_adapter();
@@ -69,10 +67,22 @@ pub fn video_adapter(
     match probe_result {
         Ok(Some(info)) => {
             serial_probe_hex("ZILLAOS_SVGA_ID_HEX=", info.registers.interface_id as u64);
-            serial_probe_hex("ZILLAOS_SVGA_MAX_WIDTH_HEX=", info.registers.max_width as u64);
-            serial_probe_hex("ZILLAOS_SVGA_MAX_HEIGHT_HEX=", info.registers.max_height as u64);
-            serial_probe_hex("ZILLAOS_SVGA_VRAM_BYTES_HEX=", info.registers.vram_bytes as u64);
-            serial_probe_hex("ZILLAOS_SVGA_FB_BYTES_HEX=", info.registers.framebuffer_bytes as u64);
+            serial_probe_hex(
+                "ZILLAOS_SVGA_MAX_WIDTH_HEX=",
+                info.registers.max_width as u64,
+            );
+            serial_probe_hex(
+                "ZILLAOS_SVGA_MAX_HEIGHT_HEX=",
+                info.registers.max_height as u64,
+            );
+            serial_probe_hex(
+                "ZILLAOS_SVGA_VRAM_BYTES_HEX=",
+                info.registers.vram_bytes as u64,
+            );
+            serial_probe_hex(
+                "ZILLAOS_SVGA_FB_BYTES_HEX=",
+                info.registers.framebuffer_bytes as u64,
+            );
             if let Some(bytes) = info.registers.fifo_bytes {
                 serial_probe_hex("ZILLAOS_SVGA_FIFO_BYTES_HEX=", bytes as u64);
             }

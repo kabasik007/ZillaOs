@@ -4,7 +4,7 @@ use core::arch::asm;
 use core::ptr;
 
 use zillaos_kernel::memory::{MemoryRegion, PAGE_SIZE};
-use zillaos_kernel::page_table_walk::{translate, Translation, WalkError};
+use zillaos_kernel::page_table_walk::{Translation, WalkError, translate};
 use zillaos_kernel::paging::is_canonical;
 
 const BOOTLOADER_RECLAIMABLE: u64 = 5;
@@ -23,7 +23,9 @@ pub enum ObserverError {
 }
 
 impl From<WalkError> for ObserverError {
-    fn from(err: WalkError) -> Self { Self::Walk(err) }
+    fn from(err: WalkError) -> Self {
+        Self::Walk(err)
+    }
 }
 
 pub struct Snapshot {
@@ -37,12 +39,19 @@ pub struct Snapshot {
 /// Validate a complete physical table frame is in the bootloader's
 /// explicitly HHDM-mapped regions. No speculative dereferences.
 fn mapped_table_frame(regions: &[MemoryRegion], start: u64) -> bool {
-    let Some(end) = start.checked_add(PAGE_SIZE) else { return false };
-    if start % PAGE_SIZE != 0 { return false }
+    let Some(end) = start.checked_add(PAGE_SIZE) else {
+        return false;
+    };
+    if start % PAGE_SIZE != 0 {
+        return false;
+    }
     regions.iter().any(|region| {
         (region.kind == BOOTLOADER_RECLAIMABLE || region.kind == USABLE)
             && region.base <= start
-            && region.base.checked_add(region.length).is_some_and(|region_end| end <= region_end)
+            && region
+                .base
+                .checked_add(region.length)
+                .is_some_and(|region_end| end <= region_end)
     })
 }
 
@@ -57,7 +66,9 @@ impl Reader<'_> {
         if index >= 512 || !mapped_table_frame(self.regions, table) {
             return Err(WalkError::TableReadDenied);
         }
-        let address = self.hhdm_offset.checked_add(table)
+        let address = self
+            .hhdm_offset
+            .checked_add(table)
             .and_then(|address| address.checked_add(index as u64 * 8))
             .ok_or(WalkError::TableReadDenied)?;
         if !is_canonical(address, self.virtual_bits) {
@@ -101,13 +112,19 @@ pub unsafe fn observe(
     if !mapped_table_frame(regions, owned_probe_frame) {
         return Err(ObserverError::InvalidPhysicalMap);
     }
-    let hhdm_virtual = hhdm_offset.checked_add(owned_probe_frame)
+    let hhdm_virtual = hhdm_offset
+        .checked_add(owned_probe_frame)
         .ok_or(ObserverError::InvalidHhdm)?;
-    let reader = Reader { regions, hhdm_offset, virtual_bits };
+    let reader = Reader {
+        regions,
+        hhdm_offset,
+        virtual_bits,
+    };
     let map = |address| {
         translate(root, address, virtual_bits, physical_bits, |phys, index| {
             reader.read(phys, index)
-        }).map_err(ObserverError::from)
+        })
+        .map_err(ObserverError::from)
     };
     let kernel_text = map(crate::_start as usize as u64)?;
     let kernel_stack = map(stack_pointer)?;
@@ -125,5 +142,11 @@ pub unsafe fn observe(
     if !hhdm_page.writable || hhdm_page.physical_address != owned_probe_frame {
         return Err(ObserverError::HhdmNotWritable);
     }
-    Ok(Snapshot { cr3: root, virtual_bits, kernel_text, kernel_stack, hhdm_page })
+    Ok(Snapshot {
+        cr3: root,
+        virtual_bits,
+        kernel_text,
+        kernel_stack,
+        hhdm_page,
+    })
 }

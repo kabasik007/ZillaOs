@@ -21,7 +21,12 @@ pub struct Region {
 
 impl Region {
     pub const fn new(x: usize, y: usize, width: usize, height: usize) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn clipped(self, width: usize, height: usize) -> Option<Self> {
@@ -43,10 +48,7 @@ impl Region {
 }
 
 pub const fn supports_backbuffer(width: usize, height: usize) -> bool {
-    width > 0
-        && height > 0
-        && width <= BACKBUFFER_WIDTH
-        && height <= BACKBUFFER_HEIGHT
+    width > 0 && height > 0 && width <= BACKBUFFER_WIDTH && height <= BACKBUFFER_HEIGHT
 }
 
 pub fn backing_index(row: usize, col: usize) -> Option<usize> {
@@ -70,11 +72,15 @@ pub fn fill_rect(
     if stride == 0 || canvas_width > stride {
         return 0;
     }
-    let Some(required) = stride.checked_mul(canvas_height) else { return 0 };
+    let Some(required) = stride.checked_mul(canvas_height) else {
+        return 0;
+    };
     if required > pixels.len() {
         return 0;
     }
-    let Some(clip) = requested.clipped(canvas_width, canvas_height) else { return 0 };
+    let Some(clip) = requested.clipped(canvas_width, canvas_height) else {
+        return 0;
+    };
     for row in clip.y..clip.y + clip.height {
         let start = row * stride + clip.x;
         pixels[start..start + clip.width].fill(color);
@@ -90,9 +96,10 @@ mod tests {
     fn rectangle_fill_preserves_padding_and_outside_pixels() {
         // Physical backing has stride 6, but visible canvas is 4x3.
         let mut pixels = [0x55u32; 18];
-        assert_eq!(fill_rect(
-            &mut pixels, 6, 4, 3, Region::new(2, 1, 8, 8), 0xaa
-        ), 4);
+        assert_eq!(
+            fill_rect(&mut pixels, 6, 4, 3, Region::new(2, 1, 8, 8), 0xaa),
+            4
+        );
         for row in 0..3 {
             for col in 0..6 {
                 let expected = if row >= 1 && col >= 2 && col < 4 {
@@ -108,10 +115,18 @@ mod tests {
     #[test]
     fn rejects_dangerous_stride_height_and_allocation_mismatch() {
         let mut pixels = [0u32; 12];
-        assert_eq!(fill_rect(&mut pixels, 2, 4, 3, Region::new(0, 0, 2, 2), 1), 0);
-        assert_eq!(fill_rect(&mut pixels, 5, 4, 3, Region::new(0, 0, 2, 2), 1), 0);
-        assert_eq!(fill_rect(&mut pixels, usize::MAX, 3, 4,
-                             Region::new(0, 0, 2, 2), 1), 0);
+        assert_eq!(
+            fill_rect(&mut pixels, 2, 4, 3, Region::new(0, 0, 2, 2), 1),
+            0
+        );
+        assert_eq!(
+            fill_rect(&mut pixels, 5, 4, 3, Region::new(0, 0, 2, 2), 1),
+            0
+        );
+        assert_eq!(
+            fill_rect(&mut pixels, usize::MAX, 3, 4, Region::new(0, 0, 2, 2), 1),
+            0
+        );
         assert!(pixels.iter().all(|px| *px == 0));
     }
 
@@ -120,8 +135,10 @@ mod tests {
         // A 1600x900 GOP framebuffer must not be indexed at an older fixed
         // 1280-pixel stride. The renderer uses the current visible width.
         let mut pixels = [0x55u32; 24];
-        assert_eq!(fill_rect(&mut pixels, 6, 4, 3,
-                              Region::new(2, 1, 2, 2), 0xaabbcc), 4);
+        assert_eq!(
+            fill_rect(&mut pixels, 6, 4, 3, Region::new(2, 1, 2, 2), 0xaabbcc),
+            4
+        );
         for (i, value) in pixels.iter().enumerate() {
             let modified = matches!(i, 8 | 9 | 14 | 15);
             assert_eq!(*value, if modified { 0xaabbcc } else { 0x55 });
@@ -131,11 +148,12 @@ mod tests {
     #[test]
     fn full_surface_fill_counts_correct_pixels() {
         let mut pixels = [0; 320];
-        assert_eq!(fill_rect(&mut pixels, 32, 32, 10,
-                             Region::new(0, 0, 32, 10), 0x112233), 320);
+        assert_eq!(
+            fill_rect(&mut pixels, 32, 32, 10, Region::new(0, 0, 32, 10), 0x112233),
+            320
+        );
         assert!(pixels.iter().all(|px| *px == 0x112233));
     }
-
 
     #[test]
     fn clips_at_all_screen_edges() {
@@ -150,15 +168,19 @@ mod tests {
 
     #[test]
     fn gigantic_coordinates_are_clamped_without_overflow() {
-        assert_eq!(Region::new(319, 199, usize::MAX, usize::MAX).clipped(320, 200),
-            Some(Region::new(319, 199, 1, 1)));
+        assert_eq!(
+            Region::new(319, 199, usize::MAX, usize::MAX).clipped(320, 200),
+            Some(Region::new(319, 199, 1, 1))
+        );
         assert_eq!(Region::new(usize::MAX, 0, 20, 20).clipped(320, 200), None);
     }
 
     #[test]
     fn cursor_damage_never_leaves_framebuffer() {
-        assert_eq!(Region::cursor_at(315, 197, 320, 200),
-            Some(Region::new(315, 197, 5, 3)));
+        assert_eq!(
+            Region::cursor_at(315, 197, 320, 200),
+            Some(Region::new(315, 197, 5, 3))
+        );
         assert_eq!(Region::cursor_at(320, 0, 320, 200), None);
     }
 
