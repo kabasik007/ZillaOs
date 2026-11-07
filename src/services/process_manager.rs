@@ -27,6 +27,9 @@ pub enum ExecutionError {
 pub enum ReapModelError {
     ThreadsRemain,
     CleanupPending,
+    /// A legacy terminal state has no authenticated cleanup ticket.
+    /// PID removal is only allowed through finish_exit_model().
+    CleanupRequired,
     Process(ProcessError),
 }
 
@@ -172,8 +175,10 @@ impl ProcessManager {
             .current_identity(&self.threads, &self.processes, cpu)
     }
 
-    /// Do not release a process PID until EVERY owned TID has exited and
-    /// been reaped. This check is metadata-only, not a frame/handle teardown.
+    /// Legacy compatibility probe only. Never reap a PID without the
+    /// authenticated exit journal and all its resource-owner acknowledgments.
+    /// Actual PID release is exclusively finish_exit_model(ticket). This
+    /// method deliberately returns an error for terminal unjournaled PIDs.
     pub fn reap_native_model(&mut self, pid: Pid) -> Result<ExitReason, ReapModelError> {
         if self.exit_journal.pending_for(pid).is_some() {
             return Err(ReapModelError::CleanupPending);
@@ -181,7 +186,14 @@ impl ProcessManager {
         if self.threads.iter().any(|thread| thread.pid == pid) {
             return Err(ReapModelError::ThreadsRemain);
         }
-        self.processes.reap(pid).map_err(ReapModelError::Process)
+        let process = self
+            .processes
+            .process(pid)
+            .ok_or(ReapModelError::Process(ProcessError::UnknownPid))?;
+        if process.state != ProcessState::Exited {
+            return Err(ReapModelError::Process(ProcessError::InvalidState));
+        }
+        Err(ReapModelError::CleanupRequired)
     }
 
     pub fn reap_thread_model(&mut self, tid: Tid) -> Result<(), ThreadError> {
@@ -567,15 +579,46 @@ mod tests {
             service.reap_native_model(pid),
             Err(ReapModelError::ThreadsRemain)
         );
-        service.threads.exit(tid).unwrap();
+        let event = service.request_exit_model(pid, ExitReason::Normal(0)).unwrap();
+        assert_eq!(service.reap_native_model(pid), Err(ReapModelError::CleanupPending));
+        let mut hooks = MockExitHooks::default();
+        for phase in [
+            CleanupPhase::Ipc,
+            CleanupPhase::Services,
+            CleanupPhase::Memory,
+            CleanupPhase::Complete,
+        ] {
+            assert_eq!(
+                service.drive_exit_cleanup_model(event.ticket, &mut hooks),
+                Ok(phase)
+            );
+        }
         service.reap_thread_model(tid).unwrap();
-        service.processes.mark_running(pid).unwrap();
-        service
-            .processes
-            .mark_exited(pid, ExitReason::Normal(0))
-            .unwrap();
-        assert_eq!(service.reap_native_model(pid), Ok(ExitReason::Normal(0)));
+        assert_eq!(
+            service.finish_exit_model(event.ticket),
+            Ok(ExitReason::Normal(0))
+        );
         assert!(service.process(pid).is_none());
+    }
+
+    #[test]
+    fn unjournaled_legacy_process_exit_can_no_longer_bypass_cleanup() {
+        let mut pm = ProcessManager::new();
+        let pid = pm.reserve_native("legacy", 0x400000, 0x800000, 4).unwrap();
+        pm.processes.kill(pid).unwrap();
+        assert_eq!(
+            pm.reap_native_model(pid),
+            Err(ReapModelError::CleanupRequired)
+        );
+        assert_eq!(pm.process(pid).unwrap().state, ProcessState::Exited);
+        assert_eq!(
+            pm.request_exit_model(pid, ExitReason::Killed),
+            Err(ExitModelError::AlreadyExited)
+        );
+        assert_eq!(
+            pm.reap_native_model(Pid(u64::MAX)),
+            Err(ReapModelError::Process(ProcessError::UnknownPid))
+        );
     }
 
     #[test]
