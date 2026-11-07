@@ -3,7 +3,7 @@
 //! No global mutable singleton, second scanner, config writes, MMIO or DMA.
 #![forbid(unsafe_code)]
 
-use super::device::{DeviceRegistry, DeviceSnapshot, RegistryError};
+use super::device::{DeviceRegistry, DeviceSnapshot};
 use super::pci::{
     PciAddress, PciConfigRead, PciIdentity, ScanReport, scan_legacy_segment0,
 };
@@ -202,7 +202,7 @@ impl<const DEVICES: usize> BootPci<DEVICES> {
                 | ((id.class.subclass as u32) << 16)
                 | ((id.class.programming_interface as u32) << 8)
                 | id.revision as u32,
-            12 => (((pci.header_type | if pci.multifunction { 0x80 } else { 0 }) as u32) << 16),
+            12 => ((pci.header_type | if pci.multifunction { 0x80 } else { 0 }) as u32) << 16,
             16 => cached.map_or(u32::MAX, |c| c.bar0),
             20 => cached.map_or(u32::MAX, |c| c.bar1),
             24 => cached.map_or(u32::MAX, |c| c.bar2),
@@ -295,6 +295,28 @@ mod tests {
         assert_eq!(overflow.status, BootScanStatus::InventoryOverflow);
         assert!(overflow.registry().is_none());
         assert_eq!(overflow.storage_inventory().count, 0);
+    }
+
+    #[test]
+    fn invalid_bridge_range_denies_all_device_views() {
+        let mut backend = MockConfig::new(|addr: PciAddress, off: u16| {
+            if addr.bus == 0 && addr.device == 1 {
+                Ok(match off {
+                    0 => 0x1234_8086,
+                    0x0c => 0x0001_0000,
+                    0x08 => 0x0604_0000,
+                    0x18 => 0x0001_0001, // primary 1, secondary 0: malformed
+                    _ => u32::MAX,
+                })
+            } else {
+                fixture(addr, off)
+            }
+        });
+        let boot = BootPci::<8>::discover(&mut backend, 0);
+        assert_eq!(boot.status, BootScanStatus::MalformedTopology);
+        assert!(boot.registry().is_none());
+        assert_eq!(boot.storage_inventory().count, 0);
+        assert_eq!(boot.video_adapter(), VideoAdapter::FirmwareOnly);
     }
 
     #[test]
