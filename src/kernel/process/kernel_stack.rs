@@ -68,6 +68,10 @@ impl KernelStackRegistry {
         self.iter().find(|lease| lease.id == id)
     }
 
+    pub fn lease_for_thread(&self, tid: Tid) -> Option<KernelStackLease> {
+        self.iter().find(|lease| lease.tid == tid)
+    }
+
     /// Reserve exactly one unmapped guard page plus bounded RW/NX kernel
     /// stack pages. The VM subsystem MUST install permissions separately.
     pub fn reserve(
