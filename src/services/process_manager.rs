@@ -12,6 +12,10 @@ use crate::process::lifecycle::{
 };
 use crate::process::scheduler::RoundRobin;
 use crate::process::thread::{MAX_CPUS, Thread, ThreadError, ThreadState, ThreadTable, Tid};
+use crate::capabilities::process_binding::{BindingError, ProcessHandleBook};
+use crate::capabilities::ObjectRegistry;
+use crate::ipc::lifecycle::{process_exit_cleanup, ExitCleanup, LifecycleError};
+use crate::ipc::queue::{CallTracker, IpcQueue};
 use crate::process::{ExitReason, Pid, Process, ProcessError, ProcessState, ProcessTable};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,6 +43,15 @@ pub enum ExitModelError {
     Thread(ThreadError),
     Journal(CleanupError),
     Hook(CleanupHookError),
+}
+
+/// Errors in the trusted kernel ProcessManager -> IPC model bridge.
+/// No external resource is acknowledged on an IPC preflight failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExitIpcModelError {
+    Journal(CleanupError),
+    WrongPhase,
+    Ipc(LifecycleError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -345,6 +358,65 @@ impl ProcessManager {
 
     pub fn exit_cleanup_for_pid(&self, pid: Pid) -> Option<CleanupWork> {
         self.exit_journal.pending_for(pid)
+    }
+
+    /// Read-only access to the authoritative process records for kernel-only
+    /// IPC binding and model tests. This cannot create, run or reap a PID.
+    /// It is NOT a production authenticated trap/current-task accessor.
+    pub fn process_table_model(&self) -> &ProcessTable {
+        &self.processes
+    }
+
+    /// A single model-only IPC teardown transaction spanning capabilities
+    /// and IPC queue/call cleanup. The IPC owner already implements these
+    /// operations in process_exit_cleanup; this gateway does not duplicate
+    /// the handle registry, scheduler, or IPC state.
+    ///
+    /// The existing IPC adapter performs both revocation and queue cleanup
+    /// as one bounded, exclusive-access operation. Therefore the two journal
+    /// stages are acknowledged TOGETHER, only after the adapter succeeds.
+    /// On missing process binding, wrong phase or stale ticket there are
+    /// no acknowledgments. After success, callers must still obtain actual
+    /// ServiceManager and VMM cleanup proofs before finishing the PID.
+    ///
+    /// No IRQ-safe lock or SMP transaction is installed by this model.
+    /// A real kernel must serialize ProcessManager and IPC state and derive
+    /// task identity from a trusted trap handler.
+    pub fn drive_exit_ipc_cleanup_model(
+        &mut self,
+        ticket: u64,
+        book: &mut ProcessHandleBook,
+        registry: &mut ObjectRegistry,
+        calls: &mut CallTracker,
+        queues: &mut [&mut IpcQueue],
+    ) -> Result<ExitCleanup, ExitIpcModelError> {
+        let work = self
+            .exit_journal
+            .work(ticket)
+            .map_err(ExitIpcModelError::Journal)?;
+        if work.phase != CleanupPhase::Capabilities {
+            return Err(ExitIpcModelError::WrongPhase);
+        }
+        let outcome = process_exit_cleanup(
+            &self.processes,
+            work.event.pid,
+            book,
+            registry,
+            calls,
+            queues,
+        )
+        .map_err(ExitIpcModelError::Ipc)?;
+
+        // This operation is single-threaded and these transitions cannot
+        // fail after a successful preflight. Production must guard both
+        // acknowledgments under the same kernel-owned lifecycle lock.
+        self.exit_journal
+            .acknowledge(ticket, CleanupPhase::Capabilities)
+            .map_err(ExitIpcModelError::Journal)?;
+        self.exit_journal
+            .acknowledge(ticket, CleanupPhase::Ipc)
+            .map_err(ExitIpcModelError::Journal)?;
+        Ok(outcome)
     }
 
     /// Execute ONE stage of kernel cleanup; ACK only on backend success.
@@ -811,4 +883,154 @@ mod tests {
             Err(ScheduleError::NoCurrent)
         );
     }
+    #[test]
+    fn ipc_exit_bridge_revokes_real_model_handles_and_wakes_waiting_client() {
+        use crate::capabilities::{CapError, ObjectKind, Rights};
+        use crate::ipc::queue::CallStatus;
+
+        let mut pm = ProcessManager::new();
+        let (server, server_tid) = prepared_process(&mut pm);
+        let (client, _) = prepared_process(&mut pm);
+        let mut book = ProcessHandleBook::new();
+        book.bind(pm.process_table_model(), server).unwrap();
+        book.bind(pm.process_table_model(), client).unwrap();
+
+        let mut registry = ObjectRegistry::new();
+        let endpoint = registry
+            .create_owned(ObjectKind::Endpoint, server.0)
+            .unwrap();
+        let handle = book
+            .kernel_grant(
+                pm.process_table_model(),
+                client,
+                &registry,
+                endpoint,
+                Rights::SEND,
+            )
+            .unwrap();
+        let mut queue = IpcQueue::new(endpoint.id());
+        let mut calls = CallTracker::new();
+        calls.start(client.0, endpoint.id(), 99, 1000, 100).unwrap();
+        assert_eq!(calls.status(client.0, 99), Some(CallStatus::Pending));
+
+        let event = pm.request_exit_model(server, ExitReason::Killed).unwrap();
+        assert_eq!(
+            pm.finish_exit_model(event.ticket),
+            Err(ExitModelError::CleanupIncomplete)
+        );
+        let proof = pm
+            .drive_exit_ipc_cleanup_model(
+                event.ticket,
+                &mut book,
+                &mut registry,
+                &mut calls,
+                &mut [&mut queue],
+            )
+            .unwrap();
+        assert_eq!(proof.closed_endpoints, 1);
+        assert_eq!(proof.revoked_objects, 1);
+        assert_eq!(book.count(), 1); // the client process retains its own table
+        assert!(queue.is_closed());
+        assert_eq!(calls.status(client.0, 99), Some(CallStatus::ServerGone));
+        assert_eq!(registry.validate(endpoint), Err(CapError::Revoked));
+        assert_eq!(
+            book.by_pid(client)
+                .unwrap()
+                .authorize(
+                    client.0,
+                    &registry,
+                    handle,
+                    ObjectKind::Endpoint,
+                    Rights::SEND
+                ),
+            Err(CapError::Revoked)
+        );
+        assert_eq!(
+            pm.exit_cleanup_work(event.ticket).unwrap().phase,
+            CleanupPhase::Services
+        );
+        assert_eq!(
+            pm.drive_exit_ipc_cleanup_model(
+                event.ticket,
+                &mut book,
+                &mut registry,
+                &mut calls,
+                &mut [&mut queue],
+            ),
+            Err(ExitIpcModelError::WrongPhase)
+        );
+        assert_eq!(
+            pm.reap_native_model(server),
+            Err(ReapModelError::CleanupPending)
+        );
+
+        let mut hooks = MockExitHooks::default();
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Memory)
+        );
+        assert_eq!(
+            pm.drive_exit_cleanup_model(event.ticket, &mut hooks),
+            Ok(CleanupPhase::Complete)
+        );
+        assert_eq!(hooks.calls, [0, 0, 1, 1]); // no fake IPC hook ACKs
+        pm.reap_thread_model(server_tid).unwrap();
+        assert_eq!(pm.finish_exit_model(event.ticket), Ok(ExitReason::Killed));
+    }
+
+    #[test]
+    fn ipc_exit_bridge_failed_preflight_preserves_ticket_and_call() {
+        use crate::capabilities::ObjectKind;
+        use crate::ipc::queue::CallStatus;
+
+        let mut pm = ProcessManager::new();
+        let (server, _) = prepared_process(&mut pm);
+        let mut book = ProcessHandleBook::new(); // deliberately not bound
+        let mut registry = ObjectRegistry::new();
+        let endpoint = registry
+            .create_owned(ObjectKind::Endpoint, server.0)
+            .unwrap();
+        let mut queue = IpcQueue::new(endpoint.id());
+        let mut calls = CallTracker::new();
+        calls.start(777, endpoint.id(), 2, 1000, 1).unwrap();
+
+        let event = pm.request_exit_model(server, ExitReason::Killed).unwrap();
+        assert_eq!(
+            pm.drive_exit_ipc_cleanup_model(
+                event.ticket,
+                &mut book,
+                &mut registry,
+                &mut calls,
+                &mut [&mut queue],
+            ),
+            Err(ExitIpcModelError::Ipc(
+                LifecycleError::Binding(BindingError::NotBound)
+            ))
+        );
+        assert_eq!(
+            pm.exit_cleanup_work(event.ticket).unwrap().phase,
+            CleanupPhase::Capabilities
+        );
+        assert_eq!(calls.status(777, 2), Some(CallStatus::Pending));
+        assert!(!queue.is_closed());
+        assert!(registry.validate(endpoint).is_ok());
+
+        // Real IPC model requires a bound owner before exit. The failed
+        // preflight must not pretend cleanup happened or release the PID.
+        assert_eq!(
+            pm.finish_exit_model(event.ticket),
+            Err(ExitModelError::CleanupIncomplete)
+        );
+        assert_eq!(
+            pm.drive_exit_ipc_cleanup_model(
+                99999,
+                &mut book,
+                &mut registry,
+                &mut calls,
+                &mut [&mut queue],
+            ),
+            Err(ExitIpcModelError::Journal(CleanupError::UnknownTicket))
+        );
+    }
+
 }
