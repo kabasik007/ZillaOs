@@ -180,3 +180,9 @@ No manual VMware test is a physical AMD proof. Start real-hardware testing only 
 **Licensing:** these sources inform architecture; do not copy Linux C driver code or firmware blobs into ZillaOS without a license/compatibility review. ZillaOS does not link against Linux kernel runtime.
 
 Related: [OS subsystems](OS_SUBSYSTEMS.md), [Service Framework](SERVICE_FRAMEWORK.md), [AMD bring-up](AMD_GPU_BRINGUP.md), [VMware SVGA](VMWARE_SVGA_DRIVER.md).
+
+## 11. Expanded platform, display and service specifications (2026-11-07)
+
+The driver substrate is intentionally independent of any one GPU family. The next engineering detail lives in [PCI_ACPI_RESOURCE_MODEL.md](PCI_ACPI_RESOURCE_MODEL.md) (CF8 vs ECAM, ACPI MCFG/host bridges, device generation, MMIO and DMA), [DISPLAY_STACK_PROTOCOL.md](DISPLAY_STACK_PROTOCOL.md) (atomic test/commit and hardware recovery), and [SYSTEM_SERVICES_IPC.md](SYSTEM_SERVICES_IPC.md) (user-space service capabilities and revocation). For a specific physical Radeon test, follow [AMD_HARDWARE_LAB.md](AMD_HARDWARE_LAB.md). Delegation and file ownership: [PLATFORM_WORKSTREAMS.md](PLATFORM_WORKSTREAMS.md).
+
+**No blanket GOP rollback guarantee:** before active GPU writes, bootstrap framebuffer continues to work; after a hardware reset/modeset the scanout state is device-specific. Report serial/headless errors and only claim rollback for tested states.
