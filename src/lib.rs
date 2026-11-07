@@ -41,3 +41,6 @@ pub mod install_plan;
 pub mod storage_pci;
 #[path = "fs/gpt.rs"]
 pub mod gpt;
+
+// Unified read-only PCI discovery and caller-owned device registry.
+pub mod platform;
