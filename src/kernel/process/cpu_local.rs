@@ -7,6 +7,7 @@
 
 use super::thread::{MAX_CPUS, ThreadError, ThreadState, ThreadTable, Tid};
 use super::address_space::{USER_MIN, USER_TOP};
+use super::{Pid, ProcessState, ProcessTable};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScheduleError {
@@ -108,6 +109,21 @@ impl SavedTrapContext {
     }
 }
 
+/// Trusted scheduler-derived identity for the CURRENT running thread.
+/// This struct is returned only after verifying CPU-local state, TID owner,
+/// CPU assignment, and parent PID state. No user buffer is consulted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CurrentTaskIdentity {
+    cpu: usize,
+    pid: Pid,
+    tid: Tid,
+}
+impl CurrentTaskIdentity {
+    pub const fn cpu(self) -> usize { self.cpu }
+    pub const fn pid(self) -> Pid { self.pid }
+    pub const fn tid(self) -> Tid { self.tid }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Preemption {
     Continue,
@@ -171,6 +187,27 @@ impl CpuSchedulerModel {
 
     pub fn snapshot(&self, cpu: usize) -> Option<CpuLocalState> {
         self.cpus.get(cpu).copied()
+    }
+
+    /// Future IPC sender identity must originate here (or an equivalent
+    /// authenticated trap-current accessor), not from a claimed sender PID.
+    /// The CPU index must come from a trusted arch-specific current-CPU
+    /// source, never from userspace. This is still a host-only model.
+    pub fn current_identity(
+        &self, threads: &ThreadTable, processes: &ProcessTable, cpu: usize,
+    ) -> Result<CurrentTaskIdentity, ScheduleError> {
+        if cpu >= MAX_CPUS || (threads.online_cpu_mask() & (1u64 << cpu)) == 0 {
+            return Err(ScheduleError::CpuOffline);
+        }
+        let state = &self.cpus[cpu];
+        let tid = Self::verify_current(state, threads, cpu)?;
+        let thread = threads.get(tid).ok_or(ScheduleError::Desynchronized)?;
+        if !processes.process(thread.pid).is_some_and(|parent|
+            matches!(parent.state, ProcessState::Ready | ProcessState::Running))
+        {
+            return Err(ScheduleError::ParentNotRunnable);
+        }
+        Ok(CurrentTaskIdentity { cpu, pid: thread.pid, tid })
     }
 
     fn checked<'a>(
@@ -493,6 +530,36 @@ mod tests {
         assert_eq!(scheduler.yield_saved(&mut threads, 1, legitimate),
             Err(ScheduleError::CpuOffline));
         assert_eq!(scheduler.yield_saved(&mut threads, 0, legitimate), Ok(ids[0]));
+    }
+
+    #[test]
+    fn current_identity_is_derived_from_authenticated_cpu_thread_parent() {
+        use crate::process::address_space::{Permissions, UserRegion, PAGE_SIZE};
+        let mut parents = ProcessTable::new();
+        let pid = parents.create("identity", 0x400000, 0x800000, 4).unwrap();
+        parents.map_region(pid, UserRegion::checked(
+            0x400000, PAGE_SIZE, Permissions::READ_EXECUTE,
+        ).unwrap()).unwrap();
+        parents.prepare(pid).unwrap();
+        let mut threads = ThreadTable::new();
+        let tid = threads.create(&parents, pid, 0x400000, 0x800000, 1).unwrap();
+        threads.prepare(&parents, tid).unwrap();
+        let mut cpu = CpuSchedulerModel::new();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0), Err(ScheduleError::NoCurrent));
+        assert_eq!(cpu.current_identity(&threads, &parents, 1), Err(ScheduleError::CpuOffline));
+        cpu.dispatch_next(&mut threads, 0).unwrap();
+        let trusted = cpu.current_identity(&threads, &parents, 0).unwrap();
+        assert_eq!((trusted.pid(), trusted.tid(), trusted.cpu()), (pid, tid, 0));
+        parents.kill(pid).unwrap();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::ParentNotRunnable));
+        parents.reap(pid).unwrap();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::ParentNotRunnable));
+        // Raw ThreadTable mutation cannot trick the CPU-local identity.
+        threads.yield_running(tid).unwrap();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::Desynchronized));
     }
 
 }
