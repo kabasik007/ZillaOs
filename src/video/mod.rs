@@ -11,6 +11,9 @@ pub mod gpu;
 // Pure transactional mode switching; no runtime hardware backend yet.
 pub mod display_manager;
 
+// Pure handle, surface, damage and cross-driver display contracts.
+pub mod display_contracts;
+
 // Read-only bounded BMP asset decoder; no graphics hardware access.
 pub mod bmp;
 
