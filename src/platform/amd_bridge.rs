@@ -61,6 +61,137 @@ impl<const CAP: usize> ReadOnlyPciInventory for AmdInventoryAdapter<'_, CAP> {
     }
 }
 
+
+/// Single registry view for AMD diagnostics. This does not own the registry,
+/// perform PCI configuration reads, match a driver or request resource claims.
+use crate::platform::device::{
+    DeviceId, DeviceRegistry, DeviceState, RegistryError,
+};
+use crate::video::gpu::amd::{
+    AmdGpuIdentity, AmdGpuProbeStatus, ip_blocks::AsicIpInventory, match_amd_display,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AmdRegistryError {
+    Registry(RegistryError),
+    InvalidHeader,
+    InvalidIdentity(PciIdentityError),
+    AlreadyOwned(DeviceState),
+    UnsupportedDiagnosticState,
+    SnapshotCapacity,
+    ChangedIdentity,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AmdReadOnlyDiagnostic {
+    /// Generation-safe canonical registry handle (not a PCI address).
+    pub device: DeviceId,
+    /// Historical copy; validate against DeviceRegistry before reuse.
+    pub identity: AmdGpuIdentity,
+    /// Exactly Unknown unless a separate ASIC evidence collection is added.
+    pub ip: AsicIpInventory,
+}
+
+impl AmdReadOnlyDiagnostic {
+    pub const fn label(self) -> &'static str {
+        "AMD_GPU_DETECTED_UNSUPPORTED"
+    }
+
+    /// A diagnostic is NEVER a driver binding or access token.
+    pub const fn may_touch_hardware(self) -> bool {
+        false
+    }
+}
+
+/// Inspect one live, generation-safe DeviceRegistry identity. Only the
+/// Platform registry is authoritative; no additional PCI scanner exists.
+/// Non-Radeon functions are skipped. Invalid AMD endpoint claims fail closed.
+pub fn diagnose_registry_device<const DEVICES: usize, const CLAIMS: usize>(
+    registry: &DeviceRegistry<DEVICES, CLAIMS>,
+    device: DeviceId,
+) -> Result<Option<AmdReadOnlyDiagnostic>, AmdRegistryError> {
+    let view = registry.get(device).map_err(AmdRegistryError::Registry)?;
+    let canonical = view.info.identity;
+    if canonical.vendor_id != 0x1002 {
+        return Ok(None);
+    }
+    // Malformed configuration is an error rather than a fabricated Radeon.
+    if canonical.class.base == 0xff {
+        return Err(AmdRegistryError::InvalidIdentity(PciIdentityError::InvalidClass));
+    }
+    if canonical.class.base != 0x03 {
+        return Ok(None);
+    }
+    if view.info.header_type != 0 || view.info.bridge.is_some() {
+        return Err(AmdRegistryError::InvalidHeader);
+    }
+    // A0 is diagnostics only and must not attach to an already claimed
+    // function, even if the claiming driver used an AMD vendor match.
+    if view.state != DeviceState::Discovered || view.driver.is_some() {
+        return Err(AmdRegistryError::AlreadyOwned(view.state));
+    }
+    let identity = to_amd_identity(canonical).map_err(AmdRegistryError::InvalidIdentity)?;
+    let info = match match_amd_display(identity) {
+        AmdGpuProbeStatus::DetectedUnsupported(info) => info,
+        AmdGpuProbeStatus::InvalidPciIdentity(error) => {
+            return Err(AmdRegistryError::InvalidIdentity(error));
+        }
+        AmdGpuProbeStatus::Absent | AmdGpuProbeStatus::NoMatch => return Ok(None),
+        AmdGpuProbeStatus::SupportedByExplicitTable(_) => {
+            // This A0 API deliberately cannot advertise a supported board,
+            // even if a future table gets populated by another workstream.
+            return Err(AmdRegistryError::UnsupportedDiagnosticState);
+        }
+    };
+    Ok(Some(AmdReadOnlyDiagnostic {
+        device,
+        identity: info,
+        ip: info.ip_inventory(),
+    }))
+}
+
+/// Snapshot enumeration is registry-only. Two passes enforce an all-or-none
+/// bounded result: malformed claims or too-small output change no caller
+/// array. Does not create new DriverId/DeviceId, rescan PCI, or mutate state.
+pub fn diagnose_registry<const DEVICES: usize, const CLAIMS: usize>(
+    registry: &DeviceRegistry<DEVICES, CLAIMS>,
+    output: &mut [Option<AmdReadOnlyDiagnostic>],
+) -> Result<usize, AmdRegistryError> {
+    let snapshot = registry.snapshot();
+    let mut count = 0usize;
+    for view in snapshot.iter() {
+        if diagnose_registry_device(registry, view.id)?.is_some() {
+            count = count.checked_add(1).ok_or(AmdRegistryError::SnapshotCapacity)?;
+            if count > output.len() {
+                return Err(AmdRegistryError::SnapshotCapacity);
+            }
+        }
+    }
+    output.fill(None);
+    let mut used = 0usize;
+    for view in snapshot.iter() {
+        if let Some(diagnostic) = diagnose_registry_device(registry, view.id)? {
+            output[used] = Some(diagnostic);
+            used += 1;
+        }
+    }
+    Ok(used)
+}
+
+/// Prevent a persisted diagnostic from being reused after registry removal,
+/// generation advancement or a changed PCI identity. Still read-only.
+pub fn revalidate_diagnostic<const DEVICES: usize, const CLAIMS: usize>(
+    registry: &DeviceRegistry<DEVICES, CLAIMS>,
+    prior: AmdReadOnlyDiagnostic,
+) -> Result<(), AmdRegistryError> {
+    let current = diagnose_registry_device(registry, prior.device)?
+        .ok_or(AmdRegistryError::ChangedIdentity)?;
+    if current.identity != prior.identity {
+        return Err(AmdRegistryError::ChangedIdentity);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
