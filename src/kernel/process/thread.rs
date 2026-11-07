@@ -35,6 +35,7 @@ pub enum ThreadError {
     CpuOffline,
     CpuBusy,
     StackAttached,
+    TickOverflow,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +48,8 @@ pub struct Thread {
     pub affinity_mask: u64,
     /// Bookkeeping only. No actual CPU ownership or context switch.
     pub assigned_cpu: Option<usize>,
+    /// Observed hardware timer interrupt count; not measured CPU time.
+    pub timer_ticks: u64,
 }
 
 pub struct ThreadTable {
@@ -122,6 +125,7 @@ impl ThreadTable {
             tid, pid, state: ThreadState::Created,
             instruction: entry, stack_top, affinity_mask,
             assigned_cpu: None,
+            timer_ticks: 0,
         });
         Ok(tid)
     }
@@ -176,6 +180,25 @@ impl ThreadTable {
         t.state = ThreadState::Running;
         t.assigned_cpu = Some(cpu);
         Ok(())
+    }
+
+    /// Record exactly one *delivered* hardware timer interrupt against the
+    /// currently running thread on this CPU. The interrupt backend calls
+    /// this after verifying its saved CPU/user context.
+    /// No wall-clock duration or CPU percentage is calculated here.
+    pub fn charge_timer_tick(&mut self, cpu: usize, tid: Tid)
+        -> Result<u64, ThreadError>
+    {
+        let thread = *self.get(tid).ok_or(ThreadError::UnknownThread)?;
+        if cpu >= MAX_CPUS || thread.state != ThreadState::Running
+            || thread.assigned_cpu != Some(cpu)
+        {
+            return Err(ThreadError::InvalidState);
+        }
+        let ticks = thread.timer_ticks.checked_add(1)
+            .ok_or(ThreadError::TickOverflow)?;
+        self.get_mut(tid)?.timer_ticks = ticks;
+        Ok(ticks)
     }
 
     /// Mark a CPU0 timer-preempted task ready after saving its full trap
@@ -312,6 +335,31 @@ mod tests {
         assert_eq!(threads.get(tid).unwrap().assigned_cpu,None);
         threads.mark_running(0,tid).unwrap();
         assert_eq!(threads.get(tid).unwrap().assigned_cpu,Some(0));
+    }
+
+    #[test]
+    fn timer_tick_accounting_rejects_wrong_cpu_and_preserves_identity() {
+        let (processes,pid) = parent();
+        let mut threads = ThreadTable::new();
+        let a=threads.create(&processes,pid,0x400000,0x800000,1).unwrap();
+        let b=threads.create(&processes,pid,0x400000,0x800000,1).unwrap();
+        threads.prepare(&processes,a).unwrap();
+        threads.prepare(&processes,b).unwrap();
+        assert_eq!(threads.charge_timer_tick(0,a),Err(ThreadError::InvalidState));
+        threads.mark_running(0,a).unwrap();
+        assert_eq!(threads.charge_timer_tick(1,a),Err(ThreadError::InvalidState));
+        assert_eq!(threads.charge_timer_tick(0,b),Err(ThreadError::InvalidState));
+        assert_eq!(threads.charge_timer_tick(0,a),Ok(1));
+        assert_eq!(threads.charge_timer_tick(0,a),Ok(2));
+        assert_eq!(threads.get(b).unwrap().timer_ticks,0);
+        threads.preempt_running(0,a).unwrap();
+        assert_eq!(threads.charge_timer_tick(0,a),Err(ThreadError::InvalidState));
+        threads.mark_running(0,b).unwrap();
+        assert_eq!(threads.charge_timer_tick(0,b),Ok(1));
+        threads.get_mut(b).unwrap().timer_ticks = u64::MAX;
+        assert_eq!(threads.charge_timer_tick(0,b),Err(ThreadError::TickOverflow));
+        assert_eq!(threads.get(b).unwrap().timer_ticks,u64::MAX);
+        assert_eq!(threads.get(a).unwrap().timer_ticks,2);
     }
 
     #[test]
