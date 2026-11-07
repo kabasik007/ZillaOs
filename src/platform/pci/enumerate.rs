@@ -254,7 +254,7 @@ mod tests {
 
     #[test]
     fn malformed_bridge_is_not_followed() {
-        let mut mock = MockConfig::new(|a, o| {
+        let mut mock = MockConfig::new(|a: PciAddress, o: u16| {
             if a.bus == 0 && a.device == 0 {
                 Ok(match o {
                     0 => 0x0001_8086,
@@ -273,7 +273,7 @@ mod tests {
 
     #[test]
     fn bad_range_and_bad_headers_fail_closed() {
-        let mut mock = MockConfig::new(|a, o| {
+        let mut mock = MockConfig::new(|a: PciAddress, o: u16| {
             if a.bus == 0 && a.device == 3 {
                 Ok(match o { 0 => 0x1234_1002, 0x0c => 0x007f_0000, _ => 0 })
             } else { Ok(u32::MAX) }

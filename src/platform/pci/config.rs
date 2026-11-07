@@ -73,8 +73,8 @@ mod tests {
     use super::*;
     #[test]
     fn legacy_rejects_other_segment_before_port_read() {
-        let mut calls = 0;
-        let mut config = LegacyConfig::new(|_, _| { calls += 1; 0x0405_15ad });
+        let calls = core::cell::Cell::new(0);
+        let mut config = LegacyConfig::new(|_, _| { calls.set(calls.get() + 1); 0x0405_15ad });
         assert_eq!(
             config.read32(PciAddress::new(1, 0, 1, 0).unwrap(), 0),
             Err(ConfigError::UnsupportedSegment)
@@ -87,12 +87,12 @@ mod tests {
             config.read32(PciAddress::new(0, 0, 1, 0).unwrap(), 3),
             Err(ConfigError::UnalignedOffset)
         );
-        assert_eq!(calls, 0);
+        assert_eq!(calls.get(), 0);
         assert_eq!(
             config.read32(PciAddress::new(0, 0, 1, 0).unwrap(), 0),
             Ok(0x0405_15ad)
         );
-        assert_eq!(calls, 1);
+        assert_eq!(calls.get(), 1);
     }
     #[test]
     fn mock_checks_invalid_address_and_extended_offset() {
