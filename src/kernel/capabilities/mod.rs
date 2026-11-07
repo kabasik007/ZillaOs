@@ -1,5 +1,7 @@
 //! Bounded kernel-owned capability model. No user pointers, allocator or syscall hooks.
 //! All operations are trusted kernel APIs; never expose grant/revoke as a user syscall.
+pub mod process_binding;
+
 pub const MAX_OBJECTS: usize = 128;
 pub const MAX_HANDLES: usize = 64;
 
@@ -8,7 +10,7 @@ pub struct ObjectId(pub u64);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ObjectKind {
-    Endpoint, Process, Thread, Device, Irq, Mmio, Dma, File, Surface, Timer,
+    Endpoint, Process, Thread, Device, Service, Irq, Mmio, Dma, File, Surface, Timer,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -69,13 +71,15 @@ impl ObjectKey {
     pub const fn kind(self) -> ObjectKind { self.kind }
 }
 
+
 #[derive(Clone, Copy)]
 struct ObjectSlot {
     generation: u32,
     object: Option<(ObjectId, ObjectKind)>,
+    owner: Option<u64>,
     retired: bool,
 }
-const EMPTY_OBJECT: ObjectSlot = ObjectSlot { generation: 1, object: None, retired: false };
+const EMPTY_OBJECT: ObjectSlot = ObjectSlot { generation: 1, object: None, owner: None, retired: false };
 
 /// Shared kernel object registry. Revoke invalidates ALL delegated references.
 pub struct ObjectRegistry {
@@ -88,6 +92,18 @@ impl ObjectRegistry {
         Self { slots: [EMPTY_OBJECT; MAX_OBJECTS], next_id: 1 }
     }
     pub fn create(&mut self, kind: ObjectKind) -> Result<ObjectKey, CapError> {
+        self.create_with_owner(kind, None)
+    }
+    /// Trusted issuer only. Ownership is resource metadata; no process records are created.
+    pub fn create_owned(&mut self, kind: ObjectKind, owner: u64)
+        -> Result<ObjectKey, CapError>
+    {
+        if owner == 0 { return Err(CapError::InvalidOwner); }
+        self.create_with_owner(kind, Some(owner))
+    }
+    fn create_with_owner(&mut self, kind: ObjectKind, owner: Option<u64>)
+        -> Result<ObjectKey, CapError>
+    {
         let index = self.slots.iter().position(|s| s.object.is_none() && !s.retired)
             .ok_or(CapError::Full)?;
         let next = self.next_id.checked_add(1).ok_or(CapError::Exhausted)?;
@@ -95,6 +111,7 @@ impl ObjectRegistry {
         self.next_id = next;
         let slot = &mut self.slots[index];
         slot.object = Some((id, kind));
+        slot.owner = owner;
         Ok(ObjectKey { slot: index as u32, generation: slot.generation, id, kind })
     }
     pub fn validate(&self, key: ObjectKey) -> Result<(), CapError> {
@@ -103,10 +120,38 @@ impl ObjectRegistry {
         if slot.object != Some((key.id, key.kind)) { return Err(CapError::Revoked); }
         Ok(())
     }
+    /// Read ownership by a kernel-minted key; never authorize by ObjectId alone.
+    pub fn owner_of(&self, key: ObjectKey) -> Result<Option<u64>, CapError> {
+        self.validate(key)?;
+        Ok(self.slots[key.slot as usize].owner)
+    }
+    /// Kernel-owned queue discovery only: not an authorization query.
+    pub fn owner_of_id(&self, id: ObjectId) -> Option<u64> {
+        self.slots.iter().find_map(|slot| match slot.object {
+            Some((object_id, _)) if object_id == id => slot.owner,
+            _ => None,
+        })
+    }
+    /// Object revocation on verified process exit; no DMA/IRQ teardown is implied.
+    pub fn revoke_owned(&mut self, owner: u64) -> usize {
+        if owner == 0 { return 0; }
+        let mut count = 0;
+        for slot in &mut self.slots {
+            if slot.owner == Some(owner) && slot.object.is_some() {
+                slot.object = None;
+                slot.owner = None;
+                if slot.generation == u32::MAX { slot.retired = true; }
+                else { slot.generation += 1; }
+                count += 1;
+            }
+        }
+        count
+    }
     pub fn revoke(&mut self, key: ObjectKey) -> Result<(), CapError> {
         self.validate(key)?;
         let slot = &mut self.slots[key.slot as usize];
         slot.object = None;
+        slot.owner = None;
         if slot.generation == u32::MAX { slot.retired = true; }
         else { slot.generation += 1; }
         Ok(())
@@ -177,10 +222,17 @@ impl HandleTable {
     pub fn authorize(&self, caller: u64, objects: &ObjectRegistry, handle: Handle,
         kind: ObjectKind, required: Rights) -> Result<ObjectId, CapError>
     {
+        Ok(self.authorize_key(caller, objects, handle, kind, required)?.id())
+    }
+    /// Returns a generation-aware kernel key, not just an object number.
+    /// Recheck under the resource lock before touching backing memory/hardware.
+    pub fn authorize_key(&self, caller: u64, objects: &ObjectRegistry, handle: Handle,
+        kind: ObjectKind, required: Rights) -> Result<ObjectKey, CapError>
+    {
         let grant = self.lookup(caller, objects, handle)?;
         if grant.key.kind != kind { return Err(CapError::WrongType); }
         if !grant.rights.contains(required) { return Err(CapError::AccessDenied); }
-        Ok(grant.key.id)
+        Ok(grant.key)
     }
     /// Source needs TRANSFER. Requested rights are intersected; never amplified.
     pub fn prepare_transfer(&self, caller: u64, objects: &ObjectRegistry,
@@ -389,6 +441,22 @@ mod tests {
         assert!(reg.slots[key.slot as usize].retired);
         let newer = reg.create(ObjectKind::Endpoint).unwrap();
         assert_ne!(newer.slot, key.slot);
+    }
+    #[test]
+    fn owned_revocation_invalidates_all_copies_not_other_owners() {
+        let mut reg = ObjectRegistry::new();
+        let key = reg.create_owned(ObjectKind::Device, 10).unwrap();
+        let other = reg.create_owned(ObjectKind::Surface, 11).unwrap();
+        let unowned = reg.create(ObjectKind::Timer).unwrap();
+        assert_eq!(reg.owner_of(key), Ok(Some(10)));
+        let mut recipient = HandleTable::new(20);
+        let leaked = recipient.grant(20, &reg, key, Rights::OBSERVE).unwrap();
+        assert_eq!(reg.revoke_owned(10), 1);
+        assert_eq!(reg.revoke_owned(10), 0);
+        assert_eq!(recipient.authorize(20, &reg, leaked, ObjectKind::Device, Rights::OBSERVE),
+            Err(CapError::Revoked));
+        assert_eq!(reg.owner_of(other), Ok(Some(11)));
+        assert_eq!(reg.owner_of(unowned), Ok(None));
     }
     #[test]
     fn close_does_not_revoke_valid_delegated_copy() {
