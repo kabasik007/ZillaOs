@@ -7,6 +7,7 @@
 pub mod address_space;
 pub mod cpu_local;
 pub mod kernel_stack;
+pub mod lifecycle;
 pub mod context;
 pub mod scheduler;
 pub mod syscall;
@@ -172,6 +173,20 @@ impl ProcessTable {
     pub fn mark_exited(&mut self, pid: Pid, reason: ExitReason) -> Result<(), ProcessError> {
         let process = self.process_mut(pid)?;
         if process.state != ProcessState::Running {
+            return Err(ProcessError::InvalidState);
+        }
+        process.exit_reason = Some(reason);
+        process.state = ProcessState::Exited;
+        Ok(())
+    }
+
+    /// Kernel-owned terminal transition for a trusted exit/fault/kill reason.
+    /// A caller MUST first quiesce every associated TID and CPU-local stack.
+    /// The ProcessManager lifecycle gateway enforces that ordering; this
+    /// primitive alone performs neither hardware teardown nor notification.
+    pub fn terminate(&mut self, pid: Pid, reason: ExitReason) -> Result<(), ProcessError> {
+        let process = self.process_mut(pid)?;
+        if process.state == ProcessState::Exited {
             return Err(ProcessError::InvalidState);
         }
         process.exit_reason = Some(reason);
