@@ -1,0 +1,36 @@
+name: ZillaOS service manager model
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/service_manager.rs'
+      - 'src/services/service_manifests.rs'
+      - 'tests/service_manager_host.rs'
+      - '.github/workflows/service-manager-model.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/service_manager.rs'
+      - 'src/services/service_manifests.rs'
+      - 'tests/service_manager_host.rs'
+      - '.github/workflows/service-manager-model.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-linux-gnu
+      - name: Compile and test standalone no_std service model on host
+        run: cargo +1.90.0 test --test service_manager_host --target x86_64-unknown-linux-gnu --offline
+      - name: Check service model under no_std
+        run: |
+          rustc +1.90.0 --crate-type lib --edition 2024 \
+            --target x86_64-unknown-linux-gnu src/services/service_manager.rs \
+            --emit metadata -o /tmp/service_manager.rmeta
