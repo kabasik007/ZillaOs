@@ -6,12 +6,16 @@ on:
     paths:
       - 'src/drivers/gpu/amd/**'
       - 'src/drivers/gpu/mod.rs'
+      - 'src/platform/amd_bridge.rs'
       - '.github/workflows/amd-gpu-a0.yml'
+      - 'docs/AMD_GPU_A0_IMPLEMENTATION.md'
   pull_request:
     paths:
       - 'src/drivers/gpu/amd/**'
       - 'src/drivers/gpu/mod.rs'
+      - 'src/platform/amd_bridge.rs'
       - '.github/workflows/amd-gpu-a0.yml'
+      - 'docs/AMD_GPU_A0_IMPLEMENTATION.md'
   workflow_dispatch:
 
 permissions:
@@ -36,4 +40,5 @@ jobs:
         run: |
           rustfmt +1.90.0 --edition 2024 --check --config skip_children=true \
             src/drivers/gpu/amd/mod.rs src/drivers/gpu/amd/pci.rs \
-            src/drivers/gpu/amd/device_ids.rs src/drivers/gpu/amd/ip_blocks.rs
+            src/drivers/gpu/amd/device_ids.rs src/drivers/gpu/amd/ip_blocks.rs \
+            src/drivers/gpu/amd/display_contract.rs
