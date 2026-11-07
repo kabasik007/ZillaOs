@@ -256,7 +256,7 @@ pub fn with_wallpaper_module<R>(inspect: impl FnOnce(&[u8]) -> R) -> Option<R> {
         // SAFETY: Limine provides a zero-terminated ASCII module string;
         // stop comparing after the first short-circuit mismatch.
         let name_matches = LABEL.iter().enumerate().all(|(n, b)| {
-            unsafe { *file.string.add(n) } == *b
+            unsafe { *file.string.add(n) == *b }
         });
         if !name_matches { continue; }
         let length = usize::try_from(file.size).ok()?;
