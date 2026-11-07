@@ -436,8 +436,9 @@ impl<P: Copy + Eq> ServiceSupervisor<P> {
             {
                 self.mark_stopping_or_cancel(id, now)?;
             }
+            let dependent_cleanup_pending = self.active_required_dependents(id);
             if let Some(cleanup) = &mut self.cleaning[n] {
-                if !cleanup.emitted && !self.active_required_dependents(id) {
+                if !cleanup.emitted && !dependent_cleanup_pending {
                     cleanup.emitted = true;
                     return Ok(Some(SupervisorAction::Cleanup {
                         ticket: cleanup.ticket, pid: cleanup.pid,
