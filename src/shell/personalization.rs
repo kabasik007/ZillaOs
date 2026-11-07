@@ -115,7 +115,11 @@ pub const ACCENT_OPTIONS: [Accent; 3] =
 pub enum GalleryRow { Wallpaper, Accent }
 
 pub fn content_geometry(rect: Rect) -> (usize, usize, usize, usize) {
-    let (cx, _cw, body, content_h) = content_geometry(rect);
+    let bar_h = if rect.height < 170 { 30 } else { 45 };
+    let body = rect.y.saturating_add(bar_h + 8);
+    let content_h = rect.height.saturating_sub(bar_h + 16);
+    let side = (rect.width / 4).clamp(70, 170);
+    let cx = rect.x.saturating_add(side + 27);
     let cw = rect.width.saturating_sub(side + 44);
     (cx, cw, body, content_h)
 }
