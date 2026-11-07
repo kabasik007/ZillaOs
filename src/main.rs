@@ -237,7 +237,21 @@ pub extern "C" fn _start() -> ! {
 
         // Passive PCI config header scan only. NO AHCI/NVMe commands, sector
         // reads, drive-capacity guesses or installation writes are performed.
-        let storage = pci_io::inventory();
+        let pci = pci_io::discover_boot();
+        serial::write("ZILLAOS_PCI_INVENTORY_STATUS=");
+        serial::write(pci.status.label());
+        serial::write("\nZILLAOS_PCI_DEVICE_COUNT=");
+        serial::write_hex(pci.snapshot().map_or(0, |s| s.count) as u64);
+        serial::write("\nZILLAOS_PCI_BUSES_SCANNED=");
+        serial::write_hex(pci.report.visited_buses as u64);
+        serial::write("\nZILLAOS_PCI_CONFIG_ERRORS=");
+        serial::write_hex(pci.report.config_errors as u64);
+        serial::write("\nZILLAOS_PCI_MALFORMED_HEADERS=");
+        serial::write_hex(pci.report.malformed_headers as u64);
+        serial::write("\nZILLAOS_PCI_MALFORMED_BRIDGES=");
+        serial::write_hex(pci.report.malformed_bridges as u64);
+        serial::write("\n");
+        let storage = pci.storage_inventory();
         serial::write("ZILLAOS_STORAGE_PCI_SCAN_READY\n");
         serial::write("ZILLAOS_STORAGE_CONTROLLER_COUNT=");
         serial::write_hex(storage.count as u64);
@@ -261,6 +275,37 @@ pub extern "C" fn _start() -> ! {
             serial::write("\n");
         }
         serial::write("ZILLAOS_STORAGE_BLOCK_DRIVERS_UNAVAILABLE\n");
+        // AMD A0 observes the same DeviceRegistry by immutable identity.
+        // This is diagnostics ONLY: no AMD BARs, firmware, MMIO or DMA.
+        let mut amd_candidates = 0u64;
+        if let Some(registry) = pci.registry() {
+            let amd_view =
+                zillaos_kernel::platform::amd_bridge::AmdRegistryAdapter::new(registry);
+            for device in registry.snapshot().iter() {
+                if device.info.identity.is_amd_display_candidate() {
+                    use zillaos_kernel::video::gpu::amd::pci::PciAddress as AmdAddress;
+                    let address = device.info.identity.address;
+                    let result = zillaos_kernel::video::gpu::amd::probe_address(
+                        &amd_view,
+                        AmdAddress {
+                            segment: address.segment,
+                            bus: address.bus,
+                            device: address.device,
+                            function: address.function,
+                        },
+                    );
+                    if matches!(
+                        result,
+                        zillaos_kernel::video::gpu::amd::AmdGpuProbeStatus::DetectedUnsupported(_)
+                    ) {
+                        amd_candidates += 1;
+                    }
+                }
+            }
+        }
+        serial::write("ZILLAOS_AMD_PCI_UNSUPPORTED_CANDIDATES=");
+        serial::write_hex(amd_candidates);
+        serial::write("\n");
         wizard.set_storage_inventory(storage);
 
         // Log the actual Limine GOP dimensions for VMware diagnostics.
@@ -388,7 +433,7 @@ pub extern "C" fn _start() -> ! {
         desktop.language = wizard.language;
         desktop.region = wizard.region;
         desktop.timezone = wizard.timezone;
-        desktop.video = pci_io::video_adapter();
+        desktop.video = pci_io::video_adapter(&pci);
         serial::write("ZILLAOS_VIDEO_ADAPTER=");
         serial::write(desktop.video.name());
         serial::write("\n");

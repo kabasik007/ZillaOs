@@ -6,6 +6,8 @@
 //! backend must save the FULL CPU context before descheduling a running TID.
 
 use super::thread::{MAX_CPUS, ThreadError, ThreadState, ThreadTable, Tid};
+use super::address_space::{USER_MIN, USER_TOP};
+use super::{Pid, ProcessState, ProcessTable};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScheduleError {
@@ -38,12 +40,88 @@ impl From<ThreadError> for ScheduleError {
 /// stack. This marker does not itself save registers, mask IRQs or lock memory.
 /// It must never be constructed from an untrusted syscall argument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrapFrameError {
+    InvalidCpu,
+    InvalidTid,
+    InvalidPrivilege,
+    InvalidInstruction,
+    InvalidStack,
+    InvalidFlags,
+}
+
+/// Diagnostic policy validation of a saved CPL3 interrupt return frame.
+/// This does NOT validate actual GDT selectors, PTEs or ownership of RIP/RSP.
+/// The trusted trap backend must additionally check mappings and save ALL
+/// registers/FPU state before acknowledging a frame as reusable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UserTrapFrame {
+    pub rip: u64,
+    pub rsp: u64,
+    pub rflags: u64,
+    pub cs: u64,
+    pub ss: u64,
+}
+
+impl UserTrapFrame {
+    pub fn validate(self) -> Result<(), TrapFrameError> {
+        if self.cs == 0 || self.ss == 0 || (self.cs & 3) != 3 || (self.ss & 3) != 3 {
+            return Err(TrapFrameError::InvalidPrivilege);
+        }
+        if !(USER_MIN..USER_TOP).contains(&self.rip) {
+            return Err(TrapFrameError::InvalidInstruction);
+        }
+        if self.rsp <= USER_MIN || self.rsp > USER_TOP {
+            return Err(TrapFrameError::InvalidStack);
+        }
+        // RFLAGS bit1 must be set. Reject IOPL, NT and VM on return to CPL3.
+        const UNSAFE_FLAGS: u64 = (3 << 12) | (1 << 14) | (1 << 17);
+        if self.rflags & 0x2 == 0 || self.rflags & UNSAFE_FLAGS != 0 {
+            return Err(TrapFrameError::InvalidFlags);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SavedTrapContext {
     tid: Tid,
+    /// The legacy opt-in host-test marker lacks an architectural CPU claim.
+    /// Production trap entry must use confirmed_user_frame with an actual CPU.
+    cpu: Option<usize>,
 }
 
 impl SavedTrapContext {
-    pub unsafe fn confirmed(tid: Tid) -> Self { Self { tid } }
+    /// Legacy model-only acknowledgment. Never wire to untrusted syscalls.
+    pub unsafe fn confirmed(tid: Tid) -> Self { Self { tid, cpu: None } }
+
+    /// # Safety
+    /// Only a trusted Ring0 trap backend may call this, *after* verifying
+    /// actual CS/SS/GDT, user PTE rights, saved machine/FPU state, the
+    /// interrupted TID and current CPU ID. Passing arbitrary user data or
+    /// omitting context save violates this API's safety preconditions.
+    pub unsafe fn confirmed_user_frame(
+        tid: Tid, cpu: usize, frame: UserTrapFrame,
+    ) -> Result<Self, TrapFrameError> {
+        if cpu >= MAX_CPUS { return Err(TrapFrameError::InvalidCpu); }
+        if tid.0 == 0 { return Err(TrapFrameError::InvalidTid); }
+        frame.validate()?;
+        Ok(Self { tid, cpu: Some(cpu) })
+    }
+}
+
+/// Trusted scheduler-derived identity for the CURRENT running thread.
+/// This struct is returned only after verifying CPU-local state, TID owner,
+/// CPU assignment, and parent PID state. No user buffer is consulted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CurrentTaskIdentity {
+    cpu: usize,
+    pid: Pid,
+    tid: Tid,
+}
+impl CurrentTaskIdentity {
+    pub const fn cpu(self) -> usize { self.cpu }
+    pub const fn pid(self) -> Pid { self.pid }
+    pub const fn tid(self) -> Tid { self.tid }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,6 +189,27 @@ impl CpuSchedulerModel {
         self.cpus.get(cpu).copied()
     }
 
+    /// Future IPC sender identity must originate here (or an equivalent
+    /// authenticated trap-current accessor), not from a claimed sender PID.
+    /// The CPU index must come from a trusted arch-specific current-CPU
+    /// source, never from userspace. This is still a host-only model.
+    pub fn current_identity(
+        &self, threads: &ThreadTable, processes: &ProcessTable, cpu: usize,
+    ) -> Result<CurrentTaskIdentity, ScheduleError> {
+        if cpu >= MAX_CPUS || (threads.online_cpu_mask() & (1u64 << cpu)) == 0 {
+            return Err(ScheduleError::CpuOffline);
+        }
+        let state = &self.cpus[cpu];
+        let tid = Self::verify_current(state, threads, cpu)?;
+        let thread = threads.get(tid).ok_or(ScheduleError::Desynchronized)?;
+        if !processes.process(thread.pid).is_some_and(|parent|
+            matches!(parent.state, ProcessState::Ready | ProcessState::Running))
+        {
+            return Err(ScheduleError::ParentNotRunnable);
+        }
+        Ok(CurrentTaskIdentity { cpu, pid: thread.pid, tid })
+    }
+
     fn checked<'a>(
         &'a mut self, threads: &ThreadTable, cpu: usize,
     ) -> Result<&'a mut CpuLocalState, ScheduleError> {
@@ -137,6 +236,9 @@ impl CpuSchedulerModel {
     ) -> Result<Tid, ScheduleError> {
         let current = Self::verify_current(state, threads, cpu)?;
         if current != saved.tid { return Err(ScheduleError::WrongContext); }
+        if saved.cpu.is_some_and(|owner| owner != cpu) {
+            return Err(ScheduleError::WrongContext);
+        }
         if state.irq_depth != 0 || state.preempt_disabled != 0 {
             return Err(ScheduleError::SwitchUnsafe);
         }
@@ -399,4 +501,65 @@ mod tests {
         assert_eq!(scheduler.leave_interrupt(&threads, 0),
             Ok(Preemption::SwitchRequested(ids[0])));
     }
+    #[test]
+    fn invalid_saved_user_frame_rejected_before_descheduling() {
+        let good = UserTrapFrame {
+            rip: 0x400000, rsp: 0x800000,
+            rflags: 0x202, cs: 0x23, ss: 0x1b,
+        };
+        assert_eq!(good.validate(), Ok(()));
+        assert_eq!(UserTrapFrame { cs: 0x8, ..good }.validate(),
+            Err(TrapFrameError::InvalidPrivilege));
+        assert_eq!(UserTrapFrame { rip: USER_TOP, ..good }.validate(),
+            Err(TrapFrameError::InvalidInstruction));
+        assert_eq!(UserTrapFrame { rsp: 0, ..good }.validate(),
+            Err(TrapFrameError::InvalidStack));
+        assert_eq!(UserTrapFrame { rflags: 0x3202, ..good }.validate(),
+            Err(TrapFrameError::InvalidFlags));
+        assert_eq!(unsafe { SavedTrapContext::confirmed_user_frame(Tid(0), 0, good) },
+            Err(TrapFrameError::InvalidTid));
+        assert_eq!(unsafe { SavedTrapContext::confirmed_user_frame(Tid(1), MAX_CPUS, good) },
+            Err(TrapFrameError::InvalidCpu));
+
+        let (mut threads, ids) = fixture();
+        let mut scheduler = CpuSchedulerModel::new();
+        scheduler.dispatch_next(&mut threads, 0).unwrap();
+        let legitimate = unsafe { SavedTrapContext::confirmed_user_frame(
+            ids[0], 0, good,
+        ).unwrap() };
+        assert_eq!(scheduler.yield_saved(&mut threads, 1, legitimate),
+            Err(ScheduleError::CpuOffline));
+        assert_eq!(scheduler.yield_saved(&mut threads, 0, legitimate), Ok(ids[0]));
+    }
+
+    #[test]
+    fn current_identity_is_derived_from_authenticated_cpu_thread_parent() {
+        use crate::process::address_space::{Permissions, UserRegion, PAGE_SIZE};
+        let mut parents = ProcessTable::new();
+        let pid = parents.create("identity", 0x400000, 0x800000, 4).unwrap();
+        parents.map_region(pid, UserRegion::checked(
+            0x400000, PAGE_SIZE, Permissions::READ_EXECUTE,
+        ).unwrap()).unwrap();
+        parents.prepare(pid).unwrap();
+        let mut threads = ThreadTable::new();
+        let tid = threads.create(&parents, pid, 0x400000, 0x800000, 1).unwrap();
+        threads.prepare(&parents, tid).unwrap();
+        let mut cpu = CpuSchedulerModel::new();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0), Err(ScheduleError::NoCurrent));
+        assert_eq!(cpu.current_identity(&threads, &parents, 1), Err(ScheduleError::CpuOffline));
+        cpu.dispatch_next(&mut threads, 0).unwrap();
+        let trusted = cpu.current_identity(&threads, &parents, 0).unwrap();
+        assert_eq!((trusted.pid(), trusted.tid(), trusted.cpu()), (pid, tid, 0));
+        parents.kill(pid).unwrap();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::ParentNotRunnable));
+        parents.reap(pid).unwrap();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::ParentNotRunnable));
+        // Raw ThreadTable mutation cannot trick the CPU-local identity.
+        threads.yield_running(tid).unwrap();
+        assert_eq!(cpu.current_identity(&threads, &parents, 0),
+            Err(ScheduleError::Desynchronized));
+    }
+
 }

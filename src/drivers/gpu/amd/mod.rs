@@ -4,6 +4,7 @@
 #![forbid(unsafe_code)]
 
 pub mod device_ids;
+pub mod display_contract;
 pub mod ip_blocks;
 pub mod pci;
 

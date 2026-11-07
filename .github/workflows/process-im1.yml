@@ -1,0 +1,93 @@
+name: ZillaOS Process I-M1 isolated verification
+
+on:
+  pull_request:
+    paths:
+      - 'src/kernel/process/**'
+      - 'src/services/process_manager.rs'
+      - 'docs/PROCESS_LIFECYCLE_IM1.md'
+      - '.github/workflows/process-im1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  process-rust-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust and bare metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Host library tests (includes negative lifecycle faults)
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Default bare-metal build
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: VMware desktop build (do not execute)
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+      - name: Native Ring 3 feature compilation
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3
+      - name: Guard fault fixture compilation
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-guard-fault
+      - name: Kernel privilege fault fixture compilation
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-kernel-fault
+      - name: Cooperative Ring3 switching compilation
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-threads
+      - name: Preemptive Ring3 fixture compilation
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3-preempt
+
+  process-qemu-regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU/OVMF and ISO build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
+      - name: Install pinned Rust and bare metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Build + boot user guard negative test
+        run: |
+          set -o pipefail
+          bash scripts/build.sh ring3-guard
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-guard-uefi.iso --timeout 90 | tee ring3-guard-im1.log
+          grep -qx 'ZILLAOS_NATIVE_USER_GUARD_FAULT_OK' ring3-guard-im1.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_RETURNED' ring3-guard-im1.log
+          if grep -Eq 'ZILLAOS_EXCEPTION_FATAL|ZILLAOS_PANIC|ZILLAOS_NATIVE_RING3_FAILED' ring3-guard-im1.log; then exit 1; fi
+      - name: Build + boot supervisor boundary negative test
+        run: |
+          set -o pipefail
+          bash scripts/build.sh ring3-kernel
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-kernel-uefi.iso --timeout 90 | tee ring3-kernel-im1.log
+          grep -qx 'ZILLAOS_NATIVE_USER_KERNEL_ACCESS_DENIED' ring3-kernel-im1.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_RETURNED' ring3-kernel-im1.log
+          if grep -Eq 'ZILLAOS_EXCEPTION_FATAL|ZILLAOS_PANIC|ZILLAOS_NATIVE_RING3_FAILED' ring3-kernel-im1.log; then exit 1; fi
+      - name: Build + boot independent two-thread cooperative fixture
+        run: |
+          set -o pipefail
+          bash scripts/build.sh ring3-threads
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-threads-uefi.iso --timeout 90 | tee ring3-threads-im1.log
+          grep -qx 'ZILLAOS_NATIVE_THREAD_TRACE=ABABAB' ring3-threads-im1.log
+          grep -qx 'ZILLAOS_NATIVE_THREADS_BOTH_EXITED' ring3-threads-im1.log
+          if grep -Eq 'ZILLAOS_EXCEPTION_FATAL|ZILLAOS_PANIC|ZILLAOS_NATIVE_RING3_FAILED' ring3-threads-im1.log; then exit 1; fi
+      - name: Build + boot independent timer preemption fixture
+        run: |
+          set -o pipefail
+          bash scripts/build.sh ring3-preempt
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --timeout 45 | tee ring3-preempt-im1.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_TRACE=ABABABAB' ring3-preempt-im1.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_OK' ring3-preempt-im1.log
+          if grep -Eq 'ZILLAOS_EXCEPTION_FATAL|ZILLAOS_PANIC|ZILLAOS_TIMER_PREEMPT_VERIFICATION_FAILED' ring3-preempt-im1.log; then exit 1; fi
+      - name: Save COM1 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zillaos-process-im1-qemu-com1
+          path: |
+            ring3-guard-im1.log
+            ring3-kernel-im1.log
+            ring3-threads-im1.log
+            ring3-preempt-im1.log
+          if-no-files-found: warn

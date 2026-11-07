@@ -25,6 +25,14 @@ jobs:
         run: |
           rustc +1.90.0 --edition 2024 --test tests/service_manager_host.rs -o /tmp/zilla-services-host
           /tmp/zilla-services-host --nocapture
+      - name: Typed ServiceSupervisor model negative tests
+        run: |
+          rustc +1.90.0 --edition 2024 --test tests/service_supervisor_host.rs -o /tmp/zilla-supervisor-host
+          /tmp/zilla-supervisor-host --nocapture
+      - name: Canonical ProcessTable/Pid supervisor bridge tests
+        run: |
+          rustc +1.90.0 --edition 2024 --test tests/service_supervisor_kernel_pid.rs -o /tmp/zilla-supervisor-pid
+          /tmp/zilla-supervisor-pid --nocapture
       - name: no_std ServiceManager syntax/type proof
         run: |
           rustc +1.90.0 --edition 2024 --crate-type lib \

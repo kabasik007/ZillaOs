@@ -4,7 +4,7 @@ use crate::capabilities::{
     CapError, Delegation, HandleTable, ObjectId, ObjectRegistry,
 };
 use super::protocol::{
-    MessageHeaderV1, ParsedMessage, MAX_MESSAGE_HANDLES, MAX_PAYLOAD_BYTES,
+    MessageHeaderV1, MessageKind, ParsedMessage, MAX_MESSAGE_HANDLES, MAX_PAYLOAD_BYTES,
 };
 
 pub const QUEUE_DEPTH: usize = 8;
@@ -13,7 +13,7 @@ pub const MAX_PENDING_CALLS: usize = 16;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QueueError {
     InvalidRequest, WrongPeer, NotFound, AlreadyExists, StillPending,
-    Full, QueueFull, TimedOut, ServerGone, Canceled, BadCapability(CapError),
+    Full, QueueFull, TimedOut, ServerGone, Canceled, StaleCall, BadCapability(CapError),
 }
 impl From<CapError> for QueueError {
     fn from(value: CapError) -> Self { Self::BadCapability(value) }
@@ -23,7 +23,7 @@ impl From<CapError> for QueueError {
 /// Delegations reference kernel registry entries, never serialized pointers.
 #[derive(Clone, Copy)]
 pub struct Envelope {
-    pub sender: u64,
+    sender: u64,
     pub header: MessageHeaderV1,
     payload: [u8; MAX_PAYLOAD_BYTES],
     grants: [Option<Delegation>; MAX_MESSAGE_HANDLES],
@@ -50,6 +50,7 @@ impl Envelope {
             sender, header: parsed.header, payload, grants, deadline_ms,
         })
     }
+    pub const fn sender(&self) -> u64 { self.sender }
     pub fn payload(&self) -> &[u8] { &self.payload[..self.header.payload_len] }
     pub fn validate_transfers(&self, objects: &ObjectRegistry) -> Result<(), QueueError> {
         for grant in self.grants.iter().take(self.header.handle_count).flatten() {
@@ -96,6 +97,7 @@ impl IpcQueue {
             closed: false, rejected_full: 0, expired: 0,
         }
     }
+    pub const fn server(&self) -> ObjectId { self.server }
     pub const fn len(&self) -> usize { self.len }
     pub const fn is_closed(&self) -> bool { self.closed }
     pub fn send(&mut self, msg: Envelope, now_ms: u64) -> Result<(), QueueError> {
@@ -109,6 +111,45 @@ impl IpcQueue {
         self.slots[tail] = Some(msg);
         self.len += 1;
         Ok(())
+    }
+    /// Atomic single-thread model: register correlation and enqueue or roll back
+    /// the pending call on *any* queue failure. No SMP transaction yet.
+    pub fn send_tracked(
+        &mut self, calls: &mut CallTracker, msg: Envelope,
+        deadline_ms: u64, now_ms: u64,
+    ) -> Result<CallToken, QueueError> {
+        if msg.header.kind != MessageKind::Request
+            || msg.deadline_ms != Some(deadline_ms) {
+            return Err(QueueError::InvalidRequest);
+        }
+        let client = msg.sender;
+        let request_id = msg.header.request_id;
+        let token = calls.start_token(client, self.server, request_id, deadline_ms, now_ms)?;
+        if let Err(error) = self.send(msg, now_ms) {
+            calls.rollback_start(token);
+            return Err(error);
+        }
+        Ok(token)
+    }
+    /// Remove exiting sender's queued messages while preserving FIFO order.
+    pub fn purge_sender(&mut self, sender: u64) -> usize {
+        let original = self.len;
+        let mut removed = 0;
+        for _ in 0..original {
+            let item = self.slots[self.head].take();
+            self.head = (self.head + 1) % QUEUE_DEPTH;
+            self.len -= 1;
+            if let Some(message) = item {
+                if message.sender == sender {
+                    removed += 1;
+                } else {
+                    let tail = (self.head + self.len) % QUEUE_DEPTH;
+                    self.slots[tail] = Some(message);
+                    self.len += 1;
+                }
+            }
+        }
+        removed
     }
     /// Non-blocking model. Actual wait/wakeup requires a scheduler integration.
     pub fn recv(&mut self, now_ms: u64) -> Result<Option<Envelope>, QueueError> {
@@ -138,23 +179,40 @@ impl IpcQueue {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStatus { Pending, Replied, Canceled, TimedOut, ServerGone }
+/// Kernel-minted correlation. A recycled request ID cannot reuse a nonce.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CallToken {
+    client: u64,
+    request_id: u64,
+    nonce: u64,
+}
+impl CallToken {
+    pub const fn client(self) -> u64 { self.client }
+    pub const fn request_id(self) -> u64 { self.request_id }
+}
 #[derive(Clone, Copy)]
 struct Call {
     client: u64,
     server: ObjectId,
     request_id: u64,
     deadline_ms: u64,
+    nonce: u64,
     status: CallStatus,
 }
 pub struct CallTracker {
     calls: [Option<Call>; MAX_PENDING_CALLS],
+    next_nonce: u64,
 }
 impl Default for CallTracker { fn default() -> Self { Self::new() } }
 impl CallTracker {
-    pub const fn new() -> Self { Self { calls: [None; MAX_PENDING_CALLS] } }
+    pub const fn new() -> Self { Self { calls: [None; MAX_PENDING_CALLS], next_nonce: 1 } }
     pub fn count(&self) -> usize { self.calls.iter().flatten().count() }
     pub fn start(&mut self, client: u64, server: ObjectId, request_id: u64,
-        deadline_ms: u64, now_ms: u64) -> Result<(), QueueError>
+        deadline_ms: u64, now_ms: u64) -> Result<(), QueueError> {
+        self.start_token(client, server, request_id, deadline_ms, now_ms).map(|_| ())
+    }
+    pub fn start_token(&mut self, client: u64, server: ObjectId, request_id: u64,
+        deadline_ms: u64, now_ms: u64) -> Result<CallToken, QueueError>
     {
         if client == 0 || server.0 == 0 || request_id == 0 {
             return Err(QueueError::InvalidRequest);
@@ -165,10 +223,43 @@ impl CallTracker {
         }
         let slot = self.calls.iter_mut().find(|entry| entry.is_none())
             .ok_or(QueueError::Full)?;
+        let nonce = self.next_nonce;
+        self.next_nonce = self.next_nonce.checked_add(1).ok_or(QueueError::Full)?;
         *slot = Some(Call {
-            client, server, request_id, deadline_ms, status: CallStatus::Pending,
+            client, server, request_id, deadline_ms, nonce, status: CallStatus::Pending,
         });
-        Ok(())
+        Ok(CallToken { client, request_id, nonce })
+    }
+    /// Roll back only the specific still-pending call created by this send.
+    fn rollback_start(&mut self, token: CallToken) {
+        for entry in &mut self.calls {
+            if entry.is_some_and(|call| call.client == token.client
+                && call.request_id == token.request_id && call.nonce == token.nonce
+                && call.status == CallStatus::Pending) {
+                *entry = None;
+                return;
+            }
+        }
+    }
+    /// Authenticated dispatcher must verify server endpoint capability too.
+    /// This nonce also rejects delayed replies after request_id reuse.
+    pub fn reply_token(&mut self, server: ObjectId, token: CallToken,
+        now_ms: u64) -> Result<(), QueueError>
+    {
+        let call = self.find(token.client, token.request_id)?;
+        if call.nonce != token.nonce { return Err(QueueError::StaleCall); }
+        self.reply(server, token.client, token.request_id, now_ms)
+    }
+    /// Process exit removes both pending and completed correlations.
+    pub fn client_exited(&mut self, client: u64) -> usize {
+        let mut removed = 0;
+        for entry in &mut self.calls {
+            if entry.is_some_and(|call| call.client == client) {
+                *entry = None;
+                removed += 1;
+            }
+        }
+        removed
     }
     fn find(&mut self, client: u64, request_id: u64) -> Result<&mut Call, QueueError> {
         self.calls.iter_mut().flatten()
@@ -350,6 +441,48 @@ mod tests {
         assert!(q.recv(11).unwrap().is_none());
         assert_eq!(q.expired, 1);
         assert_eq!(q.send(env, 11), Err(QueueError::TimedOut));
+    }
+    #[test]
+    fn process_exit_purges_wrapped_queue_without_reordering_survivors() {
+        let mut q = IpcQueue::new(ObjectId(8));
+        for i in 0..QUEUE_DEPTH {
+            let mut msg = envelope();
+            msg.sender = if i % 2 == 0 { 2 } else { 3 };
+            q.send(msg, 0).unwrap();
+        }
+        for _ in 0..3 { q.recv(0).unwrap(); }
+        for i in 0..3 {
+            let mut msg = envelope();
+            msg.sender = if i == 0 { 2 } else { 3 };
+            q.send(msg, 0).unwrap();
+        }
+        assert_eq!(q.purge_sender(2), 3);
+        assert_eq!(q.len(), 5);
+        for _ in 0..5 { assert_eq!(q.recv(0).unwrap().unwrap().sender(), 3); }
+        assert!(q.recv(0).unwrap().is_none());
+    }
+    #[test]
+    fn tracked_enqueue_rolls_back_and_old_reply_tokens_cannot_replay() {
+        let mut q = IpcQueue::new(ObjectId(22));
+        let mut calls = CallTracker::new();
+        for _ in 0..QUEUE_DEPTH { q.send(envelope(), 0).unwrap(); }
+        let mut staged = envelope();
+        staged.deadline_ms = Some(200);
+        assert_eq!(q.send_tracked(&mut calls, staged, 200, 1), Err(QueueError::QueueFull));
+        assert_eq!(calls.count(), 0);
+        q.recv(0).unwrap();
+        let first = q.send_tracked(&mut calls, staged, 200, 1).unwrap();
+        assert_eq!(calls.reply_token(ObjectId(23), first, 5), Err(QueueError::WrongPeer));
+        assert_eq!(calls.reply_token(ObjectId(22), first, 5), Ok(()));
+        assert_eq!(calls.reply_token(ObjectId(22), first, 6), Err(QueueError::Canceled));
+        assert_eq!(calls.take_complete(2, 4), Ok(CallStatus::Replied));
+        let newer = calls.start_token(2, ObjectId(22), 4, 220, 10).unwrap();
+        assert_ne!(first, newer);
+        assert_eq!(calls.reply_token(ObjectId(22), first, 11), Err(QueueError::StaleCall));
+        assert_eq!(calls.status(2, 4), Some(CallStatus::Pending));
+        assert_eq!(calls.reply_token(ObjectId(22), newer, 12), Ok(()));
+        assert_eq!(calls.client_exited(2), 1);
+        assert_eq!(calls.count(), 0);
     }
     #[test]
     fn pending_table_is_bounded_and_duplicate_ids_are_rejected() {

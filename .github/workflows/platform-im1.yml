@@ -1,0 +1,85 @@
+name: ZillaOS Platform I-M1 Single PCI Inventory
+
+on:
+  push:
+    branches: ['feat/platform-im1-single-inventory']
+    paths:
+      - 'src/platform/**'
+      - 'src/main.rs'
+      - 'src/pci_io.rs'
+      - '.github/workflows/platform-im1.yml'
+  pull_request:
+    paths:
+      - 'src/platform/**'
+      - 'src/main.rs'
+      - 'src/pci_io.rs'
+      - '.github/workflows/platform-im1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust 1.90 pinned
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target x86_64-unknown-none
+      - name: Host library and cross-PR tests
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Bare-metal VM desktop
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+      - name: Bare-metal non-GUI kernel
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: Ring 3 experimental build (compilation only)
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features native-ring3
+      - name: Read-only platform Rust formatting
+        run: |
+          rustfmt +1.90.0 --edition 2024 --check src/platform/boot.rs src/platform/amd_bridge.rs src/platform/pci/enumerate.rs
+      - name: Python regressions
+        run: python3 -m unittest discover -s tests -v
+
+  qemu-uefi-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install QEMU, OVMF and ISO tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso mtools
+      - name: Rust and bare-metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Boot test ISO in QEMU + OVMF (disposable image)
+        run: |
+          set -o pipefail
+          bash scripts/build.sh test
+          python3 scripts/smoke_test.py --timeout 90
+      - name: Desktop PCI scan smoke in QEMU + OVMF
+        run: |
+          set -o pipefail
+          bash scripts/build.sh demo
+          python3 scripts/desktop_smoke.py --timeout 90
+      - name: Verify live QEMU PCI inventory, not just GUI rendering
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          log = Path("build/logs/desktop-qemu.log").read_text(errors="replace")
+          assert "ZILLAOS_PCI_INVENTORY_STATUS=COMPLETE" in log, "PCI scan is not complete"
+          def read_hex(name):
+              values = re.findall(rf"(?m)^{re.escape(name)}=(0x[0-9a-fA-F]+)$", log)
+              assert len(values) == 1, (name, values)
+              return int(values[0], 16)
+          devices = read_hex("ZILLAOS_PCI_DEVICE_COUNT")
+          buses = read_hex("ZILLAOS_PCI_BUSES_SCANNED")
+          assert devices > 0, "QEMU PCI inventory unexpectedly empty"
+          assert buses == 256, buses
+          assert read_hex("ZILLAOS_PCI_CONFIG_ERRORS") == 0
+          assert read_hex("ZILLAOS_PCI_MALFORMED_HEADERS") == 0
+          assert read_hex("ZILLAOS_PCI_MALFORMED_BRIDGES") == 0
+          assert "ZILLAOS_AMD_PCI_UNSUPPORTED_CANDIDATES=" in log
+          print(f"PASS: one complete segment-0 PCI inventory: {devices} functions, {buses} buses")
+          PY

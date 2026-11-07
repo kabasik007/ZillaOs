@@ -46,6 +46,7 @@ pub enum PciIdentityError {
     InvalidVendor,
     InvalidDevice,
     InvalidClass,
+    InvalidRevision,
     IncompleteSubsystem,
     InvalidHeader,
     AddressMismatch,
@@ -64,6 +65,12 @@ impl PciIdentity {
         }
         if self.class_code == 0xff {
             return Err(PciIdentityError::InvalidClass);
+        }
+        // A revision byte of 0xff is a typical all-ones config-read
+        // failure sentinel. A0 diagnostics must reject it until a
+        // board-specific hardware record explicitly proves otherwise.
+        if self.revision == 0xff {
+            return Err(PciIdentityError::InvalidRevision);
         }
         match (self.subsystem_vendor_id, self.subsystem_device_id) {
             (Some(v), Some(d)) if v == 0 || v == 0xffff || d == 0xffff => {
@@ -197,6 +204,21 @@ mod tests {
         assert_eq!(
             PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_0000, 0, Some(0x1234_0000)),
             Err(PciIdentityError::IncompleteSubsystem)
+        );
+    }
+
+    #[test]
+    fn all_ones_revision_is_not_treated_as_hardware_evidence() {
+        assert_eq!(
+            PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_00ff, 0, Some(0xe438_1da2)),
+            Err(PciIdentityError::InvalidRevision)
+        );
+        assert_eq!(
+            PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_00fe, 0, Some(0xe438_1da2))
+                .unwrap()
+                .unwrap()
+                .revision,
+            0xfe
         );
     }
 
