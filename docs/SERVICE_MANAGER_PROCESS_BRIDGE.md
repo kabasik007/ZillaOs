@@ -44,7 +44,9 @@ ServiceId is local to the bounded ServiceRegistry; its index is not a PID, kerne
 7. confirm_cleaned must reject live PIDs and unverified revocation. Only then can the supervisor restart, release its binding or complete an explicit stop.
 8. restart while running is Stop → verified exit → verified cleanup → new launch ticket. A manually authorized restart after Failed/Backoff may rearm the circuit breaker only once cleanup is resolved.
 
-**Global conservative cleanup barrier:** while any cleanup confirmation is pending, new starts and retries are paused (other existing services are not killed). This avoids a race between PID reuse and resource reclamation. Parallel per-service barriers require a proven synchronization policy.
+**Dependent teardown ordering: provider cleanup is rejected while a transitive hard dependent remains bound, launching, stopping or cleaning. Tested with a deviced/displayd failure.
+
+Global conservative cleanup barrier:** while any cleanup confirmation is pending, new starts and retries are paused (other existing services are not killed). This avoids a race between PID reuse and resource reclamation. Parallel per-service barriers require a proven synchronization policy.
 
 ## Dependencies and timeouts
 
@@ -95,3 +97,5 @@ Integration agent: compare this isolated PR against current main and staging PR 
 - Exact CI evidence for feature branch df1abfcce034cb57c0761ce90676ddcf3d8cb362: GitHub Actions job https://github.com/kabasik007/ZillaOs/actions/runs/42333763176 , host-model PASS.
 - Test totals: 20 ServiceManager model tests, 14 typed supervisor tests, 17 process/contract tests (including existing ProcessTable module tests) = 51 passed, 0 failed. Bare-metal no_std metadata compilation PASS.
 - No real linked kernel integration, QEMU service startup or VMware service startup has been performed. Original ProcessManager & IPC implementation remain owned by their agent PRs.
+
+- Additional regression after I-M1 review: transitive provider teardown barrier and dependent-first cleanup, verified in host-model run https://github.com/kabasik007/ZillaOs/actions/runs/42333960222 at code SHA 1f51bb84df15b70cd291bf9283b792d15e993da8.
