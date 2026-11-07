@@ -53,13 +53,12 @@ pub trait ModeBackend {
     fn read_mode(&mut self) -> Result<Mode, BackendFailure>;
     fn can_restore(&self, previous: Mode) -> bool;
 
-    /// Hardware-free atomic test gate. Existing ModeBackend implementations
-    /// retain source compatibility through a conservative legacy default
-    /// which checks advertised support only. A real hardware backend MUST
-    /// override this with complete resource/connector validation and must
-    /// not write hardware in the test phase.
-    fn test_mode(&mut self, mode: Mode) -> Result<(), BackendFailure> {
-        if self.supports_mode(mode) { Ok(()) } else { Err(BackendFailure::Rejected) }
+    /// TEST_ONLY phase with no hardware writes. Legacy implementors retain
+    /// trait/source compatibility but fail closed until they explicitly
+    /// implement a safe device-specific atomic validator. supports_mode()
+    /// alone is NOT sufficient proof of usable hardware resources.
+    fn test_mode(&mut self, _mode: Mode) -> Result<(), BackendFailure> {
+        Err(BackendFailure::Unavailable)
     }
 }
 
@@ -469,6 +468,31 @@ mod tests {
             Err(DisplayError::ReadbackMismatch)
         );
         assert_eq!(gpu.writes, 0);
+    }
+
+    #[test]
+    fn legacy_backend_without_atomic_test_fails_closed() {
+        struct Legacy(MockDisplay);
+        impl ModeBackend for Legacy {
+            fn runtime_switch_available(&self) -> bool { self.0.runtime_switch_available() }
+            fn supports_mode(&self, mode: Mode) -> bool { self.0.supports_mode(mode) }
+            fn prepare_mode(&mut self, mode: Mode) -> Result<(), BackendFailure> {
+                self.0.prepare_mode(mode)
+            }
+            fn set_mode(&mut self, mode: Mode) -> Result<(), BackendFailure> {
+                self.0.set_mode(mode)
+            }
+            fn read_mode(&mut self) -> Result<Mode, BackendFailure> {
+                self.0.read_mode()
+            }
+            fn can_restore(&self, mode: Mode) -> bool { self.0.can_restore(mode) }
+        }
+        let mut legacy = Legacy(MockDisplay::new());
+        let mut mgr = DisplayManager::new(legacy.0.current).unwrap();
+        assert_eq!(mgr.apply(&mut legacy, Mode::new(1280, 800)),
+            Err(DisplayError::AtomicTestFailed));
+        assert_eq!(legacy.0.writes, 0);
+        assert_eq!(legacy.0.prepared, 0);
     }
 
     #[test]
