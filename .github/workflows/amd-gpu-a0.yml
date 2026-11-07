@@ -1,0 +1,29 @@
+name: AMDGPU A0 read-only PCI and IP model
+
+on:
+  pull_request:
+    paths:
+      - 'src/drivers/gpu/amd/**'
+      - 'src/drivers/gpu/mod.rs'
+      - '.github/workflows/amd-gpu-a0.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  amd-a0-host-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust 1.90 and bare-metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target x86_64-unknown-none
+      - name: AMD and existing Rust host tests
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Bare-metal Rust build (default)
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: Bare-metal Rust build (existing vm-demo feature)
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+      - name: Strict Rust formatting check
+        run: cargo +1.90.0 fmt --all -- --check
