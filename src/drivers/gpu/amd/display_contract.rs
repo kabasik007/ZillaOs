@@ -8,9 +8,7 @@ use crate::platform::device::DeviceId;
 use crate::video::display_contracts::OutputId;
 
 use super::AmdGpuIdentity;
-use super::ip_blocks::{
-    AsicIpInventory, IpContractError, IpDiscovery, TypedIpContracts,
-};
+use super::ip_blocks::{AsicIpInventory, IpContractError, IpDiscovery, TypedIpContracts};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AmdDisplayBlocker {
@@ -72,13 +70,18 @@ pub fn describe_display_handoff(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::video::gpu::amd::ip_blocks::{IpKind, IpVersion};
     use crate::video::gpu::amd::pci::{PciAddress, PciIdentity};
-    use crate::video::gpu::amd::{AsicFamily, match_amd_display, AmdGpuProbeStatus};
-    use crate::video::gpu::amd::ip_blocks::{IpVersion, IpKind};
+    use crate::video::gpu::amd::{AmdGpuProbeStatus, AsicFamily, match_amd_display};
 
     fn gpu() -> AmdGpuIdentity {
         let pci = PciIdentity {
-            address: PciAddress { segment: 12, bus: 3, device: 1, function: 0 },
+            address: PciAddress {
+                segment: 12,
+                bus: 3,
+                device: 1,
+                function: 0,
+            },
             vendor_id: 0x1002,
             device_id: 0x73bf,
             revision: 0x20,
@@ -98,7 +101,10 @@ mod tests {
     fn unknown_ip_does_not_create_output_or_modeset() {
         let gpu = gpu();
         let report = describe_display_handoff(
-            DeviceId { slot: 2, generation: 1 },
+            DeviceId {
+                slot: 2,
+                generation: 1,
+            },
             gpu,
             gpu.ip_inventory(),
         );
@@ -115,10 +121,17 @@ mod tests {
         let mut ip = AsicIpInventory::unknown(AsicFamily::Navi21);
         assert_eq!(ip.blocks[1].kind, IpKind::DisplayDcn);
         ip.blocks[1].discovery = IpDiscovery::PresentVerified(IpVersion {
-            major: 3, minor: 2, revision: 0,
+            major: 3,
+            minor: 2,
+            revision: 0,
         });
         let report = describe_display_handoff(
-            DeviceId { slot: 2, generation: 9 }, gpu, ip,
+            DeviceId {
+                slot: 2,
+                generation: 9,
+            },
+            gpu,
+            ip,
         );
         assert_eq!(report.blocker, AmdDisplayBlocker::NoNativeDriver);
         assert_eq!(report.output, None);
@@ -131,15 +144,23 @@ mod tests {
         let gpu = gpu();
         let mut ip = gpu.ip_inventory();
         let version = IpDiscovery::PresentVerified(IpVersion {
-            major: 3, minor: 0, revision: 0,
+            major: 3,
+            minor: 0,
+            revision: 0,
         });
         ip.blocks[0].discovery = version;
         ip.blocks[1].discovery = version;
         assert_eq!(
-            describe_display_handoff(DeviceId { slot: 0, generation: 1 }, gpu, ip).blocker,
-            AmdDisplayBlocker::InvalidIpContracts(
-                IpContractError::ConflictingDisplayEngines,
+            describe_display_handoff(
+                DeviceId {
+                    slot: 0,
+                    generation: 1
+                },
+                gpu,
+                ip
             )
+            .blocker,
+            AmdDisplayBlocker::InvalidIpContracts(IpContractError::ConflictingDisplayEngines,)
         );
     }
 }
