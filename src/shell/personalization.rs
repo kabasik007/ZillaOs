@@ -207,7 +207,7 @@ pub fn settings_hit(rect: Rect, page: SettingsPage, x: usize, y: usize) -> Optio
         return None;
     }
     if page == SettingsPage::Personalization {
-        for i in 0..3 {
+        for i in 0..WALLPAPER_OPTIONS.len() {
             if preset_tile(rect, GalleryRow::Wallpaper, i)
                 .is_some_and(|r| rect_contains(r, x, y))
             {
