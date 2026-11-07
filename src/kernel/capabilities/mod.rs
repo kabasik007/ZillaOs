@@ -201,6 +201,31 @@ impl HandleTable {
         if grant.rights.is_empty() { return Err(CapError::EmptyRights); }
         self.insert(grant)
     }
+    /// Preflight ALL grants and receiver capacity before any handle is installed.
+    /// Caller must serialize registry/table mutations; this is not an SMP lock.
+    pub fn accept_many<const N: usize>(
+        &mut self, caller: u64, objects: &ObjectRegistry,
+        grants: &[Option<Delegation>; N],
+    ) -> Result<[Option<Handle>; N], CapError> {
+        self.check_owner(caller)?;
+        let mut needed = 0usize;
+        for grant in grants.iter().flatten() {
+            grant.validate(objects)?;
+            if grant.rights.is_empty() { return Err(CapError::EmptyRights); }
+            needed += 1;
+        }
+        let available = self.slots.iter()
+            .filter(|slot| slot.value.is_none() && !slot.retired).count();
+        if needed > available { return Err(CapError::Full); }
+        let mut result = [None; N];
+        for (i, grant) in grants.iter().enumerate() {
+            if let Some(grant) = grant {
+                // The preflight guarantees free slots under the exclusive &mut borrow.
+                result[i] = Some(self.insert(*grant)?);
+            }
+        }
+        Ok(result)
+    }
     pub fn close(&mut self, caller: u64, handle: Handle) -> Result<(), CapError> {
         self.check_owner(caller)?;
         let (index, generation) = handle.parts()?;
@@ -291,6 +316,29 @@ mod tests {
         assert_eq!(t.count(), 0);
         for _ in 1..MAX_OBJECTS { registry.create(ObjectKind::Timer).unwrap(); }
         assert_eq!(registry.create(ObjectKind::Timer), Err(CapError::Full));
+    }
+    #[test]
+    fn batch_receive_is_fail_closed_and_preflight_atomic() {
+        let mut reg = ObjectRegistry::new();
+        let akey = reg.create(ObjectKind::Endpoint).unwrap();
+        let bkey = reg.create(ObjectKind::Endpoint).unwrap();
+        let mut source = HandleTable::new(1);
+        let mut recipient = HandleTable::new(2);
+        let all = Rights::SEND.union(Rights::TRANSFER);
+        let ha = source.grant(1, &reg, akey, all).unwrap();
+        let hb = source.grant(1, &reg, bkey, all).unwrap();
+        let grants = [
+            Some(source.prepare_transfer(1, &reg, ha, Rights::SEND).unwrap()),
+            Some(source.prepare_transfer(1, &reg, hb, Rights::SEND).unwrap()),
+        ];
+        reg.revoke(bkey).unwrap();
+        assert!(matches!(recipient.accept_many(2, &reg, &grants), Err(CapError::Revoked)));
+        assert_eq!(recipient.count(), 0);
+        let revised = [grants[0], None];
+        let accepted = recipient.accept_many(2, &reg, &revised).unwrap();
+        assert!(accepted[0].is_some());
+        assert!(accepted[1].is_none());
+        assert_eq!(recipient.count(), 1);
     }
     #[test]
     fn close_does_not_revoke_valid_delegated_copy() {
