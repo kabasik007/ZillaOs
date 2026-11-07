@@ -345,7 +345,7 @@ impl ServiceManager {
         })
     }
     /// This is intentionally never a real launcher, including for builtins.
-    pub fn execute_service(&mut self, _id: ServiceId) -> Result<(), ServiceError> {
+    pub fn execute_service(&self, _id: ServiceId) -> Result<(), ServiceError> {
         Err(ServiceError::Unsupported)
     }
     fn authorize(control: bool) -> Result<(), ServiceError> {
