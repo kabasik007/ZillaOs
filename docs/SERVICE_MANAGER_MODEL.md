@@ -102,13 +102,15 @@ The ServiceManager itself does not spawn zillad. zillad will become the supervis
 ## Test and evidence matrix
 
 ```bash
-cargo +1.90.0 test --test service_manager_host --target x86_64-unknown-linux-gnu --offline
-rustc +1.90.0 --crate-type lib --edition 2024 \
-  --target x86_64-unknown-linux-gnu \
-  src/services/service_manager.rs --emit metadata -o /tmp/service_manager.rmeta
+rustc +1.90.0 --edition 2024 --test tests/service_manager_host.rs \
+  -o /tmp/service_manager_tests
+/tmp/service_manager_tests
+rustc +1.90.0 --edition 2024 --crate-type lib \
+  --target x86_64-unknown-none tests/service_manager_no_std.rs \
+  --emit metadata -o /tmp/service_manager.rmeta
 ```
 
-The dedicated service-manager-model GitHub Actions workflow runs both commands for the PR. A host PASS proves only deterministic model behavior and compilation as a no_std library; it does not prove a bare-metal kernel integration, VM boot, native daemon, system isolation or correct hardware crash recovery.
+The dedicated service-manager-model GitHub Actions workflow runs both commands for the PR. Avoid cargo test --test on this bootloader crate: it attempts to link its custom kernel _start with the host C runtime _start. A host PASS proves only deterministic model behavior and compilation as a no_std library; it does not prove a bare-metal kernel integration, VM boot, native daemon, system isolation or correct hardware crash recovery.
 
 Negative cases include duplicate service IDs, unknown schemas, invalid paths, unrecognized capabilities, excessive quotas, hard missing dependencies, required/after cycles, authorization refusal, control-state transitions, dependent stop ordering, crash/backoff/retry exhaustion, deadline overflow, event overflow and detached snapshot semantics.
 
