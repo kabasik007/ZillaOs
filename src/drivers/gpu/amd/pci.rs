@@ -210,15 +210,14 @@ mod tests {
     #[test]
     fn all_ones_revision_is_not_treated_as_hardware_evidence() {
         assert_eq!(
-            PciIdentity::from_config_dwords(
-                A, 0x73bf_1002, 0x0300_00ff, 0, Some(0xe438_1da2)
-            ),
+            PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_00ff, 0, Some(0xe438_1da2)),
             Err(PciIdentityError::InvalidRevision)
         );
         assert_eq!(
-            PciIdentity::from_config_dwords(
-                A, 0x73bf_1002, 0x0300_00fe, 0, Some(0xe438_1da2)
-            ).unwrap().unwrap().revision,
+            PciIdentity::from_config_dwords(A, 0x73bf_1002, 0x0300_00fe, 0, Some(0xe438_1da2))
+                .unwrap()
+                .unwrap()
+                .revision,
             0xfe
         );
     }
