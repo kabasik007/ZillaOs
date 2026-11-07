@@ -7,6 +7,6 @@ pub mod identity;
 pub mod mcfg;
 
 pub use config::{ConfigError, LegacyConfig, MockConfig, PciConfigRead};
-pub use enumerate::{PciInventory, ScanError, ScanReport, scan_topology, scan_legacy_segment0};
+pub use enumerate::{PciInventory, ScanError, ScanReport, scan_legacy_segment0, scan_topology};
 pub use identity::{AddressError, PciAddress, PciBridge, PciClass, PciDeviceInfo, PciIdentity};
 pub use mcfg::{McfgAllocation, McfgError, McfgTable, parse_mcfg};
