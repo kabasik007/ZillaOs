@@ -67,7 +67,7 @@ src/drivers/gpu/amd/
 | **A1: integration** | common device registry, driver binding status, serial marker `ZILLAOS_AMD_GPU=DETECTED_UNSUPPORTED` on detected AMD | bare-metal build + VM mock path + GOP regression | no claim of physical AMD |
 | **A2: hardware inventory** | get exact board/device/revision/ASIC, read-only PCI and safe resource inventory on dedicated hardware | serial snapshot from *actual AMD* host | no MMIO writes |
 | **A3: resource groundwork** | authoritative BAR lengths, validated UC MMIO mapping, PCI ownership, IRQ/DMA/IOMMU contracts | negative tests and gated register *reads* only | no GPU reset, no display mode changes |
-| **A4: display** | device-specific firmware/ASIC analysis, controlled DCE/DCN bring-up, EDID, atomic mode set with rollback | external capture confirms mode, failure restores GOP | no 3D |
+| **A4: display** | device-specific firmware/ASIC analysis, controlled DCE/DCN bring-up, EDID, atomic mode set with rollback | external capture confirms mode, failure triggers hardware-specific recovery or serial/headless diagnostics; GOP restoration is not guaranteed after GPU reprogramming | no 3D |
 | **A5: memory/queues** | verified firmware handling, VRAM/GMC mapping, fences, IRQ, DMA, rings, bounded reset | real GPU test; fault injection | no untrusted shader execution |
 | **A6: acceleration** | explicit GFX family command API, 2D then graphics/compute userspace, synchronization | measured drawing + test scenes + isolation | no universal Radeon support claim |
 
@@ -169,3 +169,12 @@ Deliverables:
 Following `AGENTS.md`: no force pushes, no rewriting other stream's modules, report `source / host test / build / VM / physical GPU` independently.
 
 See [Driver Framework](DRIVER_FRAMEWORK.md), [Service Framework](SERVICE_FRAMEWORK.md), [Agent coordination](AGENT_COORDINATION.md), [VMware SVGA](VMWARE_SVGA_DRIVER.md).
+
+## 11. Additional research links and implementation scope
+
+- [AMD hardware lab](AMD_HARDWARE_LAB.md): collect exact PCI `1002:xxxx`, ASIC/IP revisions, subsystem, evidence; VMware guest typically does not expose host Radeon.
+- [PCI/ACPI resource model](PCI_ACPI_RESOURCE_MODEL.md): one BDF/segment inventory, ECAM/MCFG, BAR ownership, typed MMIO, IRQ, DMA/IOMMU.
+- [Display stack contract](DISPLAY_STACK_PROTOCOL.md): surface vs scanout vs 3D acceleration, atomic validation before hardware commit, output generation and poisoning.
+- [Parallel workstreams](PLATFORM_WORKSTREAMS.md): AMD A0 only on first pass, avoid modifying GPU/VMware shared files.
+
+**Correction:** The GOP fallback is reliable for the initial software framebuffer *while native driver has not reprogrammed display hardware*. Once a Radeon DCN/DCE is reset or modeset, a previously valid firmware framebuffer may cease to scan out. Any post-commit recovery must be verified per ASIC; default rescue diagnostics are independent serial/log capture rather than a blanket GOP promise. See [UEFI GOP protocol](https://uefi.org/specs/UEFI/2.10/12_Protocols_Console_Support.html) and [DRM atomic modeset](https://docs.kernel.org/gpu/drm-kms.html).
