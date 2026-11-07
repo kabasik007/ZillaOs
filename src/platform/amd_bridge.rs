@@ -65,6 +65,7 @@ impl<const CAP: usize> ReadOnlyPciInventory for AmdInventoryAdapter<'_, CAP> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::cell::Cell;
     use crate::platform::pci::{
         MockConfig, PciAddress, PciClass, PciIdentity, scan_topology,
     };
@@ -127,9 +128,9 @@ mod tests {
 
     #[test]
     fn amd_consumes_canonical_bounded_inventory_without_rescanning() {
-        let mut reads = 0usize;
+        let reads = Cell::new(0usize);
         let mut config = MockConfig::new(|addr: PciAddress, offset: u16| {
-            reads += 1;
+            reads.set(reads.get() + 1);
             if addr.segment == 0 && addr.bus == 0 && addr.device == 2 && addr.function == 0 {
                 return Ok(match offset {
                     0x00 => 0x73bf_1002,
@@ -143,14 +144,14 @@ mod tests {
         });
         let inventory = scan_topology::<4>(&mut config, 0, 0, 0).unwrap();
         assert_eq!(inventory.count, 1);
-        let reads_after_scan = reads;
+        let reads_after_scan = reads.get();
         let adapter = AmdInventoryAdapter::new(&inventory);
         let address = AmdAddress::from_legacy_segment_zero(0, 2, 0);
         let status = amd::probe_address(&adapter, address);
         assert!(matches!(status, AmdGpuProbeStatus::DetectedUnsupported(_)));
-        assert_eq!(reads, reads_after_scan);
+        assert_eq!(reads.get(), reads_after_scan);
         assert!(adapter.identity_at(AmdAddress { function: 8, ..address }).is_none());
         assert!(adapter.identity_at(AmdAddress { segment: 1, ..address }).is_none());
-        assert_eq!(reads, reads_after_scan);
+        assert_eq!(reads.get(), reads_after_scan);
     }
 }
