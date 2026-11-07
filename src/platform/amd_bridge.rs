@@ -4,8 +4,7 @@
 
 use crate::platform::pci::{PciIdentity as PlatformIdentity, PciInventory};
 use crate::video::gpu::amd::pci::{
-    PciAddress as AmdAddress, PciIdentity as AmdIdentity, PciIdentityError,
-    ReadOnlyPciInventory,
+    PciAddress as AmdAddress, PciIdentity as AmdIdentity, PciIdentityError, ReadOnlyPciInventory,
 };
 
 /// Lossless field mapping: Platform owns PCI enumeration and immutable snapshots.
@@ -65,11 +64,9 @@ impl<const CAP: usize> ReadOnlyPciInventory for AmdInventoryAdapter<'_, CAP> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::cell::Cell;
-    use crate::platform::pci::{
-        MockConfig, PciAddress, PciClass, PciIdentity, scan_topology,
-    };
+    use crate::platform::pci::{MockConfig, PciAddress, PciClass, PciIdentity, scan_topology};
     use crate::video::gpu::amd::{self, AmdGpuProbeStatus};
+    use core::cell::Cell;
 
     fn identity(vendor_id: u16, device_id: u16) -> PlatformIdentity {
         PlatformIdentity {
@@ -97,12 +94,18 @@ mod tests {
         let p = identity(0x1002, 0x73bf);
         let a = to_amd_identity(p).unwrap();
         assert_eq!(a.address.segment, 0x1234);
-        assert_eq!((a.address.bus, a.address.device, a.address.function), (2, 7, 3));
+        assert_eq!(
+            (a.address.bus, a.address.device, a.address.function),
+            (2, 7, 3)
+        );
         assert_eq!(a.vendor_id, 0x1002);
         assert_eq!(a.device_id, 0x73bf);
         assert_eq!(a.revision, 0xa1);
         assert_eq!((a.class_code, a.subclass, a.prog_if), (3, 0, 1));
-        assert_eq!((a.subsystem_vendor_id, a.subsystem_device_id), (Some(0x1da2), Some(0xe438)));
+        assert_eq!(
+            (a.subsystem_vendor_id, a.subsystem_device_id),
+            (Some(0x1da2), Some(0xe438))
+        );
     }
 
     #[test]
@@ -114,7 +117,10 @@ mod tests {
         assert_eq!(to_amd_identity(p), Err(PciIdentityError::InvalidAddress));
         p = identity(0x1002, 0x73bf);
         p.subsystem_device_id = None;
-        assert_eq!(to_amd_identity(p), Err(PciIdentityError::IncompleteSubsystem));
+        assert_eq!(
+            to_amd_identity(p),
+            Err(PciIdentityError::IncompleteSubsystem)
+        );
     }
 
     #[test]
@@ -150,8 +156,22 @@ mod tests {
         let status = amd::probe_address(&adapter, address);
         assert!(matches!(status, AmdGpuProbeStatus::DetectedUnsupported(_)));
         assert_eq!(reads.get(), reads_after_scan);
-        assert!(adapter.identity_at(AmdAddress { function: 8, ..address }).is_none());
-        assert!(adapter.identity_at(AmdAddress { segment: 1, ..address }).is_none());
+        assert!(
+            adapter
+                .identity_at(AmdAddress {
+                    function: 8,
+                    ..address
+                })
+                .is_none()
+        );
+        assert!(
+            adapter
+                .identity_at(AmdAddress {
+                    segment: 1,
+                    ..address
+                })
+                .is_none()
+        );
         assert_eq!(reads.get(), reads_after_scan);
     }
 }
