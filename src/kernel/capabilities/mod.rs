@@ -35,10 +35,32 @@ impl Rights {
     pub const fn is_empty(self) -> bool { self.0 == 0 }
 }
 
+impl ObjectKind {
+    /// Structural rights discipline; high-trust MMIO/DMA policy is separate.
+    pub const fn allows_rights(self, rights: Rights) -> bool {
+        let allowed = match self {
+            Self::Endpoint => Rights::SEND.bits() | Rights::RECEIVE.bits()
+                | Rights::CONTROL.bits() | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
+            Self::Process | Self::Thread | Self::Device | Self::Service =>
+                Rights::CONTROL.bits() | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
+            Self::Irq | Self::Timer =>
+                Rights::READ.bits() | Rights::CONTROL.bits()
+                    | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
+            Self::Mmio | Self::Dma =>
+                Rights::READ.bits() | Rights::WRITE.bits()
+                    | Rights::CONTROL.bits() | Rights::TRANSFER.bits(),
+            Self::File | Self::Surface =>
+                Rights::READ.bits() | Rights::WRITE.bits()
+                    | Rights::OBSERVE.bits() | Rights::TRANSFER.bits(),
+        };
+        rights.bits() & !allowed == 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CapError {
     InvalidOwner, InvalidHandle, StaleHandle, InvalidObject, Revoked,
-    WrongType, AccessDenied, EmptyRights, Full, Exhausted,
+    WrongType, AccessDenied, InvalidRights, EmptyRights, Full, Exhausted,
 }
 
 /// Only meaningful inside its owning process's table; NOT a global authority.
@@ -206,6 +228,7 @@ impl HandleTable {
         self.check_owner(caller)?;
         objects.validate(key)?;
         if rights.is_empty() { return Err(CapError::EmptyRights); }
+        if !key.kind.allows_rights(rights) { return Err(CapError::InvalidRights); }
         self.insert(Delegation { key, rights })
     }
     fn lookup(&self, caller: u64, objects: &ObjectRegistry, handle: Handle)
@@ -243,6 +266,7 @@ impl HandleTable {
         if !source.rights.contains(Rights::TRANSFER) { return Err(CapError::AccessDenied); }
         let rights = source.rights.intersect(requested);
         if rights.is_empty() { return Err(CapError::EmptyRights); }
+        if !source.key.kind.allows_rights(rights) { return Err(CapError::InvalidRights); }
         Ok(Delegation { key: source.key, rights })
     }
     /// Trusted receiver commit after validating all references, not a user grant.
@@ -252,6 +276,7 @@ impl HandleTable {
         self.check_owner(caller)?;
         grant.validate(objects)?;
         if grant.rights.is_empty() { return Err(CapError::EmptyRights); }
+        if !grant.key.kind.allows_rights(grant.rights) { return Err(CapError::InvalidRights); }
         self.insert(grant)
     }
     /// Preflight ALL grants and receiver capacity before any handle is installed.
@@ -265,6 +290,7 @@ impl HandleTable {
         for grant in grants.iter().flatten() {
             grant.validate(objects)?;
             if grant.rights.is_empty() { return Err(CapError::EmptyRights); }
+            if !grant.key.kind.allows_rights(grant.rights) { return Err(CapError::InvalidRights); }
             needed += 1;
         }
         let available = self.slots.iter()
@@ -458,6 +484,27 @@ mod tests {
             Err(CapError::Revoked));
         assert_eq!(reg.owner_of(other), Ok(Some(11)));
         assert_eq!(reg.owner_of(unowned), Ok(None));
+    }
+    #[test]
+    fn invalid_rights_are_rejected_at_grant_and_multi_accept_is_transactional() {
+        let mut reg = ObjectRegistry::new();
+        let dev = reg.create(ObjectKind::Device).unwrap();
+        let ep = reg.create(ObjectKind::Endpoint).unwrap();
+        let mut issuer = HandleTable::new(10);
+        assert_eq!(issuer.grant(10, &reg, dev, Rights::SEND), Err(CapError::InvalidRights));
+        let src = issuer.grant(10, &reg, ep, Rights::TRANSFER.union(Rights::SEND)).unwrap();
+        let delegated = issuer.prepare_transfer(10, &reg, src, Rights::SEND).unwrap();
+        let mut target = HandleTable::new(20);
+        for _ in 0..MAX_HANDLES - 1 {
+            target.grant(20, &reg, ep, Rights::SEND).unwrap();
+        }
+        let before = target.count();
+        assert_eq!(target.accept_many(20, &reg, &[Some(delegated), Some(delegated)]),
+            Err(CapError::Full));
+        assert_eq!(target.count(), before);
+        let installed = target.accept_many(20, &reg, &[Some(delegated)]).unwrap()[0].unwrap();
+        assert_eq!(target.authorize(20, &reg, installed, ObjectKind::Endpoint, Rights::SEND),
+            Ok(ep.id()));
     }
     #[test]
     fn close_does_not_revoke_valid_delegated_copy() {
