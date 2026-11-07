@@ -418,6 +418,7 @@ pub extern "C" fn _start() -> ! {
             let previous_theme = desktop.dark;
             let previous_wallpaper = desktop.wallpaper;
             let previous_accent = desktop.accent;
+            let previous_profile_status = desktop.profile_status;
             let previous_settings_page = desktop.settings_page;
             let previous_context_menu = desktop.context_menu;
             let previous_language = desktop.language;
@@ -460,6 +461,7 @@ pub extern "C" fn _start() -> ! {
                     || previous_theme != desktop.dark
                     || previous_wallpaper != desktop.wallpaper
                     || previous_accent != desktop.accent
+                    || previous_profile_status != desktop.profile_status
                     || previous_settings_page != desktop.settings_page
                     || previous_context_menu != desktop.context_menu
                     || previous_language != desktop.language
@@ -492,6 +494,7 @@ pub extern "C" fn _start() -> ! {
                         || previous_theme != desktop.dark
                         || previous_wallpaper != desktop.wallpaper
                         || previous_accent != desktop.accent
+                        || previous_profile_status != desktop.profile_status
                         || previous_settings_page != desktop.settings_page
                         || previous_context_menu != desktop.context_menu
                         || previous_language != desktop.language

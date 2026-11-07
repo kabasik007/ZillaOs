@@ -13,7 +13,9 @@ use zillaos_kernel::apps;
 use zillaos_kernel::apps::notepad::EditorStatus;
 use zillaos_kernel::fs::ramfs::DOCUMENTS_DIR;
 use zillaos_kernel::shell::{start_menu, taskbar, task_view, status_bar};
-use zillaos_kernel::shell::personalization::{self, Wallpaper, SettingsPage};
+use zillaos_kernel::shell::personalization::{
+    self, Wallpaper, SettingsPage, GalleryRow, ProfileButton,
+};
 use zillaos_kernel::raster::{self, Region};
 use zillaos_kernel::setup::{Wizard, Step, SetupPointer, Region as SetupRegion, Language};
 use zillaos_kernel::window_manager::{Rect, WindowMode};
@@ -644,7 +646,7 @@ impl Screen {
             let fg = if state.dark || active { 0xeaf8ff } else { 0x244458 };
             match action {
                 taskbar::Action::Start => {
-                    self.round_rect(rect.x + 9, rect.y + 11, 23, 23, 7, 0x19c7b0);
+                    self.round_rect(rect.x + 9, rect.y + 11, 23, 23, 7, state.accent.rgb());
                     self.text("Z", rect.x + 16, rect.y + 17, 1, 0x102236);
                     self.text("START", rect.x + 36, rect.y + 20, 1, fg);
                 }
@@ -926,7 +928,32 @@ impl Screen {
                                       cx + 10, body + 63, 1, secondary);
                             self.text(state.wallpaper.name(state.language),
                                       cx + 10, body + 83, 1, fg);
-                            if cw >= 160 {
+                            for (index, wallpaper) in personalization::WALLPAPER_OPTIONS
+                                .iter().copied().enumerate()
+                            {
+                                if let Some(tile) = personalization::preset_tile(
+                                    rect, GalleryRow::Wallpaper, index,
+                                ) {
+                                    if wallpaper == state.wallpaper {
+                                        self.round_rect(tile.x.saturating_sub(2),
+                                            tile.y.saturating_sub(2),
+                                            tile.width + 4, tile.height + 4, 8, state.accent.rgb());
+                                    }
+                                    let (top, bottom, horizon) = wallpaper.palette(state.dark);
+                                    self.round_rect(tile.x, tile.y, tile.width, tile.height,
+                                                    6, bottom);
+                                    // Tiny gradient preview of the actual procedural backdrop.
+                                    for line in 2..tile.height.saturating_sub(2) {
+                                        let t = (line * 255 / tile.height) as u32;
+                                        self.rectangle(tile.x + 3, tile.y + line,
+                                            tile.width.saturating_sub(6), 1,
+                                            personalization::gradient(top, bottom, t));
+                                    }
+                                    self.rectangle(tile.x + 3, tile.y + tile.height * 2 / 3,
+                                        tile.width.saturating_sub(6), 2, horizon);
+                                }
+                            }
+                            if cw < 370 && cw >= 160 {
                                 let (top, bottom, _) = state.wallpaper.palette(state.dark);
                                 self.round_rect(cx + cw - 61, body + 64, 48, 34, 6,
                                     personalization::gradient(top, bottom, 130));
@@ -939,7 +966,22 @@ impl Screen {
                                       cx + 10, body + 126, 1, secondary);
                             self.text(state.accent.name(state.language),
                                       cx + 10, body + 146, 1, fg);
-                            if cw >= 160 {
+                            for (index, color) in personalization::ACCENT_OPTIONS
+                                .iter().copied().enumerate()
+                            {
+                                if let Some(tile) = personalization::preset_tile(
+                                    rect, GalleryRow::Accent, index,
+                                ) {
+                                    if color == state.accent {
+                                        self.round_rect(tile.x.saturating_sub(2),
+                                            tile.y.saturating_sub(2),
+                                            tile.width + 4, tile.height + 4, 8, fg);
+                                    }
+                                    self.round_rect(tile.x, tile.y,
+                                        tile.width, tile.height, 6, color.rgb());
+                                }
+                            }
+                            if cw < 370 && cw >= 160 {
                                 self.round_rect(cx + cw - 51, body + 132,
                                                 30, 28, 7, state.accent.rgb());
                             }
@@ -956,6 +998,27 @@ impl Screen {
                         if content_h > 268 {
                             self.text(tr(state.language, TextId::SessionOnly),
                                       cx, body + 250, 1, secondary);
+                        }
+                        if content_h > 291 {
+                            self.text(state.profile_status.label(),
+                                      cx, body + 273, 1, secondary);
+                        }
+                        for (button, text) in [
+                            (ProfileButton::Save, "SAVE RAM"),
+                            (ProfileButton::Load, "LOAD RAM"),
+                            (ProfileButton::Reset, "RESET"),
+                        ] {
+                            if let Some(r) = personalization::profile_button(rect, button) {
+                                let color = match button {
+                                    ProfileButton::Save => 0x207e77,
+                                    ProfileButton::Load => 0x345e86,
+                                    ProfileButton::Reset => 0x875369,
+                                };
+                                self.round_rect(r.x, r.y, r.width, r.height, 8, color);
+                                let width = text.len() * 6;
+                                self.text(text, r.x + r.width.saturating_sub(width) / 2,
+                                          r.y + 15, 1, 0xffffff);
+                            }
                         }
                     }
                 }

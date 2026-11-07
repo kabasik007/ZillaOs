@@ -96,6 +96,70 @@ pub enum SettingsAction {
     Back,
     CycleWallpaper,
     CycleAccent,
+    SetWallpaper(Wallpaper),
+    SetAccent(Accent),
+    SaveProfile,
+    LoadProfile,
+    ResetProfile,
+}
+
+/// Direct preset thumbnails and profile buttons share coordinates between
+/// hit-testing and the software renderer. They appear only when the Settings
+/// content is wide/tall enough; compact modes retain the existing cycle rows.
+pub const WALLPAPER_OPTIONS: [Wallpaper; 3] =
+    [Wallpaper::Ocean, Wallpaper::Sunset, Wallpaper::Forest];
+pub const ACCENT_OPTIONS: [Accent; 3] =
+    [Accent::Teal, Accent::Violet, Accent::Amber];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GalleryRow { Wallpaper, Accent }
+
+pub fn content_geometry(rect: Rect) -> (usize, usize, usize, usize) {
+    let (cx, _cw, body, content_h) = content_geometry(rect);
+    let cw = rect.width.saturating_sub(side + 44);
+    (cx, cw, body, content_h)
+}
+
+pub fn preset_tile(rect: Rect, row: GalleryRow, index: usize) -> Option<Rect> {
+    if index >= 3 { return None; }
+    let (cx, cw, body, h) = content_geometry(rect);
+    let dy = match row {
+        GalleryRow::Wallpaper => 64,
+        GalleryRow::Accent => 127,
+    };
+    if cw < 370 || h < dy + 36 { return None; }
+    Some(Rect {
+        x: cx + cw - 160 + index * 52,
+        y: body + dy,
+        width: 45,
+        height: 34,
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProfileButton { Save, Load, Reset }
+
+pub fn profile_button(rect: Rect, button: ProfileButton) -> Option<Rect> {
+    let (cx, cw, body, h) = content_geometry(rect);
+    if cw < 330 || h < 339 { return None; }
+    let index = match button {
+        ProfileButton::Save => 0,
+        ProfileButton::Load => 1,
+        ProfileButton::Reset => 2,
+    };
+    let width = (cw - 20) / 3;
+    Some(Rect {
+        x: cx + index * (width + 10),
+        y: body + 292,
+        width,
+        height: 38,
+    })
+}
+
+pub fn rect_contains(rect: Rect, x: usize, y: usize) -> bool {
+    x >= rect.x && y >= rect.y
+        && x < rect.x.saturating_add(rect.width)
+        && y < rect.y.saturating_add(rect.height)
 }
 
 /// Renderer uses precisely these vertical intervals and the same body origin.
@@ -109,6 +173,31 @@ pub fn settings_hit(rect: Rect, page: SettingsPage, x: usize, y: usize) -> Optio
         || y < body || y >= body.saturating_add(content_h)
     {
         return None;
+    }
+    if page == SettingsPage::Personalization {
+        for i in 0..3 {
+            if preset_tile(rect, GalleryRow::Wallpaper, i)
+                .is_some_and(|r| rect_contains(r, x, y))
+            {
+                return Some(SettingsAction::SetWallpaper(WALLPAPER_OPTIONS[i]));
+            }
+            if preset_tile(rect, GalleryRow::Accent, i)
+                .is_some_and(|r| rect_contains(r, x, y))
+            {
+                return Some(SettingsAction::SetAccent(ACCENT_OPTIONS[i]));
+            }
+        }
+        for (button, action) in [
+            (ProfileButton::Save, SettingsAction::SaveProfile),
+            (ProfileButton::Load, SettingsAction::LoadProfile),
+            (ProfileButton::Reset, SettingsAction::ResetProfile),
+        ] {
+            if profile_button(rect, button)
+                .is_some_and(|r| rect_contains(r, x, y))
+            {
+                return Some(action);
+            }
+        }
     }
     let offset = y - body;
     let rows: &[(usize, usize, SettingsAction)] = match page {
@@ -239,6 +328,44 @@ mod tests {
         assert_eq!(settings_hit(rect,SettingsPage::Personalization,cx,y+190),Some(SettingsAction::ToggleTheme));
         assert_eq!(settings_hit(rect,SettingsPage::Personalization,cx,y+16),Some(SettingsAction::Back));
         assert_eq!(settings_hit(rect,SettingsPage::Overview,100,y+62),None);
+    }
+
+    #[test]
+    fn every_gallery_swatch_hits_its_exact_preset() {
+        let rect = Rect{x:100,y:80,width:750,height:460};
+        for i in 0..3 {
+            let wallpaper = preset_tile(rect, GalleryRow::Wallpaper, i).unwrap();
+            assert_eq!(
+                settings_hit(rect, SettingsPage::Personalization,
+                             wallpaper.x+8, wallpaper.y+8),
+                Some(SettingsAction::SetWallpaper(WALLPAPER_OPTIONS[i]))
+            );
+            let accent = preset_tile(rect, GalleryRow::Accent, i).unwrap();
+            assert_eq!(
+                settings_hit(rect, SettingsPage::Personalization,
+                             accent.x+8, accent.y+8),
+                Some(SettingsAction::SetAccent(ACCENT_OPTIONS[i]))
+            );
+        }
+    }
+
+    #[test]
+    fn profile_buttons_respect_actual_window_size() {
+        let big = Rect{x:100,y:80,width:750,height:460};
+        for (button, action) in [
+            (ProfileButton::Save, SettingsAction::SaveProfile),
+            (ProfileButton::Load, SettingsAction::LoadProfile),
+            (ProfileButton::Reset, SettingsAction::ResetProfile),
+        ] {
+            let r=profile_button(big,button).unwrap();
+            assert_eq!(
+                settings_hit(big,SettingsPage::Personalization,r.x+5,r.y+5),
+                Some(action)
+            );
+        }
+        let small = Rect{x:5,y:5,width:280,height:200};
+        assert!(profile_button(small,ProfileButton::Save).is_none());
+        assert!(preset_tile(small, GalleryRow::Wallpaper,0).is_none());
     }
 
     #[test]

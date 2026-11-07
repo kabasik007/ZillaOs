@@ -11,6 +11,7 @@ use crate::shell::desktop_icons::DesktopIcons;
 use crate::video::VideoAdapter;
 use crate::shell::{start_menu, taskbar, task_view};
 use crate::shell::personalization::{self, Accent, Wallpaper, SettingsPage, SettingsAction, Menu, MenuAction};
+use crate::shell::theme_profile::{ThemeProfile, ProfileStatus, PROFILE_FILE};
 use crate::locale::{text as tr, TextId};
 use crate::setup::{DeviceName, Language, Region, TimeZone};
 use crate::window_manager::{Move, WindowManager};
@@ -123,6 +124,8 @@ pub struct Desktop {
     /// Volatile desktop appearance and context menu (no disk persistence).
     pub wallpaper: Wallpaper,
     pub accent: Accent,
+    /// Status of THEME.TXT in volatile Documents RAMFS.
+    pub profile_status: ProfileStatus,
     pub settings_page: SettingsPage,
     pub context_menu: Option<Menu>,
     right_down: bool,
@@ -168,6 +171,7 @@ impl Desktop {
             dark: true,
             wallpaper: Wallpaper::Ocean,
             accent: Accent::Teal,
+            profile_status: ProfileStatus::SessionOnly,
             settings_page: SettingsPage::Overview,
             context_menu: None,
             right_down: false,
@@ -254,16 +258,74 @@ impl Desktop {
         })
     }
 
+    fn save_theme_profile(&mut self) {
+        let profile = ThemeProfile {
+            wallpaper: self.wallpaper,
+            accent: self.accent,
+            dark: self.dark,
+        };
+        let (data, len) = profile.encode();
+        self.profile_status = if self.ramfs.save(PROFILE_FILE, &data[..len]).is_ok() {
+            ProfileStatus::Saved
+        } else {
+            ProfileStatus::StorageFull
+        };
+    }
+
+    fn load_theme_profile(&mut self) {
+        let parsed = self.ramfs.find(PROFILE_FILE)
+            .and_then(|index| self.ramfs.get(index))
+            .map(|file| ThemeProfile::decode(file.content()));
+        match parsed {
+            None => self.profile_status = ProfileStatus::NotFound,
+            Some(Err(_)) => self.profile_status = ProfileStatus::InvalidFile,
+            Some(Ok(profile)) => {
+                // Atomic application: first validate all fields, only then
+                // change visible desktop state.
+                self.wallpaper = profile.wallpaper;
+                self.accent = profile.accent;
+                self.dark = profile.dark;
+                self.profile_status = ProfileStatus::Loaded;
+            }
+        }
+    }
+
     fn settings_action(&mut self, action: SettingsAction) {
         match action {
-            SettingsAction::ToggleTheme => self.dark = !self.dark,
+            SettingsAction::ToggleTheme => {
+                self.dark = !self.dark;
+                self.profile_status = ProfileStatus::Modified;
+            }
             SettingsAction::CycleLanguage => self.cycle_language(),
             SettingsAction::OpenPersonalization => {
                 self.settings_page = SettingsPage::Personalization;
             }
             SettingsAction::Back => self.settings_page = SettingsPage::Overview,
-            SettingsAction::CycleWallpaper => self.wallpaper = self.wallpaper.next(),
-            SettingsAction::CycleAccent => self.accent = self.accent.next(),
+            SettingsAction::CycleWallpaper => {
+                self.wallpaper = self.wallpaper.next();
+                self.profile_status = ProfileStatus::Modified;
+            }
+            SettingsAction::CycleAccent => {
+                self.accent = self.accent.next();
+                self.profile_status = ProfileStatus::Modified;
+            }
+            SettingsAction::SetWallpaper(wallpaper) => {
+                self.wallpaper = wallpaper;
+                self.profile_status = ProfileStatus::Modified;
+            }
+            SettingsAction::SetAccent(accent) => {
+                self.accent = accent;
+                self.profile_status = ProfileStatus::Modified;
+            }
+            SettingsAction::SaveProfile => self.save_theme_profile(),
+            SettingsAction::LoadProfile => self.load_theme_profile(),
+            SettingsAction::ResetProfile => {
+                let defaults = ThemeProfile::default();
+                self.wallpaper = defaults.wallpaper;
+                self.accent = defaults.accent;
+                self.dark = defaults.dark;
+                self.profile_status = ProfileStatus::Modified;
+            }
         }
     }
 
@@ -368,7 +430,7 @@ impl Desktop {
             return false;
         }
         let before = (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons,
-                      self.context_menu, self.settings_page, self.wallpaper, self.accent);
+                      self.context_menu, self.settings_page, self.wallpaper, self.accent, self.profile_status);
         let old_note = self.notepad.revision;
         let old_ramfs = self.ramfs.revision;
         self.pointer.x = self.pointer.x
@@ -427,7 +489,10 @@ impl Desktop {
                 match menu {
                     0 => self.launcher = !self.launcher,
                     1 => self.launch_app(App::Files),
-                    2 => self.dark = !self.dark,
+                    2 => {
+                        self.dark = !self.dark;
+                        self.profile_status = ProfileStatus::Modified;
+                    },
                     3 => self.windows.show_desktop(),
                     _ => self.toggle_task_manager(),
                 }
@@ -488,7 +553,7 @@ impl Desktop {
         }
         self.pointer.left = packet.left;
         let changed = before != (self.windows, self.pointer, self.launcher, self.dark, self.language, self.files, self.icons,
-                                  self.context_menu, self.settings_page, self.wallpaper, self.accent)
+                                  self.context_menu, self.settings_page, self.wallpaper, self.accent, self.profile_status)
             || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
@@ -499,7 +564,7 @@ impl Desktop {
     /// Return true only when a state transition changes the visible desktop.
     pub fn handle(&mut self, key: Key) -> bool {
         let before = (self.windows, self.launcher, self.dark, self.language, self.files,
-                      self.context_menu, self.settings_page);
+                      self.context_menu, self.settings_page, self.profile_status);
         let old_note = self.notepad.revision;
         let old_ramfs = self.ramfs.revision;
         match key {
@@ -517,7 +582,10 @@ impl Desktop {
                 self.launch_app(app);
                 self.launcher = false;
             }
-            Key::ToggleTheme => self.dark = !self.dark,
+            Key::ToggleTheme => {
+                self.dark = !self.dark;
+                self.profile_status = ProfileStatus::Modified;
+            },
             Key::CycleLanguage => self.cycle_language(),
             Key::ShowDesktop => self.windows.show_desktop(),
             Key::NextApp => {
@@ -568,7 +636,7 @@ impl Desktop {
             }
         }
         let changed = before != (self.windows, self.launcher, self.dark, self.language, self.files,
-                                  self.context_menu, self.settings_page)
+                                  self.context_menu, self.settings_page, self.profile_status)
             || old_note != self.notepad.revision || old_ramfs != self.ramfs.revision;
         if changed {
             self.changes = self.changes.wrapping_add(1);
@@ -1192,6 +1260,72 @@ mod tests {
         assert!(d.handle_mouse(test_packet(0,0,true)));
         assert!(d.context_menu.is_none());
         assert_eq!(d.active(), Some(App::Files)); // initial focus, no new app
+    }
+
+
+    #[test]
+    fn theme_profile_settings_actions_save_load_reset_in_ramfs() {
+        let mut d = Desktop::new();
+        d.enable_pointer();
+        d.launch_app(App::Settings);
+        d.settings_page = SettingsPage::Personalization;
+        let rect = d.windows.rect(App::Settings);
+        d.settings_action(SettingsAction::SetWallpaper(Wallpaper::Forest));
+        d.settings_action(SettingsAction::SetAccent(Accent::Amber));
+        d.settings_action(SettingsAction::ToggleTheme);
+        let profile = ThemeProfile {
+            wallpaper: Wallpaper::Forest,
+            accent: Accent::Amber,
+            dark: false,
+        };
+        let save = personalization::profile_button(
+            rect, personalization::ProfileButton::Save).unwrap();
+        d.pointer.x = save.x + 8;
+        d.pointer.y = save.y + 8;
+        assert!(d.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(d.profile_status, ProfileStatus::Saved);
+        assert!(d.ramfs.find(PROFILE_FILE).is_some());
+        d.handle_mouse(test_packet(0, 0, false));
+        d.settings_action(SettingsAction::ResetProfile);
+        assert_eq!(d.wallpaper, Wallpaper::Ocean);
+        let load = personalization::profile_button(
+            rect, personalization::ProfileButton::Load).unwrap();
+        d.pointer.x = load.x + 8;
+        d.pointer.y = load.y + 8;
+        assert!(d.handle_mouse(test_packet(0, 0, true)));
+        assert_eq!(d.profile_status, ProfileStatus::Loaded);
+        assert_eq!(d.wallpaper, profile.wallpaper);
+        assert_eq!(d.accent, profile.accent);
+        assert_eq!(d.dark, profile.dark);
+    }
+
+    #[test]
+    fn invalid_and_missing_profile_cannot_change_desktop_preferences() {
+        let mut d = Desktop::new();
+        d.settings_action(SettingsAction::SetWallpaper(Wallpaper::Sunset));
+        let original = (d.wallpaper, d.accent, d.dark);
+        d.settings_action(SettingsAction::LoadProfile);
+        assert_eq!(d.profile_status, ProfileStatus::NotFound);
+        assert_eq!((d.wallpaper,d.accent,d.dark), original);
+        d.ramfs.save(PROFILE_FILE, b"unsafe-profile").unwrap();
+        d.settings_action(SettingsAction::LoadProfile);
+        assert_eq!(d.profile_status, ProfileStatus::InvalidFile);
+        assert_eq!((d.wallpaper,d.accent,d.dark), original);
+    }
+
+    #[test]
+    fn full_ramfs_save_failure_does_not_corrupt_existing_files() {
+        let mut d = Desktop::new();
+        for name in [
+            "A.TXT","B.TXT","C.TXT","D.TXT",
+            "E.TXT","F.TXT","G.TXT","H.TXT",
+        ] {
+            d.ramfs.save(name,b"hello").unwrap();
+        }
+        let before = d.ramfs;
+        d.settings_action(SettingsAction::SaveProfile);
+        assert_eq!(d.profile_status, ProfileStatus::StorageFull);
+        assert_eq!(d.ramfs, before);
     }
 
     #[test]

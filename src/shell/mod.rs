@@ -13,3 +13,6 @@ pub mod task_view;
 
 /// Volatile wallpaper, accent and desktop context-menu geometry.
 pub mod personalization;
+
+/// Strict theme profile codec for volatile Documents RAMFS.
+pub mod theme_profile;
