@@ -52,6 +52,33 @@ pub struct CleanupWork {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CleanupHookError {
+    /// Dependency not yet available; retry same ticket without state advance.
+    Deferred,
+    /// Injected or observed backend failure; retain current stage.
+    Failed,
+}
+
+/// Trusted kernel-side integration port. The ProcessManager calls each
+/// method at most once PER SUCCESSFUL ACK, but may retry on any failure.
+/// Implementations MUST be idempotent by (pid, ticket). In production they
+/// must use the IPC agent's actual handle close/call cancellation and the
+/// memory owner's quiescent VMM release, not merely return Ok(()).
+///
+/// ServiceManager must never mint a PID or grant capabilities through this
+/// interface. A fault/exit report is kernel-issued data only.
+pub trait CleanupBackend {
+    fn revoke_capabilities(&mut self, exit: ExitNotification)
+        -> Result<(), CleanupHookError>;
+    fn cancel_ipc_and_wake(&mut self, exit: ExitNotification)
+        -> Result<(), CleanupHookError>;
+    fn notify_services(&mut self, exit: ExitNotification)
+        -> Result<(), CleanupHookError>;
+    fn release_address_space(&mut self, exit: ExitNotification)
+        -> Result<(), CleanupHookError>;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CleanupError {
     Duplicate,
     Capacity,
