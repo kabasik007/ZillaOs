@@ -25,7 +25,7 @@ $branches = @(
     @{ Name = 'feat/service-manager-foundation'; Sha = '20895ecf372b4020a696aca2b9a3029f507873b5' },
     @{ Name = 'feature/graphics-display-contracts-g0-g1-20261107'; Sha = '3d1c728b34cba35825adca7bf92f9da6676d3010' },
     @{ Name = 'fix/windows-wsl-path-build'; Sha = 'ea8d451f6e1830c88bea83fda4a0446ae5535014' },
-    @{ Name = 'integration/20261107-cross-workstreams'; Sha = 'abc0d09c2adcd7df48adc1202604eb2d6b9f1f99' }
+    @{ Name = 'integration/20261107-cross-workstreams'; Sha = '0643ed82c7d77e6478d8186ebd173b69458b11e4' }
 )
 
 Push-Location $repoRoot
