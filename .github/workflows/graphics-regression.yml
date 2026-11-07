@@ -59,6 +59,64 @@ jobs:
           if "ZILLAOS_SETUP_GRAPHICS_DIRECT_FALLBACK" in lines:
               raise SystemExit("Unsupported direct framebuffer fallback")
           PY
+      - name: Build optional ISO with a synthetic BMP wallpaper
+        run: |
+          mkdir -p assets
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          w = h = 8
+          stride = (w * 3 + 3) & ~3
+          size = 54 + stride * h
+          data = bytearray(size)
+          data[:2] = b"BM"
+          struct.pack_into("<I", data, 2, size)
+          struct.pack_into("<I", data, 10, 54)
+          struct.pack_into("<I", data, 14, 40)
+          struct.pack_into("<ii", data, 18, w, h)
+          struct.pack_into("<HH", data, 26, 1, 24)
+          data[54:] = bytes([255, 0, 255]) * (w * h)
+          Path("assets/wallpaper.bmp").write_bytes(data)
+          PY
+          python3 scripts/wallpaper_asset.py validate assets/wallpaper.bmp
+          bash scripts/build.sh demo
+          python3 - <<'PY'
+          from pathlib import Path
+          config = Path("build/iso-root/limine.conf").read_text()
+          assert config.count("module_path: boot():/boot/wallpaper.bmp") == 6
+          assert config.count("module_string: zillaos-wallpaper") == 6
+          assert Path("build/iso-root/boot/wallpaper.bmp").exists()
+          PY
+      - name: Prove custom wallpaper actually reaches GOP pixels in QEMU
+        run: |
+          set -o pipefail
+          python3 scripts/desktop_smoke.py \
+            --iso dist/zillaos-0.0.2-dev-demo-uefi.iso \
+            --output build/logs/desktop-custom-wallpaper.ppm \
+            --timeout 120 | tee wallpaper-regression.log
+          python3 - <<'PY'
+          from pathlib import Path
+          log = Path("build/logs/desktop-qemu.log").read_text(errors="replace")
+          if log.count("ZILLAOS_WALLPAPER_MODULE=READY") != 1:
+              raise SystemExit("No validated Limine BMP module reached the desktop")
+          path = Path("build/logs/desktop-custom-wallpaper.ppm")
+          with path.open("rb") as stream:
+              magic = stream.readline().strip()
+              dims = stream.readline().strip()
+              maximum = stream.readline().strip()
+              data = stream.read()
+          assert magic == b"P6" and maximum == b"255"
+          width, height = map(int, dims.split())
+          assert (width, height) == (1280, 800)
+          assert len(data) == width * height * 3
+          # Right of the centred windows, left of the right-hand folders.
+          x, y = 1100, 500
+          offset = (y * width + x) * 3
+          rgb = tuple(data[offset:offset + 3])
+          if rgb != (255, 0, 255):
+              raise SystemExit(f"Custom BMP was not rendered at ({x},{y}): {rgb}")
+          print(f"PASS: Limine custom wallpaper BMP visible in GOP pixel at ({x},{y})")
+          PY
       - name: Archive GUI screenshot and serial evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -66,6 +124,8 @@ jobs:
           name: zillaos-framebuffer-desktop-regression
           path: |
             desktop-regression.log
+            wallpaper-regression.log
+            build/logs/desktop-custom-wallpaper*.ppm
             build/logs/desktop-qemu*.log
             build/logs/desktop-qemu*.ppm
             dist/*demo*.iso
