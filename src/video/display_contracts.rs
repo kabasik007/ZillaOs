@@ -67,6 +67,7 @@ pub enum SurfaceError {
     StaleHandle,
     WrongOwner,
     ScanoutBusy,
+    NotInScanout,
 }
 
 impl BufferLayout {
@@ -233,6 +234,9 @@ impl<const N: usize> SurfaceRegistry<N> {
     /// Only the trusted display owner may call this after fence retirement.
     pub fn release_scanout(&mut self, id: SurfaceId) -> Result<(), SurfaceError> {
         let slot = self.slot_mut(id)?;
+        if slot.ownership != BufferOwnership::ScanoutReadOnly {
+            return Err(SurfaceError::NotInScanout);
+        }
         slot.ownership = BufferOwnership::CpuWritable;
         Ok(())
     }
@@ -346,6 +350,50 @@ pub trait VideoDisplayBackend: ModeBackend {
     ) -> Result<(), BackendFailure>;
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModeListError {
+    StaleOutput,
+    Backend(BackendFailure),
+    TooManyModes,
+    MissingMode,
+    InvalidMode,
+    DuplicateMode,
+}
+
+/// Validate a bounded, device-provided mode catalogue. Output generation,
+/// mode geometry, refresh metadata and duplicates are checked. This does not
+/// infer modes from PCI register maxima and cannot verify physical displays.
+pub fn discover_modes(
+    backend: &impl VideoDisplayBackend,
+    output: OutputId,
+    out: &mut [Option<ModeCapability>],
+) -> Result<usize, ModeListError> {
+    if backend.active_output() != Some(output) || output.generation == 0 {
+        return Err(ModeListError::StaleOutput);
+    }
+    out.fill(None);
+    let count = backend.enumerate_modes(output, out).map_err(ModeListError::Backend)?;
+    if count > out.len() {
+        return Err(ModeListError::TooManyModes);
+    }
+    for i in 0..count {
+        let entry = out[i].ok_or(ModeListError::MissingMode)?;
+        if !entry.mode.is_sane() || entry.refresh_millihz == Some(0) {
+            return Err(ModeListError::InvalidMode);
+        }
+        for earlier in out.iter().take(i) {
+            if earlier.is_some_and(|m| m == entry) {
+                return Err(ModeListError::DuplicateMode);
+            }
+        }
+    }
+    // A broken driver must not smuggle unchecked modes outside count.
+    if out.iter().skip(count).any(Option::is_some) {
+        return Err(ModeListError::TooManyModes);
+    }
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,6 +462,7 @@ mod tests {
         assert_eq!(surfaces.submit_damage(id, SurfaceOwner::Process(42),
             DamageRect { x: 0, y: 0, width: 1, height: 1 }), Err(SurfaceError::ScanoutBusy));
         assert_eq!(surfaces.release_scanout(id), Ok(()));
+        assert_eq!(surfaces.release_scanout(id), Err(SurfaceError::NotInScanout));
         assert_eq!(surfaces.destroy(id, SurfaceOwner::Process(42)), Ok(()));
         assert_eq!(surfaces.descriptor(id), Err(SurfaceError::StaleHandle));
         let next = surfaces.create(descriptor()).unwrap();
@@ -434,6 +483,69 @@ mod tests {
         let next = outputs.connect(0).unwrap();
         assert_ne!(next.generation, first.generation);
         assert!(!outputs.is_connected(first));
+    }
+
+    struct MockModes {
+        output: OutputId,
+        list: [Option<ModeCapability>; 2],
+        report: usize,
+    }
+
+    impl ModeBackend for MockModes {
+        fn runtime_switch_available(&self) -> bool { false }
+        fn supports_mode(&self, _: Mode) -> bool { false }
+        fn prepare_mode(&mut self, _: Mode) -> Result<(), BackendFailure> {
+            Err(BackendFailure::Unavailable)
+        }
+        fn set_mode(&mut self, _: Mode) -> Result<(), BackendFailure> {
+            Err(BackendFailure::Unavailable)
+        }
+        fn read_mode(&mut self) -> Result<Mode, BackendFailure> {
+            Err(BackendFailure::Unavailable)
+        }
+        fn can_restore(&self, _: Mode) -> bool { false }
+    }
+
+    impl VideoDisplayBackend for MockModes {
+        fn driver_name(&self) -> &'static str { "mock-no-hardware" }
+        fn active_output(&self) -> Option<OutputId> { Some(self.output) }
+        fn enumerate_modes(
+            &self, _: OutputId, out: &mut [Option<ModeCapability>],
+        ) -> Result<usize, BackendFailure> {
+            for (dst, src) in out.iter_mut().zip(self.list.iter()) {
+                *dst = *src;
+            }
+            Ok(self.report)
+        }
+        fn test_scanout(&mut self, _: OutputId, _: SurfaceDescriptor)
+            -> Result<(), BackendFailure>
+        {
+            Err(BackendFailure::Unavailable)
+        }
+    }
+
+    #[test]
+    fn mode_discovery_checks_output_generation_duplicates_and_counts() {
+        let output = OutputId { slot: 0, generation: 3 };
+        let a = ModeCapability { mode: Mode::new(1024, 768), refresh_millihz: None };
+        let b = ModeCapability { mode: Mode::new(1280, 800), refresh_millihz: Some(60_000) };
+        let mut backend = MockModes { output, list: [Some(a), Some(b)], report: 2 };
+        let mut found = [None; 2];
+        assert_eq!(discover_modes(&backend, output, &mut found), Ok(2));
+        assert_eq!(found, [Some(a), Some(b)]);
+        assert_eq!(discover_modes(&backend,
+            OutputId { slot: 0, generation: 2 }, &mut found), Err(ModeListError::StaleOutput));
+        backend.list = [Some(a), Some(a)];
+        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::DuplicateMode));
+        backend.list = [Some(a), Some(b)];
+        backend.report = 3;
+        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::TooManyModes));
+        backend.report = 1;
+        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::TooManyModes));
+        backend.list = [Some(ModeCapability { mode: a.mode, refresh_millihz: Some(0) }), None];
+        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::InvalidMode));
+        backend.list = [None, None];
+        assert_eq!(discover_modes(&backend, output, &mut found), Err(ModeListError::MissingMode));
     }
 
     #[test]
