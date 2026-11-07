@@ -8,6 +8,7 @@ const DEFAULT_QUOTAS: Quotas = Quotas { memory_bytes: 1024 * 1024, threads: 2 };
 fn m(id: &'static str, executable: &'static str) -> ServiceManifest {
     ServiceManifest {
         schema_version: MANIFEST_SCHEMA_V1,
+        version: 1,
         id, executable, start: StartMode::OnBoot,
         required: &[], after: &[],
         requested_capabilities: &[],
@@ -96,6 +97,8 @@ fn invalid_ids_schema_and_executable_are_denied() {
     }
     assert_eq!(err(&[ServiceManifest { schema_version: 2, ..base }]),
         Some(ValidationError::InvalidSchema));
+    assert_eq!(err(&[ServiceManifest { version: 0, ..base }]),
+        Some(ValidationError::InvalidVersion));
     for path in ["/tmp/good", "/System/Services/../good", "/System/Services/bad"] {
         assert_eq!(err(&[ServiceManifest { executable: path, ..base }]),
             Some(ValidationError::InvalidExecutable));
