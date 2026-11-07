@@ -3,7 +3,7 @@
 use crate::process::address_space::UserRegion;
 use crate::process::scheduler::RoundRobin;
 use crate::process::cpu_local::{CpuLocalState, CpuSchedulerModel, ScheduleError};
-use crate::process::{ExitReason, Pid, Process, ProcessError, ProcessTable};
+use crate::process::{ExitReason, Pid, Process, ProcessError, ProcessState, ProcessTable};
 use crate::process::thread::{Thread, ThreadError, ThreadTable, Tid};
 use super::task_snapshot::TaskSnapshot;
 
@@ -88,6 +88,16 @@ impl ProcessManager {
     /// Model-only CPU dispatch: does NOT enter Ring 3 or switch register state.
     /// Future trap backend must use the saved-context contract in cpu_local.
     pub fn dispatch_thread_model(&mut self, cpu: usize) -> Result<Option<Tid>, ScheduleError> {
+        // Fail closed: selecting any Ready TID whose parent has not been
+        // prepared, was killed or was reaped would schedule an orphan.
+        // One canonical gateway owns this check before CPU-local selection.
+        if self.threads.iter().any(|thread| {
+            thread.state == crate::process::thread::ThreadState::Ready
+                && !self.processes.process(thread.pid).is_some_and(|process|
+                    matches!(process.state, ProcessState::Ready | ProcessState::Running))
+        }) {
+            return Err(ScheduleError::ParentNotRunnable);
+        }
         self.cpu_scheduler.dispatch_next(&mut self.threads, cpu)
     }
 
@@ -172,6 +182,22 @@ mod tests {
         service.processes.mark_exited(pid, ExitReason::Normal(0)).unwrap();
         assert_eq!(service.reap_native_model(pid), Ok(ExitReason::Normal(0)));
         assert_eq!(service.process(pid), None);
+    }
+
+    #[test]
+    fn model_dispatch_rejects_ready_threads_of_exited_parent() {
+        let mut service = ProcessManager::new();
+        let pid = service.reserve_native("terminated", 0x400000, 0x800000, 4).unwrap();
+        service.map_native_region(
+            pid, UserRegion::checked(0x400000, PAGE_SIZE, Permissions::READ_EXECUTE).unwrap()
+        ).unwrap();
+        service.prepare_native(pid).unwrap();
+        let tid = service.reserve_thread(pid, 0x400000, 0x800000, 1).unwrap();
+        service.prepare_thread(tid).unwrap();
+        service.processes.kill(pid).unwrap();
+        assert_eq!(service.dispatch_thread_model(0), Err(ScheduleError::ParentNotRunnable));
+        assert_eq!(service.thread(tid).unwrap().state,
+            crate::process::thread::ThreadState::Ready);
     }
 
 }
