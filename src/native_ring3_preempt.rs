@@ -1,7 +1,7 @@
 //! CPU0-only real timer IRQ0 preemption of two controlled CPL3 contexts.
 //! Only compiled into the disposable QEMU `ring3-preempt` ISO.
-//! This is an 8253/8254 PIT + remapped legacy PIC experiment, not
-//! production APIC/SMP scheduling, process isolation across CR3s, or a GUI.
+//! Local x2APIC timer interrupt-driven switching, not production APIC/SMP
+//! scheduling, process isolation across CR3s, or a GUI.
 use core::arch::{asm, global_asm};
 use core::cell::UnsafeCell;
 use core::ptr;
@@ -20,7 +20,15 @@ const ENTRY_B: u64 = CODE + 128;
 const SAMPLES: usize = 8;
 const EXPECTED: &[u8; SAMPLES] = b"ABABABAB";
 const SENTINELS: [u64; 2] = [0x9abc_0001_55aa_0001, 0x9abc_0002_55aa_0002];
-const PIT_DIVISOR: u16 = 11932; // ~=100 Hz, legacy PIT input 1_193_182 Hz
+// QEMU emulates the LAPIC timer, but the clock frequency is not calibrated
+// here. Tick counts are real interrupts; they are NOT seconds or CPU %.
+const LAPIC_INITIAL_COUNT: u64 = 200_000;
+const X2APIC_EOI: u32 = 0x80b;
+const X2APIC_SVR: u32 = 0x80f;
+const X2APIC_TPR: u32 = 0x808;
+const X2APIC_LVT_TIMER: u32 = 0x832;
+const X2APIC_INIT_COUNT: u32 = 0x838;
+const X2APIC_DIVIDE: u32 = 0x83e;
 
 // PUSH order in zilla_native_timer_irq, at the bottom of the trap stack:
 // RAX,R11,R10,R9,R8,RCX,RDX,RSI,RDI,R15,R14,R13,R12,RBP,RBX.
@@ -70,7 +78,7 @@ unsafe extern "C" {
     pub(crate) fn zilla_native_timer_irq();
 }
 
-// The PIC delivers IRQ0 at 0x20 after reprogramming. An interrupt gate
+// The local APIC timer delivers vector 0x20. An interrupt gate
 // clears IF while the handler executes. All 15 GP registers are captured,
 // including RAX (which the cooperative INT 0x80 ABI intentionally does not
 // preserve). On success we overwrite the 20-qword context and IRETQ to the
@@ -109,10 +117,12 @@ zilla_native_timer_irq:
     mov rsp, r12
     mov r11, rax
 
-    // Acknowledge only master PIC IRQ0. Both RAX and RDX are saved.
-    mov dx, 0x20
-    mov al, 0x20
-    out dx, al
+    // x2APIC EOI is MSR 0x80b. IRQ0 is a *local* APIC timer vector,
+    // not a legacy PIC interrupt. All affected GP registers were saved.
+    mov ecx, 0x80b
+    xor eax, eax
+    xor edx, edx
+    wrmsr
     cmp r11, -1
     je zilla_native_resume
 
@@ -143,121 +153,97 @@ zilla_native_timer_bad_cpl:
     call zilla_exception_fatal
 "#);
 
-#[inline]
-unsafe fn outb(port: u16, value: u8) {
-    // SAFETY: known legacy IRQ controller/PIT I/O ports, QEMU-only feature.
+/// x2APIC MSR access is available only after CPUID leaf 1 reports
+/// ECX.x2APIC and IA32_APIC_BASE enables the x2APIC mode.
+unsafe fn rdmsr(reg: u32) -> u64 {
+    let low: u32;
+    let high: u32;
+    // SAFETY: caller guarantees that the MSR exists on the QEMU x2APIC CPU.
     unsafe {
-        asm!("out dx, al", in("dx") port, in("al") value,
-             options(nomem, nostack, preserves_flags));
+        asm!("rdmsr", in("ecx") reg, out("eax") low, out("edx") high,
+             options(nomem, nostack));
+    }
+    ((high as u64) << 32) | low as u64
+}
+unsafe fn wrmsr(reg: u32, value: u64) {
+    // SAFETY: caller guarantees that the MSR exists and the value is valid.
+    unsafe {
+        asm!("wrmsr", in("ecx") reg, in("eax") value as u32,
+             in("edx") (value >> 32) as u32,
+             options(nomem, nostack));
     }
 }
-#[inline]
-unsafe fn inb(port: u16) -> u8 {
-    let value: u8;
-    // SAFETY: access only 8259 PIC mask registers in QEMU.
-    unsafe {
-        asm!("in al, dx", in("dx") port, out("al") value,
-             options(nomem, nostack, preserves_flags));
-    }
-    value
-}
-#[inline]
-unsafe fn wait_io() {
-    // SAFETY: legacy port 0x80 is used as a small I/O delay.
-    unsafe { outb(0x80, 0) }
+
+struct SavedTimer {
+    previous_tpr: u64,
+    previous_svr: u64,
+    previous_lvt: u64,
+    previous_divide: u64,
 }
 
-struct SavedPicMasks { master: u8, slave: u8 }
-
-/// Legacy virtual-wire fallback for the disposable PIC test ONLY.
+/// Configure a periodic x2APIC timer on this one QEMU BSP only.
 ///
-/// OVMF may leave the Local APIC enabled, with LINT0/ExtINT masked. In that
-/// configuration the PIT reaches the 8259 but the PIC's INTR never reaches
-/// the CPU. Direct 8259 delivery requires disabling LAPIC and routing the
-/// IMCR back to the legacy PIC. This must never run in production SMP.
-fn force_legacy_pic_delivery() -> Result<(), Ring3Error> {
-    // The intrinsic preserves RBX as required by the Rust x86-64 ABI;
-    // raw CPUID asm without preserving it would corrupt compiler state.
-    let cpu_features = unsafe { core::arch::x86_64::__cpuid(1) };
-    if cpu_features.edx & (1 << 9) == 0 {
-        serial::write("ZILLAOS_TIMER_NO_LOCAL_APIC\n");
-        return Ok(());
+/// This path is deliberately unavailable to the normal Desktop and never
+/// assumes a memory-mapped APIC page exists in Limine HHDM. The test runner
+/// chooses QEMU -cpu max to expose the x2APIC MSR interface to the guest.
+/// No APIC clock rate is inferred: only actual delivered ticks are counted.
+fn initialize_timer() -> Result<SavedTimer, Ring3Error> {
+    // SAFETY: CPUID leaf 1 is supported on x86-64; intrinsic preserves RBX.
+    let cpuid = unsafe { core::arch::x86_64::__cpuid(1) };
+    if cpuid.edx & (1 << 9) == 0 || cpuid.ecx & (1 << 21) == 0 {
+        serial::write("ZILLAOS_TIMER_X2APIC_UNAVAILABLE\n");
+        return Err(Ring3Error::InvalidFixture);
     }
-    let lo: u32;
-    let hi: u32;
-    // SAFETY: IA32_APIC_BASE is available when CPUID reports Local APIC.
-    unsafe {
-        asm!("rdmsr", in("ecx") 0x1b_u32,
-            out("eax") lo, out("edx") hi,
-            options(nomem, nostack));
-    }
-    let before = ((hi as u64) << 32) | lo as u64;
-    serial::write("ZILLAOS_TIMER_APIC_BASE_BEFORE=");
-    serial::write_hex(before);
-    serial::write("\n");
-    if before & (1 << 11) != 0 {
-        // For this single-CPU QEMU regression ISO we deliberately turn off
-        // LAPIC and x2APIC mode together. Other images are untouched.
-        let after = before & !((1 << 11) | (1 << 10));
-        // SAFETY: privileged APIC control MSR; isolated QEMU CPU0 only.
-        unsafe {
-            asm!("wrmsr", in("ecx") 0x1b_u32,
-                in("eax") after as u32, in("edx") (after >> 32) as u32,
-                options(nomem, nostack));
-        }
-        serial::write("ZILLAOS_TIMER_LAPIC_DISABLED_FOR_PIC\n");
-    }
-    // Some PIC/APIC-capable chipsets implement the legacy IMCR; selecting
-    // 0 routes the 8259 to the INTR pin instead of an APIC input.
-    // SAFETY: legacy IMCR selector/data ports; disposable VM only.
-    unsafe {
-        outb(0x22, 0x70);
-        outb(0x23, 0x00);
-    }
-    serial::write("ZILLAOS_TIMER_LEGACY_PIC_ROUTED\n");
-    Ok(())
-}
-
-fn initialize_timer() -> Result<SavedPicMasks, Ring3Error> {
-    force_legacy_pic_delivery()?;
-
-    // SAFETY: interrupts were disabled since boot; no other logical CPU or
-    // legacy PIC client is active in this isolated test ISO.
+    // SAFETY: the exclusive test runs with IRQs off and one bootstrap CPU.
     unsafe {
         asm!("cli", options(nomem, nostack));
-        let master = inb(0x21);
-        let slave = inb(0xa1);
-        // ICW1: initialize two 8259 PICs, 4 ICWs. Remap IRQ0 to vector 0x20.
-        outb(0x20, 0x11); wait_io();
-        outb(0xa0, 0x11); wait_io();
-        outb(0x21, 0x20); wait_io();
-        outb(0xa1, 0x28); wait_io();
-        outb(0x21, 0x04); wait_io(); // slave connected to master IRQ2
-        outb(0xa1, 0x02); wait_io();
-        outb(0x21, 0x01); wait_io(); // 8086 mode
-        outb(0xa1, 0x01); wait_io();
-        outb(0x21, 0xfe); // mask everything except master IRQ0
-        outb(0xa1, 0xff); // mask all slave IRQs
-        // PIT channel 0: LSB+MSB, rate-generator mode 2, binary.
-        outb(0x43, 0x34);
-        outb(0x40, PIT_DIVISOR as u8);
-        outb(0x40, (PIT_DIVISOR >> 8) as u8);
-        serial::write("ZILLAOS_TIMER_PIC_MASK_MASTER_BEFORE=");
-        serial::write_hex(master as u64);
-        serial::write("\nZILLAOS_TIMER_PIC_MASK_SLAVE_BEFORE=");
-        serial::write_hex(slave as u64);
+        let base = rdmsr(0x1b);
+        serial::write("ZILLAOS_TIMER_APIC_BASE_BEFORE=");
+        serial::write_hex(base);
         serial::write("\n");
-        Ok(SavedPicMasks { master, slave })
+        wrmsr(0x1b, base | (1 << 11) | (1 << 10));
+        let enabled = rdmsr(0x1b);
+        if enabled & (3 << 10) != (3 << 10) {
+            return Err(Ring3Error::InvalidFixture);
+        }
+        serial::write("ZILLAOS_TIMER_X2APIC_ENABLED\n");
+        let previous_tpr = rdmsr(X2APIC_TPR);
+        let previous_svr = rdmsr(X2APIC_SVR);
+        let previous_lvt = rdmsr(X2APIC_LVT_TIMER);
+        let previous_divide = rdmsr(X2APIC_DIVIDE);
+        // No interrupt can be handled until IRETQ enters CPL3 with IF=1.
+        // Unmask the local APIC and set a valid spurious vector 0xff.
+        wrmsr(X2APIC_TPR, 0);
+        wrmsr(X2APIC_SVR, (previous_svr & !0x1ff) | 0x1ff);
+        wrmsr(X2APIC_INIT_COUNT, 0); // disarm before changing LVT mode
+        wrmsr(X2APIC_DIVIDE, 0x03); // divide by 16
+        wrmsr(X2APIC_LVT_TIMER, (1 << 17) | 0x20); // periodic vector 0x20
+        wrmsr(X2APIC_INIT_COUNT, LAPIC_INITIAL_COUNT);
+        let remaining = rdmsr(0x839);
+        serial::write("ZILLAOS_TIMER_LAPIC_INITIAL_COUNT=");
+        serial::write_hex(LAPIC_INITIAL_COUNT);
+        serial::write("\nZILLAOS_TIMER_LAPIC_CURRENT_COUNT=");
+        serial::write_hex(remaining);
+        serial::write("\n");
+        if remaining == 0 {
+            return Err(Ring3Error::InvalidFixture);
+        }
+        serial::write("ZILLAOS_TIMER_LAPIC_PERIODIC_ARMED\n");
+        Ok(SavedTimer { previous_tpr, previous_svr,
+                        previous_lvt, previous_divide })
     }
 }
-fn stop_timer(previous: SavedPicMasks) {
-    // SAFETY: we returned from an IRQ through kernel continuation with IF=0.
-    // Restore interrupt masks; this feature does not start any other IRQ
-    // consumers and QEMU exits immediately after result verification.
+fn stop_timer(previous: SavedTimer) {
+    // SAFETY: we returned through the saved kernel continuation with IF=0;
+    // quiesce the test timer before updating LAPIC control registers.
     unsafe {
         asm!("cli", options(nomem, nostack));
-        outb(0x21, previous.master);
-        outb(0xa1, previous.slave);
+        wrmsr(X2APIC_LVT_TIMER, (1 << 16) | 0x20);
+        wrmsr(X2APIC_INIT_COUNT, 0);
+        wrmsr(X2APIC_DIVIDE, previous.previous_divide);
+        wrmsr(X2APIC_LVT_TIMER, previous.previous_lvt);
+        wrmsr(X2APIC_SVR, previous.previous_svr);
+        wrmsr(X2APIC_TPR, previous.previous_tpr);
     }
 }
 
@@ -293,7 +279,7 @@ pub extern "C" fn zilla_native_timer_dispatch(frame: *mut TimerFrame) -> u64 {
     };
     if frame.is_null() { return fail(runtime); }
     if runtime.ticks == 0 {
-        serial::write("ZILLAOS_TIMER_FIRST_IRQ0_ENTERED\n");
+        serial::write("ZILLAOS_TIMER_FIRST_LAPIC_IRQ_ENTERED\n");
     }
     let current = runtime.current;
     // SAFETY: 15 GP pushes and 5-qword CPU frame; owned TSS.RSP0 stack.
@@ -413,7 +399,7 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     native_ring3::install_gdt_tss_and_idt()?;
     let masks=initialize_timer()?;
     serial::write("ZILLAOS_TIMER_PREEMPT_ENTER\n");
-    serial::write("ZILLAOS_TIMER_PREEMPT_RATE_HZ=0x0000000000000064\n");
+    serial::write("ZILLAOS_TIMER_SOURCE=X2APIC_LOCAL_TIMER\n");
     // SAFETY: IRETQ sets IF in the verified user frame, allowing PIT IRQ0 to
     // preempt code that never invokes yield or exit. The IRQ handler restores
     // the original supervisor continuation with interrupts disabled.

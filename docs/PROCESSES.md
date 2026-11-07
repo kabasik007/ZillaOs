@@ -211,3 +211,26 @@ switching problem rather than a timer routing problem.
 **Never reuse this PIC fallback in normal VMware Desktop or SMP
 development.** Modern targets require ACPI MADT + LAPIC/IOAPIC
 enumeration, proper LINT wiring, interrupt masking and per-CPU state.
+
+### Timer backend revision: x2APIC, not legacy PIT
+
+The second QEMU run showed `IA32_APIC_BASE=0xfee00900`, and confirmed
+the PIC was originally fully masked (`0xff` on master/slave). Even after
+switching to the legacy PIC route, **no first IRQ0 marker arrived** before
+a 45-second watchdog timeout. These failed experiments are retained in
+earlier GitHub Actions logs; they are not counted as preemption success.
+
+To avoid assumptions about firmware virtual-wire routing, the current
+`native-ring3-preempt` test uses the **local x2APIC timer**. The
+`--cpu max` QEMU option is explicitly scoped to this test. The guest
+checks CPUID APIC/x2APIC bits before accessing MSRs, enables x2APIC in
+`IA32_APIC_BASE`, programs `SIVR`, `TPR`, the timer divide
+configuration, periodic LVT vector 0x20, and an uncalibrated initial
+count. Its interrupt entry acknowledges via x2APIC EOI MSR 0x80b,
+not by sending EOI to a legacy PIC. This does not measure exact hertz
+or provide SMP-ready APIC handling.
+
+```bash
+bash scripts/build.sh ring3-preempt
+python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --cpu max --timeout 45
+```

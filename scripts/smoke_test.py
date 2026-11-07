@@ -90,6 +90,8 @@ def main() -> int:
     parser.add_argument("--iso", type=Path)
     parser.add_argument("--expect-fault", action="store_true", help="expect intentional UD2 trap, exit 35")
     parser.add_argument("--timeout", type=int, default=60)
+    parser.add_argument("--cpu", choices=("qemu64", "max"), default="qemu64",
+                        help="QEMU guest CPU profile; max exposes x2APIC for the opt-in timer test")
     parser.add_argument("--ovmf-code", type=Path)
     parser.add_argument("--ovmf-vars", type=Path)
     args = parser.parse_args()
@@ -127,7 +129,7 @@ def main() -> int:
         command = [
             "qemu-system-x86_64",
             "-machine", "q35,accel=tcg",
-            "-cpu", "qemu64",
+            "-cpu", args.cpu,
             "-m", "512M",
             "-smp", "1",
             "-vga", "std",

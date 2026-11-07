@@ -254,7 +254,7 @@ jobs:
             dist/*ring3-threads*.iso
           if-no-files-found: warn
 
-  native-ring3-pit-preemption-qemu:
+  native-ring3-x2apic-preemption-qemu:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -265,27 +265,31 @@ jobs:
           sudo apt-get install -y --no-install-recommends qemu-system-x86 ovmf xorriso
       - name: Install Rust 1.90 target
         run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
-      - name: Build isolated PIT preemption ISO
+      - name: Build isolated x2APIC preemption ISO
         run: bash scripts/build.sh ring3-preempt
-      - name: Require IRQ0 switching with no voluntary yield
+      - name: Require x2APIC timer switching with no voluntary yield
         run: |
           set -o pipefail
-          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --timeout 45 | tee pit-preempt.log
-          grep -qx 'ZILLAOS_TIMER_PREEMPT_ENTER' pit-preempt.log
-          grep -qx 'ZILLAOS_TIMER_PREEMPT_RETURNED' pit-preempt.log
-          grep -qx 'ZILLAOS_TIMER_PREEMPT_TRACE=ABABABAB' pit-preempt.log
-          grep -qx 'ZILLAOS_TIMER_PREEMPT_TICKS=0x0000000000000008' pit-preempt.log
-          grep -qx 'ZILLAOS_TIMER_PREEMPT_BOTH_PROGRESS' pit-preempt.log
-          grep -qx 'ZILLAOS_TIMER_PREEMPT_OK' pit-preempt.log
-          grep -qx 'ZILLAOS_NATIVE_RING3_OK' pit-preempt.log
-          grep -qx 'ZILLAOS_BOOT_OK' pit-preempt.log
-          if grep -Eq 'ZILLAOS_TIMER_PREEMPT_VERIFICATION_FAILED|ZILLAOS_NATIVE_RING3_FAILED|ZILLAOS_EXCEPTION_FATAL|ZILLAOS_PANIC' pit-preempt.log; then exit 1; fi
+          python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --cpu max --timeout 45 | tee x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_X2APIC_ENABLED' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_LAPIC_PERIODIC_ARMED' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_FIRST_LAPIC_IRQ_ENTERED' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_SOURCE=X2APIC_LOCAL_TIMER' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_ENTER' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_RETURNED' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_TRACE=ABABABAB' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_TICKS=0x0000000000000008' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_BOTH_PROGRESS' x2apic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_PREEMPT_OK' x2apic-preempt.log
+          grep -qx 'ZILLAOS_NATIVE_RING3_OK' x2apic-preempt.log
+          grep -qx 'ZILLAOS_BOOT_OK' x2apic-preempt.log
+          if grep -Eq 'ZILLAOS_TIMER_PREEMPT_VERIFICATION_FAILED|ZILLAOS_NATIVE_RING3_FAILED|ZILLAOS_EXCEPTION_FATAL|ZILLAOS_PANIC' x2apic-preempt.log; then exit 1; fi
       - name: Save timer preemption artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zillaos-pit-preempt-evidence
+          name: zillaos-x2apic-preempt-evidence
           path: |
-            pit-preempt.log
+            x2apic-preempt.log
             dist/*ring3-preempt*.iso
           if-no-files-found: warn

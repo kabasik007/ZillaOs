@@ -142,3 +142,14 @@ This is a **single-CPU disposable experiment**, not the production APIC
 clock or a claim of real multi-core scheduling. The next milestones need
 guarded per-task kernel stacks, safe IRQ synchronization, APIC, real
 thread/process ownership, and eventually fully SMP-aware scheduling.
+
+## x2APIC timer experiment (QEMU-only)
+
+The opt-in preemption backend supersedes the initial legacy PIT/PIC
+attempt, which failed to deliver IRQ0 under the tested OVMF/QEMU
+configuration. The `native-ring3-preempt` ISO now requires CPUID
+x2APIC and uses the local APIC periodic timer (MSR interface).
+The initial timer count is uncalibrated; captured interrupts are real,
+but cannot be presented as 100 Hz or CPU-use percentages. Production
+SMP requires per-CPU APIC timer calibration, EOI handling, IPC/locking,
+interrupt-safe user memory, and separate kernel stacks.
