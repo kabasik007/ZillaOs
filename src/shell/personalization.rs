@@ -365,13 +365,15 @@ mod tests {
     #[test]
     fn every_gallery_swatch_hits_its_exact_preset() {
         let rect = Rect{x:100,y:80,width:750,height:460};
-        for i in 0..4 {
+        for i in 0..WALLPAPER_OPTIONS.len() {
             let wallpaper = preset_tile(rect, GalleryRow::Wallpaper, i).unwrap();
             assert_eq!(
                 settings_hit(rect, SettingsPage::Personalization,
                              wallpaper.x+8, wallpaper.y+8),
                 Some(SettingsAction::SetWallpaper(WALLPAPER_OPTIONS[i]))
             );
+        }
+        for i in 0..ACCENT_OPTIONS.len() {
             let accent = preset_tile(rect, GalleryRow::Accent, i).unwrap();
             assert_eq!(
                 settings_hit(rect, SettingsPage::Personalization,
