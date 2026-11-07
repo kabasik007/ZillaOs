@@ -86,3 +86,12 @@ IPC and capabilities agent: provide authenticated service.control and service.ob
 Integration agent: compare this isolated PR against current main and staging PR #19; coordinate one additive src/services/mod.rs export only when ready; run lib/host/kernel/QEMU smoke, do not infer userland daemon from no_std compilation. Merge only after owner approval, never auto-merge.
 
 **Not implemented:** zillad process, real spawn/kill, signed file parser, IPC calls, capability grants, hardware DMA cleanup, process scheduler integration, QEMU or VMware service runtime.
+
+
+## Verified I-M1 implementation evidence
+
+- Canonical-PID compatibility fixture: tests/service_supervisor_kernel_pid.rs imports the actual src/kernel/process/mod.rs ProcessTable and Pid. The test gateway uses this table only in a HOST fixture; the real kernel code is unchanged.
+- Kernel-PID test ensures: nonexistent Pid(555) denied, process-table-minted PID accepted only with matching manifest, live-but-unreaped PID cannot satisfy cleanup, terminated/reaped PID allows cleanup. This does not execute Ring 3.
+- Exact CI evidence for feature branch df1abfcce034cb57c0761ce90676ddcf3d8cb362: GitHub Actions job https://github.com/kabasik007/ZillaOs/actions/runs/42333763176 , host-model PASS.
+- Test totals: 20 ServiceManager model tests, 14 typed supervisor tests, 17 process/contract tests (including existing ProcessTable module tests) = 51 passed, 0 failed. Bare-metal no_std metadata compilation PASS.
+- No real linked kernel integration, QEMU service startup or VMware service startup has been performed. Original ProcessManager & IPC implementation remain owned by their agent PRs.
