@@ -1,0 +1,56 @@
+# One-shot, reviewable maintenance automation for Issue #23.
+# Deliberately scoped to this fresh maintenance branch and Rust files only.
+name: I-M2 Rustfmt baseline repair (branch only)
+
+on:
+  push:
+    branches:
+      - maintenance/i-m2-rustfmt-baseline
+    paths:
+      - .github/workflows/maintenance-rustfmt-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zillaos-i-m2-format-branch
+  cancel-in-progress: false
+
+jobs:
+  format-and-commit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact maintenance branch
+        uses: actions/checkout@v4
+        with:
+          ref: maintenance/i-m2-rustfmt-baseline
+          persist-credentials: true
+      - name: Install pinned rustfmt
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt
+      - name: Apply mechanical formatting only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/maintenance/i-m2-rustfmt-baseline"
+          git status --porcelain
+          cargo +1.90.0 fmt --all
+          git diff --check
+          if test -z "$(git diff --name-only)"; then
+            echo "No formatting drift"
+            exit 0
+          fi
+          while IFS= read -r path; do
+            case "$path" in
+              *.rs) ;;
+              *) echo "ERROR: rustfmt changed a non-Rust path: $path"; exit 1 ;;
+            esac
+          done < <(git diff --name-only)
+          git diff --stat
+          git add -- '*.rs'
+          git diff --cached --check
+          git -c user.name='zillaos-maintenance[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "style(rust): normalize full-repository Rustfmt 1.90 baseline (#23)"
+          # Non-force; fails if branch moved since checkout.
+          git push origin HEAD:refs/heads/maintenance/i-m2-rustfmt-baseline
+      - name: Check final repository formatting
+        run: cargo +1.90.0 fmt --all -- --check
