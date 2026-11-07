@@ -61,12 +61,9 @@ impl<const CAP: usize> ReadOnlyPciInventory for AmdInventoryAdapter<'_, CAP> {
     }
 }
 
-
 /// Single registry view for AMD diagnostics. This does not own the registry,
 /// perform PCI configuration reads, match a driver or request resource claims.
-use crate::platform::device::{
-    DeviceId, DeviceRegistry, DeviceState, RegistryError,
-};
+use crate::platform::device::{DeviceId, DeviceRegistry, DeviceState, RegistryError};
 use crate::video::gpu::amd::{
     AmdGpuIdentity, AmdGpuProbeStatus, ip_blocks::AsicIpInventory, match_amd_display,
 };
@@ -117,7 +114,9 @@ pub fn diagnose_registry_device<const DEVICES: usize, const CLAIMS: usize>(
     }
     // Malformed configuration is an error rather than a fabricated Radeon.
     if canonical.class.base == 0xff {
-        return Err(AmdRegistryError::InvalidIdentity(PciIdentityError::InvalidClass));
+        return Err(AmdRegistryError::InvalidIdentity(
+            PciIdentityError::InvalidClass,
+        ));
     }
     if canonical.class.base != 0x03 {
         return Ok(None);
@@ -161,7 +160,9 @@ pub fn diagnose_registry<const DEVICES: usize, const CLAIMS: usize>(
     let mut count = 0usize;
     for view in snapshot.iter() {
         if diagnose_registry_device(registry, view.id)?.is_some() {
-            count = count.checked_add(1).ok_or(AmdRegistryError::SnapshotCapacity)?;
+            count = count
+                .checked_add(1)
+                .ok_or(AmdRegistryError::SnapshotCapacity)?;
             if count > output.len() {
                 return Err(AmdRegistryError::SnapshotCapacity);
             }
@@ -332,11 +333,17 @@ mod tests {
         assert_eq!(records[1].unwrap().device, second);
         assert_eq!(records[0].unwrap().identity.pci.address.segment, 0x1234);
         assert_eq!(records[0].unwrap().identity.pci.revision, 0xa1);
-        assert_eq!(records[0].unwrap().identity.pci.subsystem_vendor_id, Some(0x1da2));
+        assert_eq!(
+            records[0].unwrap().identity.pci.subsystem_vendor_id,
+            Some(0x1da2)
+        );
         assert!(!records[0].unwrap().ip.all_blocks_verified());
         assert!(!records[0].unwrap().may_touch_hardware());
         assert_eq!(diagnose_registry_device(&registry, third), Ok(None));
-        assert_eq!(revalidate_diagnostic(&registry, records[0].unwrap()), Ok(()));
+        assert_eq!(
+            revalidate_diagnostic(&registry, records[0].unwrap()),
+            Ok(())
+        );
 
         registry.remove(first).unwrap();
         assert_eq!(
@@ -357,11 +364,17 @@ mod tests {
         let mut registry = DeviceRegistry::<2, 0>::new();
         let id = registry.insert(endpoint(identity(0x1002, 0x73bf))).unwrap();
         let other_driver = DriverId(100);
-        registry.match_driver(
-            id,
-            other_driver,
-            DriverMatch::Exact { vendor_id: 0x1002, device_id: 0x73bf, class: None },
-        ).unwrap();
+        registry
+            .match_driver(
+                id,
+                other_driver,
+                DriverMatch::Exact {
+                    vendor_id: 0x1002,
+                    device_id: 0x73bf,
+                    class: None,
+                },
+            )
+            .unwrap();
         assert_eq!(
             diagnose_registry_device(&registry, id),
             Err(AmdRegistryError::AlreadyOwned(DeviceState::Matched))
@@ -381,7 +394,10 @@ mod tests {
         let mut bad_header = endpoint(identity(0x1002, 0x73bf));
         bad_header.header_type = 1; // bridge configuration is not a GPU endpoint
         let id = r.insert(bad_header).unwrap();
-        assert_eq!(diagnose_registry_device(&r, id), Err(AmdRegistryError::InvalidHeader));
+        assert_eq!(
+            diagnose_registry_device(&r, id),
+            Err(AmdRegistryError::InvalidHeader)
+        );
 
         let mut r = DeviceRegistry::<1, 0>::new();
         let mut incomplete = identity(0x1002, 0x73bf);
@@ -389,7 +405,9 @@ mod tests {
         let id = r.insert(endpoint(incomplete)).unwrap();
         assert_eq!(
             diagnose_registry_device(&r, id),
-            Err(AmdRegistryError::InvalidIdentity(PciIdentityError::IncompleteSubsystem))
+            Err(AmdRegistryError::InvalidIdentity(
+                PciIdentityError::IncompleteSubsystem
+            ))
         );
 
         let mut r = DeviceRegistry::<1, 0>::new();
@@ -398,7 +416,9 @@ mod tests {
         let id = r.insert(endpoint(invalid)).unwrap();
         assert_eq!(
             diagnose_registry_device(&r, id),
-            Err(AmdRegistryError::InvalidIdentity(PciIdentityError::InvalidDevice))
+            Err(AmdRegistryError::InvalidIdentity(
+                PciIdentityError::InvalidDevice
+            ))
         );
 
         let mut r = DeviceRegistry::<1, 0>::new();
@@ -407,7 +427,9 @@ mod tests {
         let id = r.insert(endpoint(bad_class)).unwrap();
         assert_eq!(
             diagnose_registry_device(&r, id),
-            Err(AmdRegistryError::InvalidIdentity(PciIdentityError::InvalidClass))
+            Err(AmdRegistryError::InvalidIdentity(
+                PciIdentityError::InvalidClass
+            ))
         );
     }
 
@@ -438,8 +460,10 @@ mod tests {
         let reads = Cell::new(0usize);
         let mut mock = MockConfig::new(|address: PciAddress, offset: u16| {
             reads.set(reads.get() + 1);
-            if address.segment == 0 && address.bus == 0
-                && address.device == 2 && address.function == 0
+            if address.segment == 0
+                && address.bus == 0
+                && address.device == 2
+                && address.function == 0
             {
                 return Ok(match offset {
                     0x00 => 0x73bf_1002,
@@ -466,7 +490,13 @@ mod tests {
         let mut r = DeviceRegistry::<1, 0>::new();
         let id = r.insert(endpoint(identity(0x1002, 0x73bf))).unwrap();
         assert_eq!(
-            diagnose_registry_device(&r, DeviceId { generation: id.generation + 1, ..id }),
+            diagnose_registry_device(
+                &r,
+                DeviceId {
+                    generation: id.generation + 1,
+                    ..id
+                }
+            ),
             Err(AmdRegistryError::Registry(RegistryError::StaleHandle))
         );
         let mut invalid_address = identity(0x1002, 0x73bf);
@@ -477,5 +507,4 @@ mod tests {
         assert_eq!(good.identity.pci.address.segment, 0x1234);
         assert_eq!(good.identity.pci.address.function, 3);
     }
-
 }
