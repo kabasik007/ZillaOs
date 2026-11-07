@@ -191,3 +191,23 @@ Although this is GUI code, the `no_std` kernel library compiles it for
 all executable images. A concurrent Settings change previously broke
 non-GUI CI with an undefined `side` variable; this path filter makes
 future changes to that shared source revalidate the process build.
+
+### Legacy PIC routing caveat under OVMF
+
+The initial opt-in PIT test compiled and reached
+`ZILLAOS_TIMER_PREEMPT_ENTER` but **timed out** in QEMU without a
+confirmed IRQ0 delivery. Some UEFI paths may leave the LAPIC enabled
+without routing the legacy 8259 INTR through LINT0/ExtINT. The QEMU-only
+fixture therefore probes `IA32_APIC_BASE`, clears the LAPIC/x2APIC enable
+bits when necessary, selects legacy PIC delivery on IMCR-capable
+chipsets, then remaps the PIC and arms PIT channel 0.
+
+The code logs original `IA32_APIC_BASE`, prior PIC masks and a
+`ZILLAOS_TIMER_FIRST_IRQ0_ENTERED` marker on the first delivered IRQ.
+Absence of that marker in a timeout means no verified CPU timer
+delivery; presence without successful `ABABABAB` indicates a context
+switching problem rather than a timer routing problem.
+
+**Never reuse this PIC fallback in normal VMware Desktop or SMP
+development.** Modern targets require ACPI MADT + LAPIC/IOAPIC
+enumeration, proper LINT wiring, interrupt masking and per-CPU state.
