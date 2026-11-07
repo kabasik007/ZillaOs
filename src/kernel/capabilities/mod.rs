@@ -245,6 +245,22 @@ impl HandleTable {
             }
         }
     }
+    /// Reclaim slots whose global objects were revoked, preserving stale rejection.
+    /// This is optional deterministic cleanup, not an automatic background worker.
+    pub fn sweep_revoked(&mut self, objects: &ObjectRegistry) -> usize {
+        let mut reclaimed = 0;
+        for slot in &mut self.slots {
+            if let Some(grant) = slot.value {
+                if objects.validate(grant.key).is_err() {
+                    slot.value = None;
+                    if slot.generation == u32::MAX { slot.retired = true; }
+                    else { slot.generation += 1; }
+                    reclaimed += 1;
+                }
+            }
+        }
+        reclaimed
+    }
     pub fn count(&self) -> usize { self.slots.iter().filter(|s| s.value.is_some()).count() }
 }
 
@@ -339,6 +355,40 @@ mod tests {
         assert!(accepted[0].is_some());
         assert!(accepted[1].is_none());
         assert_eq!(recipient.count(), 1);
+    }
+    #[test]
+    fn revoked_sweep_reclaims_without_resurrecting_handles() {
+        let mut reg = ObjectRegistry::new();
+        let key = reg.create(ObjectKind::Device).unwrap();
+        let mut t = HandleTable::new(1);
+        let handle = t.grant(1, &reg, key, Rights::OBSERVE).unwrap();
+        reg.revoke(key).unwrap();
+        assert_eq!(t.sweep_revoked(&reg), 1);
+        assert_eq!(t.count(), 0);
+        assert_eq!(t.authorize(1, &reg, handle, ObjectKind::Device, Rights::OBSERVE),
+            Err(CapError::StaleHandle));
+        assert_eq!(t.sweep_revoked(&reg), 0);
+    }
+    #[test]
+    fn generation_rollover_retires_slots_instead_of_recycling() {
+        let mut reg = ObjectRegistry::new();
+        let mut key = reg.create(ObjectKind::Endpoint).unwrap();
+        let mut t = HandleTable::new(1);
+        let first = t.grant(1, &reg, key, Rights::SEND).unwrap();
+        t.slots[0].generation = u32::MAX;
+        assert_eq!(t.close(1, first), Err(CapError::StaleHandle));
+        let max_handle = Handle::new(0, u32::MAX);
+        t.close(1, max_handle).unwrap();
+        assert!(t.slots[0].retired);
+        let next = t.grant(1, &reg, key, Rights::SEND).unwrap();
+        assert_ne!(next.raw() as u32, 1);
+        // Exhaust the registry object's generation safely as well.
+        reg.slots[key.slot as usize].generation = u32::MAX;
+        key.generation = u32::MAX;
+        reg.revoke(key).unwrap();
+        assert!(reg.slots[key.slot as usize].retired);
+        let newer = reg.create(ObjectKind::Endpoint).unwrap();
+        assert_ne!(newer.slot, key.slot);
     }
     #[test]
     fn close_does_not_revoke_valid_delegated_copy() {
