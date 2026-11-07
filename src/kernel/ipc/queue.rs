@@ -443,6 +443,48 @@ mod tests {
         assert_eq!(q.send(env, 11), Err(QueueError::TimedOut));
     }
     #[test]
+    fn process_exit_purges_wrapped_queue_without_reordering_survivors() {
+        let mut q = IpcQueue::new(ObjectId(8));
+        for i in 0..QUEUE_DEPTH {
+            let mut msg = envelope();
+            msg.sender = if i % 2 == 0 { 2 } else { 3 };
+            q.send(msg, 0).unwrap();
+        }
+        for _ in 0..3 { q.recv(0).unwrap(); }
+        for i in 0..3 {
+            let mut msg = envelope();
+            msg.sender = if i == 0 { 2 } else { 3 };
+            q.send(msg, 0).unwrap();
+        }
+        assert_eq!(q.purge_sender(2), 4);
+        assert_eq!(q.len(), 4);
+        for _ in 0..4 { assert_eq!(q.recv(0).unwrap().unwrap().sender(), 3); }
+        assert!(q.recv(0).unwrap().is_none());
+    }
+    #[test]
+    fn tracked_enqueue_rolls_back_and_old_reply_tokens_cannot_replay() {
+        let mut q = IpcQueue::new(ObjectId(22));
+        let mut calls = CallTracker::new();
+        for _ in 0..QUEUE_DEPTH { q.send(envelope(), 0).unwrap(); }
+        let mut staged = envelope();
+        staged.deadline_ms = Some(200);
+        assert_eq!(q.send_tracked(&mut calls, staged, 200, 1), Err(QueueError::QueueFull));
+        assert_eq!(calls.count(), 0);
+        q.recv(0).unwrap();
+        let first = q.send_tracked(&mut calls, staged, 200, 1).unwrap();
+        assert_eq!(calls.reply_token(ObjectId(23), first, 5), Err(QueueError::WrongPeer));
+        assert_eq!(calls.reply_token(ObjectId(22), first, 5), Ok(()));
+        assert_eq!(calls.reply_token(ObjectId(22), first, 6), Err(QueueError::Canceled));
+        assert_eq!(calls.take_complete(2, 4), Ok(CallStatus::Replied));
+        let newer = calls.start_token(2, ObjectId(22), 4, 220, 10).unwrap();
+        assert_ne!(first, newer);
+        assert_eq!(calls.reply_token(ObjectId(22), first, 11), Err(QueueError::StaleCall));
+        assert_eq!(calls.status(2, 4), Some(CallStatus::Pending));
+        assert_eq!(calls.reply_token(ObjectId(22), newer, 12), Ok(()));
+        assert_eq!(calls.client_exited(2), 1);
+        assert_eq!(calls.count(), 0);
+    }
+    #[test]
     fn pending_table_is_bounded_and_duplicate_ids_are_rejected() {
         let mut c = CallTracker::new();
         for request_id in 1..=MAX_PENDING_CALLS as u64 {
