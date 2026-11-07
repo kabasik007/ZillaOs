@@ -1,6 +1,7 @@
 //! Bounded kernel-owned capability model. No user pointers, allocator or syscall hooks.
 //! All operations are trusted kernel APIs; never expose grant/revoke as a user syscall.
 pub mod process_binding;
+pub mod typed;
 
 pub const MAX_OBJECTS: usize = 128;
 pub const MAX_HANDLES: usize = 64;
