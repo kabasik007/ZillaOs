@@ -1,5 +1,6 @@
 //! Read-only bounded process/thread snapshot contract.
-//! No invented CPU percentage, RSS, execution ticks, or unrelated GUI windows.
+//! Exposes real timer interrupt counts only when a CPU backend charges them.
+//! Never invent CPU %, RSS, times, or unrelated GUI windows.
 use crate::process::{Pid, ProcessState, ProcessTable, MAX_PROCESSES};
 use crate::process::thread::{Tid, ThreadState, ThreadTable, MAX_THREADS};
 
@@ -17,6 +18,8 @@ pub struct ThreadInfo {
     pub pid: Pid,
     pub state: ThreadState,
     pub assigned_cpu: Option<usize>,
+    /// Uncalibrated IRQ tick samples; zero means none were recorded.
+    pub timer_ticks: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +56,7 @@ impl TaskSnapshot {
                 pid: t.pid,
                 state: t.state,
                 assigned_cpu: t.assigned_cpu,
+                timer_ticks: t.timer_ticks,
             });
             snapshot.thread_count += 1;
         }
@@ -100,5 +104,6 @@ mod tests {
         assert_eq!(t.pid,pid);
         assert_eq!(t.state,ThreadState::Ready);
         assert_eq!(t.assigned_cpu,None);
+        assert_eq!(t.timer_ticks,0);
     }
 }

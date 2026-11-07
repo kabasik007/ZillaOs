@@ -96,7 +96,7 @@ jobs:
             --timeout 120 | tee wallpaper-regression.log
           python3 - <<'PY'
           from pathlib import Path
-          log = Path("build/logs/desktop-qemu.log").read_text(errors="replace")
+          log = Path("build/logs/desktop-custom-wallpaper.log").read_text(errors="replace")
           if log.count("ZILLAOS_WALLPAPER_MODULE=READY") != 1:
               raise SystemExit("No validated Limine BMP module reached the desktop")
           path = Path("build/logs/desktop-custom-wallpaper.ppm")
@@ -109,13 +109,13 @@ jobs:
           width, height = map(int, dims.split())
           assert (width, height) == (1280, 800)
           assert len(data) == width * height * 3
-          # Right of the centred windows, left of the right-hand folders.
-          x, y = 1100, 500
-          offset = (y * width + x) * 3
-          rgb = tuple(data[offset:offset + 3])
-          if rgb != (255, 0, 255):
-              raise SystemExit(f"Custom BMP was not rendered at ({x},{y}): {rgb}")
-          print(f"PASS: Limine custom wallpaper BMP visible in GOP pixel at ({x},{y})")
+          # Windows and folder icons may cover any particular coordinate.
+          # Assert a sizable visible area of the test-only magenta bitmap.
+          magenta = bytes([255, 0, 255])
+          count = sum(data[i:i + 3] == magenta for i in range(0, len(data), 3))
+          if count < 1000:
+              raise SystemExit(f"Custom BMP not visible as wallpaper: {count} magenta pixels")
+          print(f"PASS: custom Limine BMP rendered through GOP ({count} magenta pixels)")
           PY
       - name: Archive GUI screenshot and serial evidence
         if: always()

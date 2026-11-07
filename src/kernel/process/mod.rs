@@ -5,6 +5,8 @@
 //! entry. A separate opt-in QEMU Ring3 fixture exists, but production
 //! ProcessManager cannot execute arbitrary tasks yet.
 pub mod address_space;
+pub mod cpu_local;
+pub mod kernel_stack;
 pub mod context;
 pub mod scheduler;
 pub mod syscall;

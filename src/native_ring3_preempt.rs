@@ -291,6 +291,11 @@ pub extern "C" fn zilla_native_timer_dispatch(frame: *mut TimerFrame) -> u64 {
     {
         return fail(runtime);
     }
+    // Account exactly this delivered, verified timer interrupt for the
+    // interrupted running TID before changing its Running->Ready state.
+    if runtime.threads.charge_timer_tick(0, runtime.tids[current]).is_err() {
+        return fail(runtime);
+    }
     runtime.previous_counter[current] = counter;
     runtime.observed[current] = counter;
     runtime.frames[current] = saved;
@@ -410,6 +415,8 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
         .ok_or(Ring3Error::UnexpectedExit)?;
     if state.failed || state.trace != *EXPECTED || state.ticks!=SAMPLES
         || state.observed[0]==0 || state.observed[1]==0
+        || state.threads.get(a).is_none_or(|t|t.timer_ticks!=4)
+        || state.threads.get(b).is_none_or(|t|t.timer_ticks!=4)
         || state.threads.get(a).is_none_or(|t|t.state!=ThreadState::Exited)
         || state.threads.get(b).is_none_or(|t|t.state!=ThreadState::Exited)
     {
@@ -421,6 +428,8 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
     processes.reap(pid).map_err(|_| Ring3Error::UnexpectedExit)?;
     serial::write("ZILLAOS_TIMER_PREEMPT_TRACE=ABABABAB\n");
     serial::write("ZILLAOS_TIMER_PREEMPT_TICKS=0x0000000000000008\n");
+    serial::write("ZILLAOS_TIMER_THREAD_A_TICKS=0x0000000000000004\n");
+    serial::write("ZILLAOS_TIMER_THREAD_B_TICKS=0x0000000000000004\n");
     serial::write("ZILLAOS_TIMER_PREEMPT_BOTH_PROGRESS\n");
     serial::write("ZILLAOS_TIMER_PREEMPT_OK\n");
     Ok(())

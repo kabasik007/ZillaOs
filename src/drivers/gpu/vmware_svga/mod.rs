@@ -3,6 +3,7 @@
 //! No VRAM/FIFO MMIO mapping, runtime mode switching or GPU acceleration.
 pub mod capabilities;
 pub mod fifo;
+pub mod update_bridge;
 pub mod mmio;
 pub mod queue;
 pub mod negotiation;

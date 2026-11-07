@@ -13,6 +13,7 @@ on:
       - 'src/native_ring3_preempt.rs'
       - 'src/shell/personalization.rs'
       - 'src/main.rs'
+      - 'src/limine.rs'
       - 'Cargo.toml'
       - 'scripts/build.sh'
       - 'docs/PAGING_AUDIT.md'
@@ -279,6 +280,8 @@ jobs:
           grep -qx 'ZILLAOS_TIMER_PREEMPT_RETURNED' xapic-preempt.log
           grep -qx 'ZILLAOS_TIMER_PREEMPT_TRACE=ABABABAB' xapic-preempt.log
           grep -qx 'ZILLAOS_TIMER_PREEMPT_TICKS=0x0000000000000008' xapic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_THREAD_A_TICKS=0x0000000000000004' xapic-preempt.log
+          grep -qx 'ZILLAOS_TIMER_THREAD_B_TICKS=0x0000000000000004' xapic-preempt.log
           grep -qx 'ZILLAOS_TIMER_PREEMPT_BOTH_PROGRESS' xapic-preempt.log
           grep -qx 'ZILLAOS_TIMER_PREEMPT_OK' xapic-preempt.log
           grep -qx 'ZILLAOS_NATIVE_RING3_OK' xapic-preempt.log
