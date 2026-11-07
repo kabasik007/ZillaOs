@@ -152,100 +152,65 @@ SMP, arbitrary thread creation or a production ProcessManager backend.
 Only CPU0 is online, interrupts remain masked and all code is a fixed,
 audited 42-byte fixture. The GUI Desktop is unaffected.
 
-## Milestone 7 — isolated PIT IRQ0 preemption experiment
+## Milestone 7 — isolated xAPIC timer preemption experiment
 
-`native-ring3-preempt` is an intentionally separate, QEMU-only ISO.
-The legacy 8254 PIT channel 0 is programmed to approximately 100 Hz;
-the 8259 PIC is remapped to IRQ0 vector 0x20, with all other IRQs masked.
-A DPL0 IDT interrupt gate saves **all 15 general-purpose registers and
-the five-qword CPL3 IRET frame**, samples each thread's busy-loop counter
-and R12 canary, and forcibly switches to the other ready thread.
-The user code does **not** call `SYS_YIELD` or make any syscall. Eight
-hardware timer ticks must show `ABABABAB`, with both counters strictly
-advancing. The kernel disables interrupts on return and restores the
-previous PIC IRQ masks, then prints `ZILLAOS_TIMER_PREEMPT_OK`.
+The optional `native-ring3-preempt` QEMU ISO runs two independent user
+threads that never call `SYS_YIELD`. The kernel prepares a new PML4
+with two separate user RW/NX stacks, guard pages, and **one supervisor-
+only uncached APIC MMIO page at VA 0x007fb000** (U/S=0, PCD/PWT=1,
+NX=1). This mapping is installed in the owned staged page tables, never
+into Limine's original root.
+
+Before user execution, CPU0 temporarily switches to the staged root
+with IF=0, configures the local xAPIC MMIO timer, then restores the
+original CR3. Entry to CPL3 specifically uses
+`enter_staged_with_timer()`, which sets `RFLAGS.IF=1` on IRETQ.
+The IDT vector 0x20 trap saves **all 15 GP registers and the 5-qword
+CPL3 IRET frame**, acknowledges via xAPIC EOI MMIO offset 0xB0,
+and forcibly switches to the other ready user thread.
+
+Eight real timer ticks must produce the trace `ABABABAB`. On each
+interrupt the dispatcher verifies that the interrupted thread's RBX
+counter increased, its distinct R12 sentinel is intact, CS/SS select
+CPL3, RFLAGS has IF and no IOPL/DF, and RIP/RSP remain in the
+thread's own code and stack. After tick eight, the old kernel
+continuation restores its CR3 and stack, disables the test timer
+under a temporary staged CR3, and reports success.
 
 ```bash
 bash scripts/build.sh ring3-preempt
 python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --timeout 45
 ```
 
-**Strict limits:** only one bootstrap CPU; fixed two-thread program and
-immutable user pages, no dynamic process spawning, no APIC/SMP, no
-interruptible kernel sections, no proper IRQ scheduler on a production
-desktop, no real idle thread, no CPU accounting except eight test
-interrupts. PIC remapping and PIT programming occur **only** in this
-opt-in disposable QEMU ISO. Existing `demo`, `ring3`, `ring3-threads`,
-guard and kernel-boundary tests do not enable IRQ0.
+**Strict limits:** one bootstrap CPU, two preloaded fixed x64 spin loops,
+no scheduler priority policy, no timer clock calibration, no user FPU/SIMD
+context, no kernel preemption, no multi-process CR3 switches, no APIC
+discovery or SMP, no production Task Manager integration. An observed
+timer tick is not a CPU percentage or a reliable millisecond.
 
-### Trap validation and CI dependency notes
+### Failure history and recovered root cause
 
-The preemptive IRQ0 trap refuses any user frame with the wrong Ring 3
-selectors, an RIP outside its 17-byte owned fixture, an RSP outside its
-per-thread stack, missing RFLAGS.IF, or unexpected IOPL/DF bits. An
-invalid frame terminates the disposable test; it does not IRETQ into a
-foreign address.
+- The initial PIT/8259 test reached Ring3 and timed out without IRQ
+  evidence. The next PIC route diagnostic reported LAPIC enabled and
+  PIC IRQ masks originally 0xff. This did *not* establish that the
+  UEFI PIC configuration was incapable of working.
+- Review found a deterministic bug: preemption called the ordinary
+  `enter_staged()` with `RFLAGS.IF=0`, so **all maskable IRQs were
+  disabled**. The timer experiment now uses the dedicated IF-enabled
+  entry; non-timer QEMU paths remain with IF=0.
+- An attempted x2APIC MSR backend compiled, but QEMU TCG's
+  `-cpu max` did not advertise CPUID.x2APIC, and the fixture rejected
+  it safely without touching unavailable MSRs.
+- The current experiment uses xAPIC MMIO instead, with a validated
+  supervisor-only uncached mapping and a temporary Ring0 CR3 switch.
+  Do not count it as successful unless the dedicated QEMU CI job
+  confirms eight interrupts, both threads' forward progress, and
+  a clean return.
 
-The process workflow also tracks `src/shell/personalization.rs`.
-Although this is GUI code, the `no_std` kernel library compiles it for
-all executable images. A concurrent Settings change previously broke
-non-GUI CI with an undefined `side` variable; this path filter makes
-future changes to that shared source revalidate the process build.
+### CI dependency boundary
 
-### Legacy PIC routing caveat under OVMF
-
-The initial opt-in PIT test compiled and reached
-`ZILLAOS_TIMER_PREEMPT_ENTER` but **timed out** in QEMU without a
-confirmed IRQ0 delivery. Some UEFI paths may leave the LAPIC enabled
-without routing the legacy 8259 INTR through LINT0/ExtINT. The QEMU-only
-fixture therefore probes `IA32_APIC_BASE`, clears the LAPIC/x2APIC enable
-bits when necessary, selects legacy PIC delivery on IMCR-capable
-chipsets, then remaps the PIC and arms PIT channel 0.
-
-The code logs original `IA32_APIC_BASE`, prior PIC masks and a
-`ZILLAOS_TIMER_FIRST_IRQ0_ENTERED` marker on the first delivered IRQ.
-Absence of that marker in a timeout means no verified CPU timer
-delivery; presence without successful `ABABABAB` indicates a context
-switching problem rather than a timer routing problem.
-
-**Never reuse this PIC fallback in normal VMware Desktop or SMP
-development.** Modern targets require ACPI MADT + LAPIC/IOAPIC
-enumeration, proper LINT wiring, interrupt masking and per-CPU state.
-
-### Timer backend revision: x2APIC, not legacy PIT
-
-The second QEMU run showed `IA32_APIC_BASE=0xfee00900`, and confirmed
-the PIC was originally fully masked (`0xff` on master/slave). Even after
-switching to the legacy PIC route, **no first IRQ0 marker arrived** before
-a 45-second watchdog timeout. These failed experiments are retained in
-earlier GitHub Actions logs; they are not counted as preemption success.
-
-To avoid assumptions about firmware virtual-wire routing, the current
-`native-ring3-preempt` test uses the **local x2APIC timer**. The
-`--cpu max` QEMU option is explicitly scoped to this test. The guest
-checks CPUID APIC/x2APIC bits before accessing MSRs, enables x2APIC in
-`IA32_APIC_BASE`, programs `SIVR`, `TPR`, the timer divide
-configuration, periodic LVT vector 0x20, and an uncalibrated initial
-count. Its interrupt entry acknowledges via x2APIC EOI MSR 0x80b,
-not by sending EOI to a legacy PIC. This does not measure exact hertz
-or provide SMP-ready APIC handling.
-
-```bash
-bash scripts/build.sh ring3-preempt
-python3 scripts/smoke_test.py --iso dist/zillaos-0.0.2-dev-ring3-preempt-uefi.iso --cpu max --timeout 45
-```
-
-### Confirmed root cause of the first two timer timeouts
-
-Code review revealed that the preemption fixture had used the ordinary
-`native_ring3::enter_staged()`, which intentionally enters CPL3 with
-`RFLAGS.IF=0`. Thus **no maskable timer IRQ could be delivered**
-regardless of the PIC/APIC routing choice. Previous PIT failure logs do
-**not** prove the legacy PIC path itself was unsupported by OVMF; the
-interrupt-enable bit was simply disabled.
-
-The x2APIC backend remains the preferred modern timer experiment, but
-the test must invoke `enter_staged_with_timer()`, which supplies
-`RFLAGS=0x202` on first `IRETQ` and keeps IF enabled in both saved
-CPL3 frames. The ordinary `enter_staged()` still uses `0x2` so the
-working cooperative and fault tests cannot accidentally enable IRQs.
+The Process Foundation workflow tracks the process modules and the
+shared `src/shell/personalization.rs` source, since any `no_std`
+library compile failure blocks both GUI and non-GUI kernels. A
+concurrent personalization change once produced an undefined variable
+and broke process builds despite not editing process files.

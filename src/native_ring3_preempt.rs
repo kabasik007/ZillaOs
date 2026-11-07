@@ -1,6 +1,6 @@
 //! CPU0-only real timer IRQ0 preemption of two controlled CPL3 contexts.
 //! Only compiled into the disposable QEMU `ring3-preempt` ISO.
-//! Local x2APIC timer interrupt-driven switching, not production APIC/SMP
+//! Local xAPIC MMIO timer interrupt-driven switching, not production APIC/SMP
 //! scheduling, process isolation across CR3s, or a GUI.
 use core::arch::{asm, global_asm};
 use core::cell::UnsafeCell;
@@ -11,7 +11,7 @@ use zillaos_kernel::{
     process::address_space::{Permissions, UserRegion},
     process::thread::{ThreadState, ThreadTable, Tid},
 };
-use crate::{native_ring3::{self, Ring3Error}, native_vm_staging::StagedSpace, serial};
+use crate::{native_ring3::{self, Ring3Error}, native_vm_staging::{StagedSpace, LAPIC_MMIO_VA}, serial};
 
 const CODE: u64 = 0x0040_0000;
 const STACK_A: u64 = 0x0080_0000;
@@ -23,12 +23,13 @@ const SENTINELS: [u64; 2] = [0x9abc_0001_55aa_0001, 0x9abc_0002_55aa_0002];
 // QEMU emulates the LAPIC timer, but the clock frequency is not calibrated
 // here. Tick counts are real interrupts; they are NOT seconds or CPU %.
 const LAPIC_INITIAL_COUNT: u64 = 200_000;
-const X2APIC_EOI: u32 = 0x80b;
-const X2APIC_SVR: u32 = 0x80f;
-const X2APIC_TPR: u32 = 0x808;
-const X2APIC_LVT_TIMER: u32 = 0x832;
-const X2APIC_INIT_COUNT: u32 = 0x838;
-const X2APIC_DIVIDE: u32 = 0x83e;
+const LAPIC_TPR: usize = 0x080;
+const LAPIC_EOI: usize = 0x0b0;
+const LAPIC_SVR: usize = 0x0f0;
+const LAPIC_LVT_TIMER: usize = 0x320;
+const LAPIC_INIT_COUNT: usize = 0x380;
+const LAPIC_CUR_COUNT: usize = 0x390;
+const LAPIC_DIVIDE: usize = 0x3e0;
 
 // PUSH order in zilla_native_timer_irq, at the bottom of the trap stack:
 // RAX,R11,R10,R9,R8,RCX,RDX,RSI,RDI,R15,R14,R13,R12,RBP,RBX.
@@ -117,12 +118,10 @@ zilla_native_timer_irq:
     mov rsp, r12
     mov r11, rax
 
-    // x2APIC EOI is MSR 0x80b. IRQ0 is a *local* APIC timer vector,
-    // not a legacy PIC interrupt. All affected GP registers were saved.
-    mov ecx, 0x80b
-    xor eax, eax
-    xor edx, edx
-    wrmsr
+    // The xAPIC EOI register is supervisor-only, uncacheable MMIO at
+    // 0x7fb0b0 in the verified staged PML4. All GP registers are saved.
+    mov rax, 0x7fb0b0
+    mov dword ptr [rax], 0
     cmp r11, -1
     je zilla_native_resume
 
@@ -153,97 +152,94 @@ zilla_native_timer_bad_cpl:
     call zilla_exception_fatal
 "#);
 
-/// x2APIC MSR access is available only after CPUID leaf 1 reports
-/// ECX.x2APIC and IA32_APIC_BASE enables the x2APIC mode.
-unsafe fn rdmsr(reg: u32) -> u64 {
-    let low: u32;
-    let high: u32;
-    // SAFETY: caller guarantees that the MSR exists on the QEMU x2APIC CPU.
-    unsafe {
-        asm!("rdmsr", in("ecx") reg, out("eax") low, out("edx") high,
-             options(nomem, nostack));
-    }
-    ((high as u64) << 32) | low as u64
-}
-unsafe fn wrmsr(reg: u32, value: u64) {
-    // SAFETY: caller guarantees that the MSR exists and the value is valid.
-    unsafe {
-        asm!("wrmsr", in("ecx") reg, in("eax") value as u32,
-             in("edx") (value >> 32) as u32,
-             options(nomem, nostack));
-    }
-}
-
+/// One disposable QEMU test-only xAPIC timer, using a verified
+/// supervisor-only UC/NX mapping in the independent staged page tables.
 struct SavedTimer {
-    previous_tpr: u64,
-    previous_svr: u64,
-    previous_lvt: u64,
-    previous_divide: u64,
+    previous_tpr: u32,
+    previous_svr: u32,
+    previous_lvt: u32,
+    previous_divide: u32,
 }
 
-/// Configure a periodic x2APIC timer on this one QEMU BSP only.
+#[inline]
+unsafe fn read_apic(offset: usize) -> u32 {
+    // SAFETY: caller must have switched CR3 to the staged root, whose
+    // supervisor-only PTE at LAPIC_MMIO_VA was checked by the page walker.
+    unsafe { ptr::read_volatile((LAPIC_MMIO_VA as usize + offset) as *const u32) }
+}
+#[inline]
+unsafe fn write_apic(offset: usize, value: u32) {
+    // SAFETY: same validated PCD/PWT, NX, U/S=0 PTE as read_apic.
+    unsafe { ptr::write_volatile((LAPIC_MMIO_VA as usize + offset) as *mut u32, value) }
+}
+
+unsafe fn with_staged_cr3<T>(root: u64, f: impl FnOnce() -> T) -> T {
+    let original: u64;
+    // SAFETY: the fixture runs on BSP with IF=0. The staged root mirrors
+    // all supervisor higher-half mappings needed by the executing kernel,
+    // current stack and code, and adds the isolated xAPIC MMIO mapping.
+    unsafe {
+        asm!("mov {}, cr3", out(reg) original, options(nomem, nostack));
+        asm!("mov cr3, {}", in(reg) root, options(nostack));
+    }
+    let result = f();
+    // SAFETY: restore Limine's original CR3 before enabling user IF.
+    unsafe { asm!("mov cr3, {}", in(reg) original, options(nostack)) };
+    result
+}
+
+/// Configure the local APIC timer in periodic mode using MMIO instead of
+/// x2APIC MSRs. QEMU TCG can expose xAPIC even when CPUID.x2APIC is absent.
 ///
-/// This path is deliberately unavailable to the normal Desktop and never
-/// assumes a memory-mapped APIC page exists in Limine HHDM. The test runner
-/// chooses QEMU -cpu max to expose the x2APIC MSR interface to the guest.
-/// No APIC clock rate is inferred: only actual delivered ticks are counted.
+/// The count is *not calibrated* to milliseconds, so the test asserts only
+/// real interrupt arrivals and forward progress of independent contexts.
 fn initialize_timer() -> Result<SavedTimer, Ring3Error> {
-    // SAFETY: CPUID leaf 1 is supported on x86-64; intrinsic preserves RBX.
-    let cpuid = unsafe { core::arch::x86_64::__cpuid(1) };
-    if cpuid.edx & (1 << 9) == 0 || cpuid.ecx & (1 << 21) == 0 {
-        serial::write("ZILLAOS_TIMER_X2APIC_UNAVAILABLE\n");
+    // SAFETY: the x86-64 intrinsic saves RBX; leaf 1 exists on QEMU qemu64.
+    let cpu = unsafe { core::arch::x86_64::__cpuid(1) };
+    if cpu.edx & (1 << 9) == 0 {
+        serial::write("ZILLAOS_TIMER_XAPIC_UNAVAILABLE\n");
         return Err(Ring3Error::InvalidFixture);
     }
-    // SAFETY: the exclusive test runs with IRQs off and one bootstrap CPU.
+    // SAFETY: called with the staged PML4 active and IF=0, after mapping the
+    // APIC physical base via the validated supervisor-only MMIO window.
     unsafe {
         asm!("cli", options(nomem, nostack));
-        let base = rdmsr(0x1b);
-        serial::write("ZILLAOS_TIMER_APIC_BASE_BEFORE=");
-        serial::write_hex(base);
-        serial::write("\n");
-        wrmsr(0x1b, base | (1 << 11) | (1 << 10));
-        let enabled = rdmsr(0x1b);
-        if enabled & (3 << 10) != (3 << 10) {
-            return Err(Ring3Error::InvalidFixture);
-        }
-        serial::write("ZILLAOS_TIMER_X2APIC_ENABLED\n");
-        let previous_tpr = rdmsr(X2APIC_TPR);
-        let previous_svr = rdmsr(X2APIC_SVR);
-        let previous_lvt = rdmsr(X2APIC_LVT_TIMER);
-        let previous_divide = rdmsr(X2APIC_DIVIDE);
-        // No interrupt can be handled until IRETQ enters CPL3 with IF=1.
-        // Unmask the local APIC and set a valid spurious vector 0xff.
-        wrmsr(X2APIC_TPR, 0);
-        wrmsr(X2APIC_SVR, (previous_svr & !0x1ff) | 0x1ff);
-        wrmsr(X2APIC_INIT_COUNT, 0); // disarm before changing LVT mode
-        wrmsr(X2APIC_DIVIDE, 0x03); // divide by 16
-        wrmsr(X2APIC_LVT_TIMER, (1 << 17) | 0x20); // periodic vector 0x20
-        wrmsr(X2APIC_INIT_COUNT, LAPIC_INITIAL_COUNT);
-        let remaining = rdmsr(0x839);
+        let previous_tpr = read_apic(LAPIC_TPR);
+        let previous_svr = read_apic(LAPIC_SVR);
+        let previous_lvt = read_apic(LAPIC_LVT_TIMER);
+        let previous_divide = read_apic(LAPIC_DIVIDE);
+        serial::write("ZILLAOS_TIMER_XAPIC_ENABLED\n");
+        write_apic(LAPIC_TPR, 0);
+        write_apic(LAPIC_SVR, (previous_svr & !0x1ff) | 0x1ff);
+        write_apic(LAPIC_INIT_COUNT, 0);
+        write_apic(LAPIC_DIVIDE, 0x03);
+        write_apic(LAPIC_LVT_TIMER, (1 << 17) | 0x20);
+        write_apic(LAPIC_INIT_COUNT, LAPIC_INITIAL_COUNT as u32);
+        let remaining = read_apic(LAPIC_CUR_COUNT);
         serial::write("ZILLAOS_TIMER_LAPIC_INITIAL_COUNT=");
         serial::write_hex(LAPIC_INITIAL_COUNT);
         serial::write("\nZILLAOS_TIMER_LAPIC_CURRENT_COUNT=");
-        serial::write_hex(remaining);
+        serial::write_hex(remaining as u64);
         serial::write("\n");
         if remaining == 0 {
             return Err(Ring3Error::InvalidFixture);
         }
         serial::write("ZILLAOS_TIMER_LAPIC_PERIODIC_ARMED\n");
-        Ok(SavedTimer { previous_tpr, previous_svr,
-                        previous_lvt, previous_divide })
+        Ok(SavedTimer { previous_tpr, previous_svr, previous_lvt,
+                        previous_divide })
     }
 }
 fn stop_timer(previous: SavedTimer) {
-    // SAFETY: we returned through the saved kernel continuation with IF=0;
-    // quiesce the test timer before updating LAPIC control registers.
+    // SAFETY: called under the staged root with IF=0 after returning to
+    // the original kernel continuation; quiesce the device before exit.
     unsafe {
         asm!("cli", options(nomem, nostack));
-        wrmsr(X2APIC_LVT_TIMER, (1 << 16) | 0x20);
-        wrmsr(X2APIC_INIT_COUNT, 0);
-        wrmsr(X2APIC_DIVIDE, previous.previous_divide);
-        wrmsr(X2APIC_LVT_TIMER, previous.previous_lvt);
-        wrmsr(X2APIC_SVR, previous.previous_svr);
-        wrmsr(X2APIC_TPR, previous.previous_tpr);
+        write_apic(LAPIC_LVT_TIMER, (1 << 16) | 0x20);
+        write_apic(LAPIC_INIT_COUNT, 0);
+        write_apic(LAPIC_DIVIDE, previous.previous_divide);
+        write_apic(LAPIC_LVT_TIMER, previous.previous_lvt);
+        write_apic(LAPIC_SVR, previous.previous_svr);
+        write_apic(LAPIC_TPR, previous.previous_tpr);
     }
 }
 
@@ -397,14 +393,17 @@ pub unsafe fn run(staged: &StagedSpace, hhdm: u64) -> Result<(), Ring3Error> {
         });
     }
     native_ring3::install_gdt_tss_and_idt()?;
-    let masks=initialize_timer()?;
+    // The independent staged root also owns a supervisor-only xAPIC MMIO
+    // page. Temporarily use it in Ring0 to arm/disarm the timer; restore
+    // the bootloader root before entering the two user contexts.
+    let timer_state = unsafe { with_staged_cr3(staged.root, initialize_timer) }?;
     serial::write("ZILLAOS_TIMER_PREEMPT_ENTER\n");
-    serial::write("ZILLAOS_TIMER_SOURCE=X2APIC_LOCAL_TIMER\n");
+    serial::write("ZILLAOS_TIMER_SOURCE=XAPIC_LOCAL_TIMER\n");
     // SAFETY: use the *timer-enabled* entry; the normal entry forces IF=0
     // and silently prevents all IRQ delivery. The APIC IRQ handler restores
     // the original supervisor continuation with interrupts disabled.
     unsafe { native_ring3::enter_staged_with_timer(staged.root,CODE,STACK_A) };
-    stop_timer(masks);
+    unsafe { with_staged_cr3(staged.root, || stop_timer(timer_state)) };
     serial::write("ZILLAOS_TIMER_PREEMPT_RETURNED\n");
 
     let state=unsafe { &mut *STATE.0.get() }.take()

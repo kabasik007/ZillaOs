@@ -21,6 +21,10 @@ const DATA_VA: u64 = 0x0040_1000;
 const GUARD_VA: u64 = 0x007f_e000;
 const STACK_VA: u64 = 0x007f_f000;
 const STACK_TOP: u64 = 0x0080_0000;
+/// Supervisor-only MMIO window in the optional preemption test PML4. It is
+/// adjacent to the second user stack guard but never mapped user-accessible.
+#[cfg(feature = "native-ring3-preempt")]
+pub const LAPIC_MMIO_VA: u64 = 0x007f_b000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StageError {
@@ -161,6 +165,30 @@ pub unsafe fn stage(
     put(pt_stack.address, 509, stack2.address | PRESENT | USER | WRITABLE | NO_EXECUTE, hhdm)?;
     // Second stack at 0x7fd000, distinct from first 0x7ff000; PT[508]
     // remains absent as its independent lower guard page.
+
+    #[cfg(feature = "native-ring3-preempt")]
+    let lapic_physical: u64 = {
+        let low: u32;
+        let high: u32;
+        // SAFETY: QEMU exposes the xAPIC IA32_APIC_BASE MSR on CPU0. No
+        // MMIO dereference occurs here; the PTE is installed before use.
+        unsafe {
+            core::arch::asm!("rdmsr", in("ecx") 0x1b_u32,
+                out("eax") low, out("edx") high, options(nomem, nostack));
+        }
+        let base_msr = ((high as u64) << 32) | low as u64;
+        let physical = base_msr & 0x000f_ffff_ffff_f000;
+        if base_msr & (1 << 11) == 0 || base_msr & (1 << 10) != 0
+            || physical == 0 || physical >= (1u64 << physical_bits)
+        {
+            return Err(StageError::UnsupportedPaging);
+        }
+        // Index 507 of this existing stack PT is unused, supervisor-only,
+        // write-through + cache-disable, NX. Do not install in Limine CR3.
+        put(pt_stack.address, 507, physical | PRESENT | WRITABLE
+            | NO_EXECUTE | (1 << 3) | (1 << 4), hhdm)?;
+        physical
+    };
     let verify = |va| {
         translate(root.address, va, 48, physical_bits, |frame, index| {
             read_verified(regions, frame, index, hhdm)
@@ -191,6 +219,18 @@ pub unsafe fn stage(
     }
 
     // Verifies inherited supervisor kernel mapping is still present.
+    #[cfg(feature = "native-ring3-preempt")]
+    {
+        let lapic = verify(LAPIC_MMIO_VA)
+            .map_err(|_| StageError::InvalidPageTables)?;
+        if lapic.physical_address != lapic_physical || lapic.user
+            || !lapic.writable || lapic.executable
+            || verify(0x007f_c000) != Err(WalkError::Unmapped)
+        {
+            return Err(StageError::InvalidPageTables);
+        }
+    }
+
     let kernel_text = verify(crate::_start as usize as u64)
         .map_err(|_| StageError::InvalidPageTables)?;
     if kernel_text.user || !kernel_text.executable {

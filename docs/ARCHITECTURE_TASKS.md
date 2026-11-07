@@ -132,24 +132,20 @@ the mounted development ISO. The QEMU GUI CI captures serial logs and
 screenshots; the real VMware video and input paths must still be checked
 on the Windows host.
 
-## Timer preemption experiment (not enabled in VMware Desktop)
+## Timer preemption — current QEMU xAPIC experiment
 
-After the cooperative `ring3-threads` trace passed real QEMU,
-the optional `native-ring3-preempt` fixture tests forced CPU0 context
-switching by real PIT IRQ0, with 15 saved GP registers and 5-entry user
-IRETQ frame. Read `docs/PROCESSES.md` for its exact test markers.
-This is a **single-CPU disposable experiment**, not the production APIC
-clock or a claim of real multi-core scheduling. The next milestones need
-guarded per-task kernel stacks, safe IRQ synchronization, APIC, real
-thread/process ownership, and eventually fully SMP-aware scheduling.
+The opt-in `native-ring3-preempt` fixture uses a supervisor-only,
+uncached xAPIC MMIO mapping created only in the new staged PML4, a
+temporary CPU0 CR3 switch to initialize the timer, and hardware
+interrupt vector 0x20 to force context switches in CPL3. Unlike
+`SYS_YIELD`, neither user thread volunteers to switch.
 
-## x2APIC timer experiment (QEMU-only)
+The first PIT/PIC attempts failed because initial user IRETQ had
+`RFLAGS.IF=0`; an x2APIC MSR experiment later failed safely when
+QEMU TCG did not expose CPUID.x2APIC. These failures are preserved
+as evidence, not silently discarded. The xAPIC path requires live
+QEMU proof, after which production work should move to APIC/ACPI
+enumeration, CPU-local interrupt stacks, IRQ-safe synchronization,
+timer calibration and actual multiple-process runtimes.
 
-The opt-in preemption backend supersedes the initial legacy PIT/PIC
-attempt, which failed to deliver IRQ0 under the tested OVMF/QEMU
-configuration. The `native-ring3-preempt` ISO now requires CPUID
-x2APIC and uses the local APIC periodic timer (MSR interface).
-The initial timer count is uncalibrated; captured interrupts are real,
-but cannot be presented as 100 Hz or CPU-use percentages. Production
-SMP requires per-CPU APIC timer calibration, EOI handling, IPC/locking,
-interrupt-safe user memory, and separate kernel stacks.
+No timer experiment is enabled by the normal VMware GUI ISO.
