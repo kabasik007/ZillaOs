@@ -179,23 +179,40 @@ impl IpcQueue {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStatus { Pending, Replied, Canceled, TimedOut, ServerGone }
+/// Kernel-minted correlation. A recycled request ID cannot reuse a nonce.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CallToken {
+    client: u64,
+    request_id: u64,
+    nonce: u64,
+}
+impl CallToken {
+    pub const fn client(self) -> u64 { self.client }
+    pub const fn request_id(self) -> u64 { self.request_id }
+}
 #[derive(Clone, Copy)]
 struct Call {
     client: u64,
     server: ObjectId,
     request_id: u64,
     deadline_ms: u64,
+    nonce: u64,
     status: CallStatus,
 }
 pub struct CallTracker {
     calls: [Option<Call>; MAX_PENDING_CALLS],
+    next_nonce: u64,
 }
 impl Default for CallTracker { fn default() -> Self { Self::new() } }
 impl CallTracker {
-    pub const fn new() -> Self { Self { calls: [None; MAX_PENDING_CALLS] } }
+    pub const fn new() -> Self { Self { calls: [None; MAX_PENDING_CALLS], next_nonce: 1 } }
     pub fn count(&self) -> usize { self.calls.iter().flatten().count() }
     pub fn start(&mut self, client: u64, server: ObjectId, request_id: u64,
-        deadline_ms: u64, now_ms: u64) -> Result<(), QueueError>
+        deadline_ms: u64, now_ms: u64) -> Result<(), QueueError> {
+        self.start_token(client, server, request_id, deadline_ms, now_ms).map(|_| ())
+    }
+    pub fn start_token(&mut self, client: u64, server: ObjectId, request_id: u64,
+        deadline_ms: u64, now_ms: u64) -> Result<CallToken, QueueError>
     {
         if client == 0 || server.0 == 0 || request_id == 0 {
             return Err(QueueError::InvalidRequest);
@@ -206,10 +223,43 @@ impl CallTracker {
         }
         let slot = self.calls.iter_mut().find(|entry| entry.is_none())
             .ok_or(QueueError::Full)?;
+        let nonce = self.next_nonce;
+        self.next_nonce = self.next_nonce.checked_add(1).ok_or(QueueError::Full)?;
         *slot = Some(Call {
-            client, server, request_id, deadline_ms, status: CallStatus::Pending,
+            client, server, request_id, deadline_ms, nonce, status: CallStatus::Pending,
         });
-        Ok(())
+        Ok(CallToken { client, request_id, nonce })
+    }
+    /// Roll back only the specific still-pending call created by this send.
+    fn rollback_start(&mut self, token: CallToken) {
+        for entry in &mut self.calls {
+            if entry.is_some_and(|call| call.client == token.client
+                && call.request_id == token.request_id && call.nonce == token.nonce
+                && call.status == CallStatus::Pending) {
+                *entry = None;
+                return;
+            }
+        }
+    }
+    /// Authenticated dispatcher must verify server endpoint capability too.
+    /// This nonce also rejects delayed replies after request_id reuse.
+    pub fn reply_token(&mut self, server: ObjectId, token: CallToken,
+        now_ms: u64) -> Result<(), QueueError>
+    {
+        let call = self.find(token.client, token.request_id)?;
+        if call.nonce != token.nonce { return Err(QueueError::StaleCall); }
+        self.reply(server, token.client, token.request_id, now_ms)
+    }
+    /// Process exit removes both pending and completed correlations.
+    pub fn client_exited(&mut self, client: u64) -> usize {
+        let mut removed = 0;
+        for entry in &mut self.calls {
+            if entry.is_some_and(|call| call.client == client) {
+                *entry = None;
+                removed += 1;
+            }
+        }
+        removed
     }
     fn find(&mut self, client: u64, request_id: u64) -> Result<&mut Call, QueueError> {
         self.calls.iter_mut().flatten()
