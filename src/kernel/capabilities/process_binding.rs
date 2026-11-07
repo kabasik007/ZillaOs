@@ -89,7 +89,7 @@ impl ProcessHandleBook {
         self.tables.iter().flatten().find(|table| table.owner() == pid.0)
             .ok_or(BindingError::NotBound)
     }
-    fn by_pid_mut(&mut self, pid: Pid) -> Result<&mut HandleTable, BindingError> {
+    pub(crate) fn by_pid_mut(&mut self, pid: Pid) -> Result<&mut HandleTable, BindingError> {
         self.tables.iter_mut().flatten().find(|table| table.owner() == pid.0)
             .ok_or(BindingError::NotBound)
     }
