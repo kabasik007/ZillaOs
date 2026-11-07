@@ -134,3 +134,7 @@ struct ServiceRuntime {
 **Власник коду:** окремий Services agent; Process agent володіє `src/kernel/process/**` і `src/services/process_manager.rs`; Graphics agent — `src/video/**` і `src/drivers/gpu/**`. Спільні `main.rs/lib.rs/Cargo.toml` змінювати лише маленьким інтеграційним diff після перечитування актуального HEAD.
 
 Пов'язані: [OS subsystems](OS_SUBSYSTEMS.md), [Driver Framework](DRIVER_FRAMEWORK.md), [AMD GPU bring-up](AMD_GPU_BRINGUP.md), [Agent coordination](AGENT_COORDINATION.md).
+
+## 9. More precise IPC and service gates
+
+See [SYSTEM_SERVICES_IPC.md](SYSTEM_SERVICES_IPC.md) for handle generation, rights attenuation, versioned message header, bounded queue/deadline semantics and server-crash recovery, and [PLATFORM_WORKSTREAMS.md](PLATFORM_WORKSTREAMS.md) for mock-first Codex tasks. The opt-in single-core `native-ring3-preempt` QEMU fixture documented in [PROCESSES.md](PROCESSES.md) is **not** proof that `zillad` can run as a protected user-space service. Do not launch kernel-only ServiceManager logic under a fabricated real PID.
