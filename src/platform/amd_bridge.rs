@@ -79,7 +79,9 @@ impl<const DEVICES: usize, const CLAIMS: usize> ReadOnlyPciInventory
     for AmdRegistryAdapter<'_, DEVICES, CLAIMS>
 {
     fn identity_at(&self, address: AmdAddress) -> Option<AmdIdentity> {
-        if !address.is_valid() { return None; }
+        if !address.is_valid() {
+            return None;
+        }
         let platform_address = crate::platform::pci::PciAddress {
             segment: address.segment,
             bus: address.bus,
@@ -211,17 +213,25 @@ mod tests {
         use crate::platform::pci::PciDeviceInfo;
         let mut registry = DeviceRegistry::<2, 0>::new();
         let platform = identity(0x1002, 0x73bf);
-        let handle = registry.insert(PciDeviceInfo {
-            identity: platform,
-            header_type: 0,
-            multifunction: false,
-            bridge: None,
-        }).unwrap();
+        let handle = registry
+            .insert(PciDeviceInfo {
+                identity: platform,
+                header_type: 0,
+                multifunction: false,
+                bridge: None,
+            })
+            .unwrap();
         let amd = AmdAddress {
-            segment: 0x1234, bus: 2, device: 7, function: 3,
+            segment: 0x1234,
+            bus: 2,
+            device: 7,
+            function: 3,
         };
         let adapter = AmdRegistryAdapter::new(&registry);
-        assert_eq!(adapter.identity_at(amd), Some(to_amd_identity(platform).unwrap()));
+        assert_eq!(
+            adapter.identity_at(amd),
+            Some(to_amd_identity(platform).unwrap())
+        );
         assert!(matches!(
             amd::probe_address(&adapter, amd),
             AmdGpuProbeStatus::DetectedUnsupported(_)
@@ -231,6 +241,4 @@ mod tests {
         let adapter = AmdRegistryAdapter::new(&registry);
         assert_eq!(adapter.identity_at(amd), None);
     }
-
-
 }

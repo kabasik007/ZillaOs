@@ -4,9 +4,7 @@
 #![forbid(unsafe_code)]
 
 use super::device::{DeviceRegistry, DeviceSnapshot};
-use super::pci::{
-    PciAddress, PciConfigRead, PciIdentity, ScanReport, scan_legacy_segment0,
-};
+use super::pci::{PciAddress, PciConfigRead, PciIdentity, ScanReport, scan_legacy_segment0};
 use crate::storage_pci::{PciLocation, StorageController, StorageInventory, decode_kind};
 use crate::video::VideoAdapter;
 
@@ -70,7 +68,11 @@ impl<const DEVICES: usize> BootPci<DEVICES> {
     }
 
     pub fn registry(&self) -> Option<&DeviceRegistry<DEVICES, 0>> {
-        if self.ready() { Some(&self.registry) } else { None }
+        if self.ready() {
+            Some(&self.registry)
+        } else {
+            None
+        }
     }
 
     pub fn snapshot(&self) -> Option<DeviceSnapshot<DEVICES>> {
@@ -105,7 +107,10 @@ impl<const DEVICES: usize> BootPci<DEVICES> {
         // values are not verified BAR extents and authorize no mapping.
         // The unchanged legacy VMware probe later reads this cache, NOT CF8.
         let mut count = 0usize;
-        for info in scan.iter().filter(|entry| entry.identity.is_vmware_svga_ii()) {
+        for info in scan
+            .iter()
+            .filter(|entry| entry.identity.is_vmware_svga_ii())
+        {
             if info.header_type != 0 || count == MAX_VMWARE_PCI_HEADERS {
                 boot.status = BootScanStatus::VmwareHeaderOverflow;
                 break;
@@ -122,7 +127,11 @@ impl<const DEVICES: usize> BootPci<DEVICES> {
                 break;
             };
             boot.vmware[count] = Some(VmwareConfig {
-                identity: info.identity, command_status, bar0, bar1, bar2,
+                identity: info.identity,
+                command_status,
+                bar0,
+                bar1,
+                bar2,
             });
             count += 1;
         }
@@ -178,7 +187,11 @@ impl<const DEVICES: usize> BootPci<DEVICES> {
                 }
             }
         }
-        if generic { VideoAdapter::GenericPciDisplay } else { VideoAdapter::FirmwareOnly }
+        if generic {
+            VideoAdapter::GenericPciDisplay
+        } else {
+            VideoAdapter::FirmwareOnly
+        }
     }
 
     /// Legacy VMware adapter. Emulates only dwords consumed by the existing
@@ -189,19 +202,29 @@ impl<const DEVICES: usize> BootPci<DEVICES> {
             return u32::MAX;
         }
         let address = PciAddress::from(location);
-        let Some(view) = self.registry.find(address).and_then(|id| self.registry.get(id).ok()) else {
+        let Some(view) = self
+            .registry
+            .find(address)
+            .and_then(|id| self.registry.get(id).ok())
+        else {
             return u32::MAX;
         };
         let pci = view.info;
         let id = pci.identity;
-        let cached = self.vmware.iter().flatten().find(|candidate| candidate.identity.address == address);
+        let cached = self
+            .vmware
+            .iter()
+            .flatten()
+            .find(|candidate| candidate.identity.address == address);
         match offset {
             0 => ((id.device_id as u32) << 16) | id.vendor_id as u32,
             4 => cached.map_or(u32::MAX, |c| c.command_status),
-            8 => ((id.class.base as u32) << 24)
-                | ((id.class.subclass as u32) << 16)
-                | ((id.class.programming_interface as u32) << 8)
-                | id.revision as u32,
+            8 => {
+                ((id.class.base as u32) << 24)
+                    | ((id.class.subclass as u32) << 16)
+                    | ((id.class.programming_interface as u32) << 8)
+                    | id.revision as u32
+            }
             12 => ((pci.header_type | if pci.multifunction { 0x80 } else { 0 }) as u32) << 16,
             16 => cached.map_or(u32::MAX, |c| c.bar0),
             20 => cached.map_or(u32::MAX, |c| c.bar1),
@@ -223,13 +246,15 @@ impl<const DEVICES: usize> BootPci<DEVICES> {
 #[cfg(test)]
 mod tests {
     extern crate std;
+    use super::super::pci::{ConfigError, MockConfig};
     use super::*;
-    use super::super::pci::{MockConfig, ConfigError};
-    use core::cell::Cell;
     use crate::video::gpu::vmware_svga::pci::locate;
+    use core::cell::Cell;
 
     fn fixture(addr: PciAddress, off: u16) -> Result<u32, ConfigError> {
-        if addr.segment != 0 { return Err(ConfigError::UnsupportedSegment); }
+        if addr.segment != 0 {
+            return Err(ConfigError::UnsupportedSegment);
+        }
         match (addr.bus, addr.device, addr.function, off) {
             (0, 2, 0, 0) => Ok(0x2922_8086),
             (0, 2, 0, 0x08) => Ok(0x0106_0101), // AHCI
@@ -263,13 +288,24 @@ mod tests {
         let after_scan = reads.get();
         let storage = boot.storage_inventory();
         assert_eq!(storage.count, 1);
-        assert_eq!(storage.iter().next().unwrap().kind, crate::storage_pci::StorageKind::SataAhci);
+        assert_eq!(
+            storage.iter().next().unwrap().kind,
+            crate::storage_pci::StorageKind::SataAhci
+        );
         assert_eq!(boot.video_adapter(), VideoAdapter::VmwareSvgaII);
-        let info = locate(|loc, off| boot.legacy_read32(loc, off)).unwrap().unwrap();
+        let info = locate(|loc, off| boot.legacy_read32(loc, off))
+            .unwrap()
+            .unwrap();
         assert_eq!(info.io_base, 0x1070);
         let reg = boot.registry().unwrap();
-        let amd = reg.find(PciAddress::new(0,0,16,0).unwrap()).unwrap();
-        assert!(reg.get(amd).unwrap().info.identity.is_amd_display_candidate());
+        let amd = reg.find(PciAddress::new(0, 0, 16, 0).unwrap()).unwrap();
+        assert!(
+            reg.get(amd)
+                .unwrap()
+                .info
+                .identity
+                .is_amd_display_candidate()
+        );
         assert_eq!(reads.get(), after_scan); // cached clients do not touch hardware
         assert!(!boot.verified_resource_claims_available());
     }
@@ -278,18 +314,41 @@ mod tests {
     fn corrupt_header_and_scan_overflow_deny_all_clients() {
         let mut corrupt = MockConfig::new(|addr: PciAddress, off: u16| {
             if addr.bus == 0 && addr.device == 3 {
-                Ok(match off {0=>0x1234_8086, 0x0c=>0x007f_0000, _=>0})
-            } else { Ok(u32::MAX) }
+                Ok(match off {
+                    0 => 0x1234_8086,
+                    0x0c => 0x007f_0000,
+                    _ => 0,
+                })
+            } else {
+                Ok(u32::MAX)
+            }
         });
         let denied = BootPci::<8>::discover(&mut corrupt, 0);
         assert_eq!(denied.status, BootScanStatus::MalformedTopology);
         assert_eq!(denied.storage_inventory().count, 0);
-        assert_eq!(denied.legacy_read32(PciLocation {bus:0,device:3,function:0},0),u32::MAX);
+        assert_eq!(
+            denied.legacy_read32(
+                PciLocation {
+                    bus: 0,
+                    device: 3,
+                    function: 0
+                },
+                0
+            ),
+            u32::MAX
+        );
 
-        let mut dense = MockConfig::new(|addr: PciAddress,off: u16| {
+        let mut dense = MockConfig::new(|addr: PciAddress, off: u16| {
             if addr.bus == 0 && addr.device < 5 && addr.function == 0 {
-                Ok(match off {0=>0x1234_8086,0x0c=>0,0x08=>0x0106_0100,_=>u32::MAX})
-            } else { Ok(u32::MAX) }
+                Ok(match off {
+                    0 => 0x1234_8086,
+                    0x0c => 0,
+                    0x08 => 0x0106_0100,
+                    _ => u32::MAX,
+                })
+            } else {
+                Ok(u32::MAX)
+            }
         });
         let overflow = BootPci::<2>::discover(&mut dense, 0);
         assert_eq!(overflow.status, BootScanStatus::InventoryOverflow);
@@ -324,7 +383,9 @@ mod tests {
         let mut backend = MockConfig::new(|addr: PciAddress, off: u16| {
             if addr.bus == 0 && addr.device == 2 && off == 0x0c {
                 Err(ConfigError::Unavailable)
-            } else {fixture(addr,off)}
+            } else {
+                fixture(addr, off)
+            }
         });
         let denied = BootPci::<8>::discover(&mut backend, 0);
         assert_eq!(denied.status, BootScanStatus::ConfigUnavailable);

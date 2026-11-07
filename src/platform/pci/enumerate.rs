@@ -196,7 +196,8 @@ fn scan_buses<const CAP: usize>(
                     subclass: (class_register >> 16) as u8,
                     programming_interface: (class_register >> 8) as u8,
                 };
-                if (id >> 16) as u16 == 0xffff || class.base == 0xff
+                if (id >> 16) as u16 == 0xffff
+                    || class.base == 0xff
                     || (header_type == 1 && !class.is_pci_bridge())
                     || (class.is_pci_bridge() && header_type != 1)
                 {
@@ -386,7 +387,9 @@ mod tests {
         use core::cell::Cell;
         let id_reads = Cell::new(0u32);
         let mut mock = MockConfig::new(|addr: PciAddress, off: u16| {
-            if off == 0 { id_reads.set(id_reads.get() + 1); }
+            if off == 0 {
+                id_reads.set(id_reads.get() + 1);
+            }
             if addr.bus == 255 && addr.device == 31 {
                 return Ok(match (addr.function, off) {
                     (0, 0) => 0x0001_8086,
@@ -403,8 +406,10 @@ mod tests {
         let inv = scan_legacy_segment0::<4>(&mut mock, 255);
         assert_eq!(inv.count, 2);
         assert_eq!(inv.report.visited_buses, 256);
-        assert_eq!(inv.iter().last().unwrap().identity.address,
-                   PciAddress::new(0, 255, 31, 7).unwrap());
+        assert_eq!(
+            inv.iter().last().unwrap().identity.address,
+            PciAddress::new(0, 255, 31, 7).unwrap()
+        );
         assert_eq!(id_reads.get(), 8192 + 7);
     }
 
@@ -414,7 +419,13 @@ mod tests {
             if a.bus == 0 && a.device < 5 {
                 return Ok(match o {
                     0 => 0x1234_8086,
-                    0x0c => if a.device == 4 { 0x0001_0000 } else { 0 },
+                    0x0c => {
+                        if a.device == 4 {
+                            0x0001_0000
+                        } else {
+                            0
+                        }
+                    }
                     0x08 => 0x0300_0000,
                     _ => u32::MAX,
                 });
@@ -426,5 +437,4 @@ mod tests {
         assert!(inv.truncated);
         assert_eq!(inv.report.malformed_headers, 1);
     }
-
 }
