@@ -90,13 +90,13 @@ src/
 ## 5. Стартовий порядок і залежності
 
 ```text
-Boot + serial + GOP
+Boot + serial + firmware GOP bootstrap
    ├── CPU interrupts + allocator + paging
    │       ├── Process isolation ── IPC ── permissions ── real user services
    │       └── safe MMIO mapper ─┐
    ├── PCI scan + resource registry ── DeviceManager ── Driver binding
    │                                └── DMA/IOMMU/IRQ before active GPU
-   └── DisplayManager + GOP fallback ── VMware backend / AMD discovery
+   └── DisplayManager + safe firmware framebuffer before native handoff ── VMware backend / AMD discovery
                                            └── AMD DCN -> later acceleration
 ```
 
@@ -131,3 +131,11 @@ Boot + serial + GOP
 - Код має лишатися сумісним з експериментальним Windows/WSL → ISO → VMware workflow; native AMD GPU потребує **окремого** заліза або належно налаштованого passthrough.
 
 Суміжні документи: [служби](SERVICE_FRAMEWORK.md), [драйвери](DRIVER_FRAMEWORK.md), [AMD bring-up](AMD_GPU_BRINGUP.md), [поточний стан](ARCHITECTURE_CURRENT.md), [координація агентів](AGENT_COORDINATION.md).
+
+## 9. Детальне продовження ресерчу (2026-11-07)
+
+Див. [платформний індекс](PLATFORM_DOCUMENTATION_INDEX.md), [PCI/ACPI та ресурси](PCI_ACPI_RESOURCE_MODEL.md), [display stack](DISPLAY_STACK_PROTOCOL.md), [IPC та capability security](SYSTEM_SERVICES_IPC.md), [AMD hardware lab](AMD_HARDWARE_LAB.md), [паралельні workstreams](PLATFORM_WORKSTREAMS.md).
+
+**Виправлення припущення про fallback:** до передачі контролю native GPU-драйверу firmware GOP-пам'ять може використовуватися як bootstrap output; після перепрограмування AMD GPU не можна гарантувати старий scanout або автоматичний rollback на GOP. Перед active hardware mode setting потрібні validated recovery path і serial/headless diagnostics.
+
+У `main` з'явився експеримент `native-ring3-preempt` (PIT IRQ0, QEMU, два потоки, CPU0), але це не production scheduler, не SMP і не service runtime. Оновлювати процесні факти з [PROCESSES.md](PROCESSES.md).
