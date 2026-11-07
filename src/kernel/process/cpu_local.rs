@@ -13,6 +13,7 @@ pub enum ScheduleError {
     CpuBusy,
     NoCurrent,
     Desynchronized,
+    ParentNotRunnable,
     WrongContext,
     NotInInterrupt,
     InterruptUnderflow,
