@@ -1,0 +1,41 @@
+name: ZillaOS service manager model
+
+on:
+  pull_request:
+    paths:
+      - 'src/services/service_manager.rs'
+      - 'src/services/service_manifests.rs'
+      - 'tests/service_manager_host.rs'
+      - 'tests/service_manager_no_std.rs'
+      - '.github/workflows/service-manager-model.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/service_manager.rs'
+      - 'src/services/service_manifests.rs'
+      - 'tests/service_manager_host.rs'
+      - 'tests/service_manager_no_std.rs'
+      - '.github/workflows/service-manager-model.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-model:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust and bare-metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Run standalone host tests without linking kernel entrypoint
+        run: |
+          rustc +1.90.0 --edition 2024 --test tests/service_manager_host.rs \
+            -o /tmp/service_manager_tests
+          /tmp/service_manager_tests --nocapture
+      - name: Compile service model as pure no_std bare-metal library
+        run: |
+          rustc +1.90.0 --edition 2024 --crate-type lib \
+            --target x86_64-unknown-none tests/service_manager_no_std.rs \
+            --emit metadata -o /tmp/service_manager.rmeta

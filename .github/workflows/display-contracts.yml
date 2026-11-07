@@ -1,0 +1,26 @@
+name: ZillaOS display contracts (G0-G1)
+
+on:
+  pull_request:
+    paths:
+      - 'src/video/**'
+      - 'src/drivers/gpu/vmware_svga/**'
+      - 'docs/GRAPHICS_DISPLAY_CONTRACTS.md'
+      - '.github/workflows/display-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-and-bare-metal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain and target
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Host unit tests (mock-only display hardware)
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Bare-metal kernel compile (no runtime hardware evidence)
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo

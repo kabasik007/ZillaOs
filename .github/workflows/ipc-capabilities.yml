@@ -1,0 +1,29 @@
+name: IPC and capability foundation
+
+on:
+  pull_request:
+    paths:
+      - 'src/kernel/capabilities/**'
+      - 'src/kernel/ipc/**'
+      - 'src/lib.rs'
+      - 'docs/IPC_CAPABILITIES_FOUNDATION.md'
+      - '.github/workflows/ipc-capabilities.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests-and-bare-metal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.90.0 --profile minimal --target x86_64-unknown-none
+      - name: Test host no_std library models
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Check bare metal kernel build
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline
+      - name: Check GUI build compatibility
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo

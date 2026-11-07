@@ -1,0 +1,36 @@
+name: ZillaOS PCI / Device Registry Foundation
+
+on:
+  pull_request:
+    paths:
+      - 'src/platform/**'
+      - 'src/lib.rs'
+      - '.github/workflows/platform-pci-foundation.yml'
+  push:
+    branches: ['feat/platform-pci-foundation']
+    paths:
+      - 'src/platform/**'
+      - 'src/lib.rs'
+      - '.github/workflows/platform-pci-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pci-host-and-baremetal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust 1.90 with bare-metal target
+        run: rustup toolchain install 1.90.0 --profile minimal --component rustfmt --target x86_64-unknown-none
+      - name: Host no_std library unit tests
+        run: cargo +1.90.0 test --lib --target x86_64-unknown-linux-gnu --offline
+      - name: Bare-metal kernel compilation, no runtime
+        run: cargo +1.90.0 build --release --target x86_64-unknown-none --offline --features vm-demo
+      - name: Check platform file formatting
+        run: |
+          rustfmt +1.90.0 --edition 2024 --check src/platform/mod.rs src/platform/pci/*.rs src/platform/device/*.rs src/platform/resources.rs
+      - name: Existing Python host tests
+        run: python3 -m unittest discover -s tests -v
