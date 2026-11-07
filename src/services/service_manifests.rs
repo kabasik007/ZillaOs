@@ -17,6 +17,7 @@ const fn manifest(
 ) -> ServiceManifest {
     ServiceManifest {
         schema_version: MANIFEST_SCHEMA_V1,
+        version: 1,
         id, executable, start, required, after,
         requested_capabilities: caps,
         quotas: Quotas { memory_bytes: memory, threads },
