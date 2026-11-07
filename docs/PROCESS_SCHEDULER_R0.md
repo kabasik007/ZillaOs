@@ -10,7 +10,7 @@ Read [AGENTS.md](../AGENTS.md), [PROCESSES.md](PROCESSES.md), [ARCHITECTURE_TASK
 - New src/kernel/process/cpu_local.rs: per-logical-CPU *model* for current TID, nested IRQ bookkeeping, preemption-disable nesting, pending reschedule and observed timer-tick count. ThreadTable still owns TID lifecycle, affinity and deterministic round-robin policy; no second runqueue is introduced.
 - New src/kernel/process/kernel_stack.rs: bounded high-half virtual kernel-stack *reservation records* with one guard page, no overlapping leases, monotonic lease IDs, explicit reserve/activate/retire/release lifecycle. VMM is responsible for actual physical allocation, NX/RW PTEs, unmapped guards and TLB flushing; this registry never frees a frame.
 - Existing src/kernel/process/mod.rs: exports only the two new modules.
-- Existing src/services/process_manager.rs: model-only CPU dispatch/snapshot, and reap guard rejecting process PID reaping while ANY associated TID remains, even if the thread has exited. No untrusted execution enabled.
+- Existing src/services/process_manager.rs: model-only CPU dispatch/snapshot, and reap guard rejecting process PID reaping while ANY associated TID remains, even if the thread has exited. The gateway also rejects selecting Ready threads whose owning process is missing, still Created, or Exited. No untrusted execution enabled.
 
 These additions do not modify src/main.rs, Cargo.toml, src/native_ring3*.rs, graphics, Desktop, PCI, APIC, existing QEMU feature flags or default VMware boot.
 
