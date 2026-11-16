@@ -6,7 +6,7 @@ Thank you for helping build ZillaOS, an **experimental** independent Rust `no_st
 
 ## Where to start
 
-1. Read [README.md](README.md), [current status](docs/STATUS.md), [architecture](docs/ARCHITECTURE_CURRENT.md), [security architecture](docs/SECURITY_ARCHITECTURE.md), and [AGENTS.md](AGENTS.md).
+1. For a practical English walkthrough, start with [contributor quick start](docs/CONTRIBUTOR_QUICKSTART_EN.md). Then read [README.md](README.md), [current status](docs/STATUS.md), [architecture](docs/ARCHITECTURE_CURRENT.md), [security architecture](docs/SECURITY_ARCHITECTURE.md), and [AGENTS.md](AGENTS.md).
 2. Browse [open issues](https://github.com/kabasik007/ZillaOs/issues), the [I-M2 workstreams](docs/NEXT_WAVE_I_M2.md), and [community starter tasks](docs/COMMUNITY_STARTER_TASKS.md).
 3. Before a non-trivial change, comment on an issue describing the goal, intended files, failure cases and test plan. Ask for the maintainer's agreement for shared architecture or safety-sensitive code.
 4. Fork the repository and create a focused branch **from the current `main`**; for automated engineering agents follow the required `agent/<domain>-im2-<task>` convention in AGENTS.md.
