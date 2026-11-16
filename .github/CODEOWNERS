@@ -1,0 +1,13 @@
+# Maintainer review for changes to any part of ZillaOS.
+# This file requests review; branch rules (if enabled later) enforce approval separately.
+* @kabasik007
+
+# Explicit architectural integration choke points.
+src/main.rs @kabasik007
+src/lib.rs @kabasik007
+Cargo.toml @kabasik007
+src/kernel/ @kabasik007
+src/platform/ @kabasik007
+src/drivers/ @kabasik007
+.github/workflows/ @kabasik007
+docs/specs/ @kabasik007
