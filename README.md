@@ -88,7 +88,7 @@ python3 scripts/run_vm.py --display gtk
 
 ## Спільна розробка / Contributing
 
-Хочеш допомогти ZillaOS? Почни з [CONTRIBUTING.md](CONTRIBUTING.md), [задач для нових учасників](docs/COMMUNITY_STARTER_TASKS.md) і [GitHub Issues](https://github.com/kabasik007/ZillaOs/issues). Для зовнішніх змін використовуй окрему гілку та Pull Request; `main` оновлюється тільки після перевірки відповідальним інтегратором. Проєкт поки **не має LICENSE**, тому публічність репозиторію не означає дозвіл на повторне використання чи поширення коду.
+Хочеш допомогти ZillaOS? Почни з [CONTRIBUTING.md](CONTRIBUTING.md), [задач для нових учасників](docs/COMMUNITY_STARTER_TASKS.md), [English contributor quick start](docs/CONTRIBUTOR_QUICKSTART_EN.md) і [GitHub Issues](https://github.com/kabasik007/ZillaOs/issues). Для зовнішніх змін використовуй окрему гілку та Pull Request; `main` оновлюється тільки після перевірки відповідальним інтегратором. Проєкт поки **не має LICENSE**, тому публічність репозиторію не означає дозвіл на повторне використання чи поширення коду.
 
 ## Як розвиваємо ZillaOS
 
